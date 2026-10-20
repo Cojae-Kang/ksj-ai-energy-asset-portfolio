@@ -1,0 +1,28 @@
+﻿company,ticker,fiscal_year,account_id,account_nm,amount_krw_100m
+LS ELECTRIC,010120,FY2023A,-표준계정코드 미사용-,단기차입금,2769.42474651
+LS ELECTRIC,010120,FY2023A,ifrs-full_CurrentPortionOfLongtermBorrowings,유동성장기차입금,1403.73286882
+LS ELECTRIC,010120,FY2023A,ifrs-full_LongtermBorrowings,장기차입금,5142.43485708
+LS ELECTRIC,010120,FY2024A,ifrs-full_CurrentPortionOfLongtermBorrowings,유동성장기차입금,2233.56163926
+LS ELECTRIC,010120,FY2024A,ifrs-full_ShorttermBorrowings,단기차입금,3813.175777
+LS ELECTRIC,010120,FY2024A,ifrs-full_LongtermBorrowings,장기차입금,5693.52169191
+LS ELECTRIC,010120,FY2025A,ifrs-full_CurrentPortionOfLongtermBorrowings,유동성장기차입금,2671.88468729
+LS ELECTRIC,010120,FY2025A,ifrs-full_ShorttermBorrowings,단기차입금,3021.92853551
+LS ELECTRIC,010120,FY2025A,ifrs-full_LongtermBorrowings,장기차입금,7730.10797653
+효성중공업,298040,FY2023A,ifrs-full_CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings,장기차입금,9031.04096251
+효성중공업,298040,FY2023A,dart_LongTermBorrowingsGross,장기차입금,3981.21187049
+효성중공업,298040,FY2024A,ifrs-full_CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings,차입금,4968.73509103
+효성중공업,298040,FY2024A,dart_LongTermBorrowingsGross,장기차입금,5631.40401002
+효성중공업,298040,FY2025A,ifrs-full_CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings,차입금,3379.91108202
+효성중공업,298040,FY2025A,dart_LongTermBorrowingsGross,장기차입금,4644.50013386
+두산에너빌리티,034020,FY2023A,ifrs-full_CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings,유동성장기부채,15763.71477449
+두산에너빌리티,034020,FY2023A,ifrs-full_ShorttermBorrowings,단기차입금,11865.77312455
+두산에너빌리티,034020,FY2023A,ifrs-full_NoncurrentPortionOfNoncurrentBondsIssued,사채,4939.16905369
+두산에너빌리티,034020,FY2023A,ifrs-full_NoncurrentPortionOfNoncurrentLoansReceived,장기차입금,14577.49360531
+두산에너빌리티,034020,FY2024A,ifrs-full_CurrentPortionOfLongtermBorrowings,유동성장기부채,3982.2
+두산에너빌리티,034020,FY2024A,ifrs-full_ShorttermBorrowings,단기차입금,21412.57
+두산에너빌리티,034020,FY2024A,ifrs-full_NoncurrentPortionOfNoncurrentBondsIssued,사채,9067.58
+두산에너빌리티,034020,FY2024A,ifrs-full_NoncurrentPortionOfNoncurrentLoansReceived,장기차입금,24345.34
+두산에너빌리티,034020,FY2025A,ifrs-full_CurrentPortionOfLongtermBorrowings,유동성장기부채,10298.47
+두산에너빌리티,034020,FY2025A,ifrs-full_ShorttermBorrowings,단기차입금,18835.72
+두산에너빌리티,034020,FY2025A,ifrs-full_NoncurrentPortionOfNoncurrentBondsIssued,사채,4991.27
+두산에너빌리티,034020,FY2025A,ifrs-full_NoncurrentPortionOfNoncurrentLoansReceived,장기차입금,23361.39

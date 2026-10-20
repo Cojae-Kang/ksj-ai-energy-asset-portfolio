@@ -1,0 +1,12 @@
+metric,period,value,unit,source,url,published
+dc_electricity_consumption,2024,415,TWh,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_electricity_consumption_base,2030,945,TWh,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_electricity_consumption_base,2035,1200,TWh,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_share_of_global_electricity,2024,1.5,%,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_consumption_growth_rate,2017-2024,12,%/yr,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_regional_share_US,2024,45,%,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_regional_share_China,2024,25,%,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_regional_share_Europe,2024,15,%,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_demand_growth_yoy,2025,17,%,IEA Key Questions on Energy and AI,https://www.iea.org/reports/key-questions-on-energy-and-ai,2026-04
+ai_dc_demand_growth_yoy,2025,50,%,IEA Key Questions on Energy and AI,https://www.iea.org/reports/key-questions-on-energy-and-ai,2026-04
+global_electricity_demand_growth_yoy,2025,3,%,IEA Key Questions on Energy and AI,https://www.iea.org/reports/key-questions-on-energy-and-ai,2026-04

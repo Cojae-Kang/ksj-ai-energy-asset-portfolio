@@ -1,0 +1,8 @@
+{
+  "source": "Open DART fnlttSinglAcntAll",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-20T14:35:15+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "금액 KRW 억원, 사업보고서(11011) 당기 금액. 총차입금 정의는 config ASSUMPTION 참조."
+}

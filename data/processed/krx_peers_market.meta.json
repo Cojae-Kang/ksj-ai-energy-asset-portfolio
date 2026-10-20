@@ -1,0 +1,8 @@
+{
+  "source": "KRX Open API",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-20T14:20:02+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "종가 KRW, 시가총액 KRW 억원. source_* 열에 필드별 출처 기록."
+}

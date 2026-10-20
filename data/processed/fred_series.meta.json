@@ -1,0 +1,8 @@
+{
+  "source": "FRED, Federal Reserve Bank of St. Louis",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-20T14:20:18+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "DGS10: % p.a. / DEXKOUS: KRW per USD (Noon buying rates in NY)"
+}

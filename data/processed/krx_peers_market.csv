@@ -1,0 +1,5 @@
+﻿company,ticker,as_of,bas_dd,close_krw,market_cap_krw_100m,listed_shares,source_close_krw,source_market_cap_krw,source_listed_shares,cross_check_required
+HD현대일렉트릭,267260,2026-10-20,20261019,525000.0,189247.45875,36047135.0,KRX Open API,KRX Open API,KRX Open API,False
+LS ELECTRIC,010120,2026-10-20,20261019,164600.0,246900.0,150000000.0,KRX Open API,KRX Open API,KRX Open API,False
+효성중공업,298040,2026-10-20,20261019,1936000.0,180523.24928,9324548.0,KRX Open API,KRX Open API,KRX Open API,False
+두산에너빌리티,034020,2026-10-20,20261019,66600.0,426613.723236,640561146.0,KRX Open API,KRX Open API,KRX Open API,False
