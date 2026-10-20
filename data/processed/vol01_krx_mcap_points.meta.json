@@ -1,0 +1,8 @@
+{
+  "source": "KRX Open API (유가증권 일별매매정보)",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-20T15:13:26+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "MKTCAP(원)→KRW 억원. start_2023=20230102, latest=20261019 (기준일 2026-10-20 직전 거래일)"
+}
