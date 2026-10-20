@@ -1,0 +1,9 @@
+{
+  "source": "Schneider Electric 연차보고서(Universal Registration Document) — 수기 입력",
+  "endpoint": "https://www.se.com/ww/en/about-us/investor-relations/ (TODO(data): 문서별 URL을 source_url 열에 기록)",
+  "params": {},
+  "fetched_at": null,
+  "as_of": null,
+  "license_note": "회사 공개 IR 자료. 인용 시 출처 표기. SEC 공시 대상이 아니므로 SEC EDGAR로 대체 불가.",
+  "note": "TODO(data): 값 입력 후 fetched_at/as_of 갱신. 단위 EUR mn. EUR→USD/KRW 환율 소스는 미연결(TODO(data))."
+}

@@ -1,0 +1,4 @@
+company,ticker,region,basis,fiscal_year,fiscal_year_end,currency,unit,revenue,operating_income,net_income,total_debt,cash,source,source_url,as_of,notes
+Schneider Electric,SU.PA,EU,IFRS consolidated,FY2023A,2023-12-31,EUR,mn,,,,,,Schneider Electric Universal Registration Document 2023,,,"TODO(data): URD 연결재무제표에서 Revenues, EBITA/영업이익, 지배주주 순이익, 차입금(단기+장기), 현금 입력. operating_income 정의(EBITA vs IFRS 영업이익) notes에 명시"
+Schneider Electric,SU.PA,EU,IFRS consolidated,FY2024A,2024-12-31,EUR,mn,,,,,,Schneider Electric Universal Registration Document 2024,,,"TODO(data): 위와 동일"
+Schneider Electric,SU.PA,EU,IFRS consolidated,FY2025A,2025-12-31,EUR,mn,,,,,,Schneider Electric Universal Registration Document 2025,,,"TODO(data): 위와 동일"

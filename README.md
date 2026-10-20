@@ -77,8 +77,8 @@ pip install -r requirements.txt
 # 2. API 키 설정: .env.example을 .env로 복사한 뒤 값 입력
 copy .env.example .env
 
-# 3. 데이터 수집 (placeholder)
-# python -m src.data_fetch.<script>
+# 3. 데이터 수집 (자세한 내용은 아래 '데이터 수집 실행 방법')
+python -m src.data_fetch.fetch_all --source all --asof 2026-10-20
 
 # 4. 분석 실행 (placeholder)
 # python -m src.analysis.<step>
@@ -86,6 +86,69 @@ copy .env.example .env
 # 5. 테스트
 pytest
 ```
+
+## 데이터 수집 실행 방법
+
+> 데이터 수집은 **로컬에서만** 실행합니다. 클라우드 세션은 커밋된 `data/raw/`, `data/manual/` 파일만 사용합니다.
+
+### 1) 준비
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env      # 키 입력 (.env는 커밋 금지, .gitignore 처리됨)
+pytest -q                   # 네트워크 없이 도는 단위테스트 (응답 mock)
+```
+
+| .env 변수 | 소스 | 비고 |
+|---|---|---|
+| `DART_API_KEY` | Open DART | 재무제표·발행공시·원문 |
+| `KRX_API_KEY` | KRX Open API | 승인 서비스: 유가증권 일별매매정보, 유가증권 종목기본정보 |
+| `ECOS_API_KEY` | 한국은행 ECOS | 원/달러 환율, 국고채 3·10년 |
+| `SEC_USER_AGENT` | SEC EDGAR | 키 대신 User-Agent(이름 + 이메일) 필수 |
+| `FRED_API_KEY` | FRED | DGS10, DEXKOUS |
+| `EIA_API_KEY` | EIA Open Data | 미국 전력 소매판매량·가격 |
+| `KRX_ID`, `KRX_PW` | pykrx (선택) | 비어 있으면 pykrx 대체 수집이 실패할 수 있음 |
+
+키가 비어 있는 소스는 **SKIPPED**로 건너뛰고 나머지는 계속 수집합니다. 로그·meta·요약표에서 키는 `***`로 마스킹됩니다.
+
+### 2) 실행
+
+```powershell
+# 전체 수집 (+ peers 식별자 검증 + 재무 통합)
+python -m src.data_fetch.fetch_all --source all --asof 2026-10-20
+
+# 개별 소스 (여러 개 가능): dart / krx / ecos / sec / fred / eia / global
+python -m src.data_fetch.fetch_all --source dart sec ecos --asof 2026-10-20
+
+# 옵션: --no-cache (캐시 무시), --no-post (검증·통합 생략), -v (디버그 로그)
+python -m src.data_fetch.validate_peers      # 식별자 검증만 다시
+```
+
+실행이 끝나면 소스별 **SUCCESS / PARTIAL / FAILED / SKIPPED** 요약표가 출력되고 `reports/data_fetch_summary.md`에 저장됩니다.
+
+### 3) 소스별 수집 내용
+
+| 모듈 | 수집 내용 | 주요 산출물 |
+|---|---|---|
+| `dart.py` | corpCode.xml(종목코드↔corp_code), fnlttSinglAcntAll(사업보고서 11011, CFS 우선→OFS, FY2023~2025), list.json 발행공시(C), document.xml 원문 | `data/raw/dart/`, `data/processed/dart_financials.csv` |
+| `krx.py` | KRX Open API 종가·시가총액·상장주식수 (휴장일이면 직전 거래일). 실패 시 FinanceDataReader → pykrx | `data/processed/krx_peers_market.csv`, `reports/crosscheck_krx.md` |
+| `ecos.py` | 원/달러 일별 → 연평균·연말, 국고채 3년·10년 | `data/processed/ecos_fx_annual.csv`, `ecos_ktb_daily.csv` |
+| `sec.py` | company_tickers.json(CIK) → companyfacts: Revenue, OperatingIncome, NetIncome, 총차입금, 현금 | `data/processed/sec_financials.csv` |
+| `fred.py` | DGS10, DEXKOUS | `data/processed/fred_series.csv` |
+| `eia.py` | 미국 전력 소매판매량·가격 (부문별, 연간) — 출처: U.S. Energy Information Administration (EIA) | `data/processed/eia_retail_sales_annual.csv` |
+| `market_global.py` | yfinance 해외 peers 주가·시총 (보조 소스, `cross_check_required=True`) | `data/processed/global_peers_market.csv`, `reports/crosscheck_global.md` |
+| `validate_peers.py` | config peers 티커 ↔ DART corp_code / SEC CIK 검증 (Schneider Electric은 SEC 비대상으로 별도 표기) | `reports/peer_validation.md` |
+| `consolidate.py` | 국내·해외 재무 통합 (통화·단위·회계연도 정규화, KRW 억원·USD mn 환산) | `data/processed/peers_financials.csv` |
+
+### 4) 데이터 규칙
+
+- 모든 raw 파일은 같은 이름의 `.meta.json`(source, endpoint, params(키 제외), fetched_at, as_of, license_note)을 동반합니다.
+- base URL·endpoint·시리즈 코드·계정 매핑은 모두 `config.yaml`의 `data_fetch`에서 관리합니다. `ASSUMPTION(verify)` 항목은 공식 문서로 확인한 뒤 태그를 지웁니다.
+- 대용량 원본(DART 원문 zip, SEC companyfacts)은 `data/raw/large/`, 응답 캐시는 `data/raw/_cache/`에 저장되며 git에서 제외됩니다.
+- 환산: 손익은 연평균 환율, 재무상태(차입금·현금)는 연말 환율(ECOS 매매기준율)을 씁니다.
+- Schneider Electric 재무는 `data/manual/overseas_financials_manual.csv`에 연차보고서 기준으로 직접 입력합니다(`TODO(data)`).
 
 ## 면책 문구
 

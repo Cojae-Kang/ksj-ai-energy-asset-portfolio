@@ -41,3 +41,6 @@ desktop.ini
 # ---- Data ----
 data/raw/large/
 data/manual/*.pdf
+
+# ---- Data fetch cache ----
+data/raw/_cache/
