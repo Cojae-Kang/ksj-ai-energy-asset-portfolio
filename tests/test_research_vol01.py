@@ -305,7 +305,7 @@ def _texts(pages):
     for pg in pages:
         out += [pg.title, pg.subtitle] + [t for _, _, t, _ in pg.toc]
         for c in pg.cells:
-            out += [c.title, c.note, c.unit, c.panel_lead] + (c.bullets or [])
+            out += [c.title, c.note, c.unit, c.panel_lead, c.strip] + (c.bullets or [])
             if c.placeholder:
                 out += list(c.placeholder)
             if c.table:
@@ -330,7 +330,8 @@ def test_story_wording(cfg, fy2022):
     assert "LS ELECTRIC 주가는 3배인데 왜 시총은 15배인가?" in joined
     assert "합계 7.7배와 평균 14.6배 중 무엇이 맞나?" in joined
     assert "2026-04-13 5:1 액면분할" in joined and "분할 조정" in joined
-    assert "(저자 견해)" in joined
+    assert "(저자 견해)" not in joined
+    assert sum("본문의 판단은 저자 개인의 견해" in t for t in kr) >= 1
     hangul = re.compile(r"[가-힣]")
     leaks = [t for t in en if t and hangul.search(t)]
     assert not leaks, leaks[:3]
@@ -359,6 +360,29 @@ def test_repo_url_single_source_and_gitignore():
     assert url == "https://github.com/Cojae-Kang/ksj-ai-energy-asset-portfolio"
     readme = base.resolve_path("README.md").read_text(encoding="utf-8")
     assert url in readme and "ai-dc-power-ecm" not in readme
+    for must in ("<!-- vol01:findings:kr -->", "<!-- /vol01:findings:en -->", "<details>", "docs/img/vol01_p4_kr.png",
+                 "CC BY 4.0", "LICENSE", "Claude Code"):
+        assert must in readme, must
+    assert "준비 중" not in readme and "면접관" not in readme
+    assert "면접관" not in base.resolve_path("CLAUDE.md").read_text(encoding="utf-8")
+    assert base.resolve_path("LICENSE").read_text(encoding="utf-8").startswith("MIT License")
+
+
+def test_qa_reports_moved_to_docs():
+    out = base.load_config()["data_fetch"]["output"]
+    for k in ("summary_report", "peer_validation_report", "crosscheck_report_krx", "crosscheck_report_global"):
+        assert out[k].startswith("docs/qa/"), k
+
+
+def test_update_readme_markers(tmp_path):
+    from research.vol01.build import update_readme
+    rd = tmp_path / "README.md"
+    rd.write_text("top\n<!-- vol01:findings:kr -->\nold\n<!-- /vol01:findings:kr -->\nbottom\n", encoding="utf-8")
+    update_readme(rd, {"kr": {"findings": ["가", "나", "다"]}, "en": {"findings": ["a"]}})   # en 마커 없음 → 건너뜀
+    t = rd.read_text(encoding="utf-8")
+    assert "old" not in t and "1. 가\n2. 나\n3. 다" in t and t.startswith("top") and t.endswith("bottom\n")
+    update_readme(rd, {"kr": {"findings": ["라"]}})                                        # 반복 실행해도 한 번만
+    assert rd.read_text(encoding="utf-8").count("<!-- vol01:findings:kr -->") == 1 and "1. 라" in rd.read_text(encoding="utf-8")
     gi = base.resolve_path(".gitignore").read_text(encoding="utf-8")
     assert "data/raw/*" in gi and "research/*/_build/" in gi
 
@@ -400,6 +424,14 @@ def test_build_landscape_pdfs(cfg, tmp_path, fy2022):
     assert "KRX 시총 검산" in summary and "split_consistent" in summary
     assert ("시총 분해 (FY2022A → FY2025A)" in summary) == fy2022
     assert (out / "_build").exists()
+    rd = tmp_path / "README.md"
+    rd.write_text("<!-- vol01:findings:kr -->\n<!-- /vol01:findings:kr -->\n<!-- vol01:findings:en -->\n<!-- /vol01:findings:en -->\n",
+                  encoding="utf-8")
+    r2 = build(cfg, "2026-10-20", out_dir=out, readme=rd)
+    for lang in ("kr", "en"):
+        a = r2["readme"][lang]
+        assert len(a["findings"]) == 3 and a["img"].exists() and a["decomposed"] == fy2022
+    assert rd.read_text(encoding="utf-8").count("\n1. **") == 2
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +530,39 @@ def test_a1_questions_and_wording(cfg):
     for _, r in led.iterrows():
         assert any(q.startswith(r["company"]) and "멀티플이 주도한 이유" in q for q in qs)
     assert re.search(r"지수 \d+포인트", pages["2"].title) and not re.search(r"\d+p ", pages["2"].title)
-    a3 = "\n".join(b for c in pages["A3"].cells for b in (c.bullets or []))
-    assert "테스트 함수" not in a3
+    a3 = "\n".join(t for c in pages["A3"].cells for t in [c.title, c.note, c.strip] + (c.bullets or []))
+    assert "테스트 함수" not in a3 and "python -m" not in a3
     en = {pg.label: pg for pg in _pages(cfg, f, "en")}
     assert "index points" in en["2"].title
+
+
+# ---------------------------------------------------------------------------
+# 공개본 정리: 내부 용어·SEC '준비 중'·명령어 없음, A3 GitHub·구현 문장
+# ---------------------------------------------------------------------------
+PUBLIC_FORBIDDEN = ["config", "ASSUMPTION", ".meta.json", "data/manual", "data/raw", "회색 박스", "(저자 견해)",
+                    "(author's view)", "준비 중", "SEC 수집", "테스트", "What I built"]
+
+
+@pytest.mark.parametrize("fy2022", [False, True])
+def test_public_text_clean(cfg, fy2022):
+    pytest.importorskip("matplotlib")
+    from research.vol01.story import Story
+    full_inputs(cfg, fy2022=fy2022)
+    f = data.load_facts(cfg, "2026-10-20")
+    url = cfg["research"]["repo_url"]
+    for lang in ("kr", "en"):
+        st = Story(cfg, f, lang)
+        pages = st.pages()
+        held = {t for pg in pages for c in pg.cells for t in (c.placeholder or ())}  # 데이터 미수집 안내는 제외
+        texts = [t for t in _texts(pages) + list(st.sources().values()) + [st.footer()] if t and t not in held]
+        joined = "\n".join(texts)
+        bad = [w for w in PUBLIC_FORBIDDEN if w in joined]                          # 대문자 태그 ASSUMPTION만 금지
+        assert not bad, (lang, bad)
+        assert all("저자 견해" not in pg.title and "author's view" not in pg.title.lower() for pg in pages)
+        by = {pg.label: pg for pg in pages}
+        a2 = by["A2"].cells[0].table
+        assert not any("SEC" in str(r[0]) for r in a2.rows)                         # A2 출처 표에 SEC 행 없음
+        a3 = by["A3"].cells[0]
+        assert url in a3.note and "GitHub" in a3.note
+        assert a3.strip == (Story.BUILT_WITH_KR if lang == "kr" else Story.BUILT_WITH_EN)
+        assert "Claude Code" in a3.strip

@@ -6,6 +6,7 @@
 산출물 (research/vol01/):
   KSJ_Research_Vol01_KR.pdf, KSJ_Research_Vol01_EN.pdf (960×720pt, 4:3, 같은 레이아웃)
   build_summary.md (Exhibit 상태, 핵심 계산표, 폰트)
+README용: docs/img/vol01_p4_{kr,en}.png (p4 시총 분해, 분해 불가 시 시총 차트) + README.md 핵심 발견 3줄 (마커 사이 교체)
 중간 산출물(차트 PNG)은 research/vol01/_build/ (git 제외).
 데이터가 없으면 해당 Exhibit만 회색 박스 "데이터 수집 후 생성 + 실행 명령"으로 둔다.
 """
@@ -25,7 +26,11 @@ from .fonts import register_matplotlib, register_reportlab, resolve_fonts
 logger = logging.getLogger("research.vol01.build")
 
 
-def build(cfg: Mapping, as_of: str, langs: tuple[str, ...] = ("kr", "en"), out_dir: Path | None = None) -> dict:
+README_IMG_PT = (720.0, 400.0)      # README 대표 Exhibit 크기 (pt)
+
+
+def build(cfg: Mapping, as_of: str, langs: tuple[str, ...] = ("kr", "en"), out_dir: Path | None = None,
+          readme: Path | None = None) -> dict:
     from . import charts, layout, story   # matplotlib/ReportLab은 실행 시점에만 로드
 
     v = cfg["research"]["vol01"]
@@ -53,8 +58,44 @@ def build(cfg: Mapping, as_of: str, langs: tuple[str, ...] = ("kr", "en"), out_d
                                    if cell.placeholder]
         if lang == "kr":
             result["page_titles"] = [(pg.label, pg.title) for pg in pages if pg.kind not in ("cover", "back")]
+        if readme is not None:
+            result.setdefault("readme", {})[lang] = readme_assets(st, pages, readme.parent / "docs" / "img", lang)
     write_summary(out_dir / "build_summary.md", result, as_of)
+    if readme is not None and readme.exists():
+        update_readme(readme, result["readme"])
     return result
+
+
+def readme_assets(st, pages, img_dir: Path, lang: str) -> dict:
+    from . import charts
+
+    """README용 핵심 발견 3줄(요약 쪽 세 박스의 결론)과 대표 Exhibit(p4 시총 분해, 없으면 시총 차트) PNG."""
+    findings = [f"**{b.title}**<br><sub>{b.caption}: {b.number}</sub>" for b in st.executive().boxes if b.number != "—"]
+    p4 = next(pg for pg in pages if pg.label == "4")
+    cell = next((c for key in ("waterfall", "mcap") for c in p4.cells if c.chart_key == key and c.chart), None)
+    img = None
+    if cell is not None:
+        img = img_dir / f"vol01_p4_{lang}.png"
+        src = st.sources()
+        lab = st.labels()
+        foot = f"{lab['source']}: " + "; ".join(src[k] for k in cell.src) + " · KSJ Research Vol.1 p4"
+        charts.exhibit_png(img, cell.chart, cell.title, cell.legend, f"{lab['unit']}: {cell.unit}" if cell.unit else "",
+                           foot, st.c, *README_IMG_PT, wrap=58 if lang == "kr" else 92)
+    return {"findings": findings, "img": img, "img_title": cell.title if cell else "", "decomposed": bool(cell and cell.chart_key == "waterfall")}
+
+
+def update_readme(readme: Path, assets: Mapping[str, dict]) -> None:
+    """README.md의 <!-- vol01:findings:{lang} --> … <!-- /vol01:findings:{lang} --> 사이를 데이터 기반 문장으로 교체."""
+    text = readme.read_text(encoding="utf-8")
+    for lang, a in assets.items():
+        start, end = f"<!-- vol01:findings:{lang} -->", f"<!-- /vol01:findings:{lang} -->"
+        if start not in text or end not in text:
+            logger.warning("README 마커 없음: %s", start)
+            continue
+        body = "\n".join(f"{i}. {s}" for i, s in enumerate(a["findings"], 1))
+        head, rest = text.split(start, 1)
+        text = head + start + "\n" + body + "\n" + end + rest.split(end, 1)[1]
+    readme.write_text(text, encoding="utf-8")
 
 
 def write_summary(path: Path, r: dict, as_of: str) -> None:
@@ -63,7 +104,7 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
     lines += ["## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
     lines += ["", "## 페이지 제목 (국문)", ""] + [f"- **{lab}** {t}" for lab, t in r.get("page_titles", [])]
     pend = r["pending"].get("kr") or next(iter(r["pending"].values()), [])
-    lines += ["", "## 데이터 수집 후 생성 (회색 박스)", ""]
+    lines += ["", "## 데이터 수집 후 생성되는 Exhibit", ""]
     lines += [f"- p{lab}: {t} → `{cmd}`" for lab, t, cmd in pend] or ["- 없음"]
     if data.ok(f.market):
         t = f.market.table
@@ -104,14 +145,14 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(args.config)
     as_of = args.asof or cfg["data_fetch"]["as_of_default"]
     langs = ("kr", "en") if args.lang == "both" else (args.lang,)
-    r = build(cfg, as_of, langs)
+    r = build(cfg, as_of, langs, readme=resolve_path("README.md"))
     print("\n=== KSJ Research Vol.1 빌드 결과 ===")
     print(f"폰트: {r['fonts']}")
     for lang, path in r["pdfs"].items():
         print(f"{path}  ({r['pages'][lang]}쪽)")
     pend = next(iter(r["pending"].values()), [])
     for lab, t, cmd in pend:
-        print(f"  p{lab} 회색 박스: {t}  →  {cmd}")
+        print(f"  p{lab} 데이터 수집 후 생성: {t}  →  {cmd}")
     return 0
 
 

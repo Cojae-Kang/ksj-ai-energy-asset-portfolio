@@ -122,10 +122,10 @@ data_fetch:
     raw_large: "data/raw/large"         # .gitignore 대상 (대용량 zip, companyfacts 원본)
     cache: "data/raw/_cache"            # 응답 캐시 (.gitignore 대상)
     processed_peers: "data/processed/peers_financials.csv"
-    summary_report: "reports/data_fetch_summary.md"
-    peer_validation_report: "reports/peer_validation.md"
-    crosscheck_report_krx: "reports/crosscheck_krx.md"          # KRX Open API vs FDR/pykrx
-    crosscheck_report_global: "reports/crosscheck_global.md"    # yfinance vs SEC
+    summary_report: "docs/qa/data_fetch_summary.md"
+    peer_validation_report: "docs/qa/peer_validation.md"
+    crosscheck_report_krx: "docs/qa/crosscheck_krx.md"          # KRX Open API vs FDR/pykrx
+    crosscheck_report_global: "docs/qa/crosscheck_global.md"    # yfinance vs SEC
 
   http:
     # 모든 HTTP 요청 공통 (DART·KRX·ECOS·SEC·FRED·EIA). 타임아웃이면 해당 요청만 건너뛰고 기록 후 계속.
@@ -209,7 +209,7 @@ data_fetch:
     max_lookback_days: 10               # 기준일이 휴장일이면 직전 영업일까지 소급
     license_note: "한국거래소 KRX Open API. 이용약관 확인."
     fallback_order: ["fdr", "pykrx"]   # KRX Open API 실패 시 보조 소스 순서 (교차검증 필요)
-    crosscheck_with_fdr: true           # KRX 성공 시에도 FDR 종가와 비교해 reports/에 기록
+    crosscheck_with_fdr: true           # KRX 성공 시에도 FDR 종가와 비교해 docs/qa/에 기록
     crosscheck_tolerance_pct: 0.5
 
   ecos:
@@ -415,4 +415,4 @@ research:
       big_move_multiple: 1.5            # 시총 합계 배수가 이 이상이면 "크게 움직였다"
       multiple_led_share: 0.5           # 멀티플 기여 비중이 이 값 초과면 "멀티플이 이익보다 앞서 달렸다"
     source_status_override:
-      sec: "준비 중"                     # SEC 일시 차단 → 수집 재개 전까지 표기
+      sec: "Vol.3에서 사용"              # 해외 피어(SEC) 비교는 Vol.3. Vol.1 A2 출처 표에는 싣지 않음

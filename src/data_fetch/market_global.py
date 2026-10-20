@@ -1,7 +1,7 @@
 """해외 peers 주가·시가총액 (yfinance, 보조 소스).
 
 - 모든 행에 cross_check_required=True, source_priority=3 표시
-- 발행주식수는 SEC dei:EntityCommonStockSharesOutstanding(공식)과 비교해 reports/에 기록
+- 발행주식수는 SEC dei:EntityCommonStockSharesOutstanding(공식)과 비교해 docs/qa/에 기록
 - yfinance 발행주식수는 "현재" 값이다. 기준일 시가총액 = 기준일 종가 × 현재 주식수 (ASSUMPTION, 플래그)
 """
 from __future__ import annotations

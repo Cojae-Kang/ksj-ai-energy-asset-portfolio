@@ -1,6 +1,6 @@
 """config.yaml peers 티커 검증: 국내 → DART corp_code, 해외 → SEC CIK.
 
-결과는 reports/peer_validation.md에 기록한다.
+결과는 docs/qa/peer_validation.md에 기록한다.
 입력: data/raw/dart/corp_codes_listed.csv, data/raw/sec/company_tickers.json (fetch_all 실행 후 생성)
 
 실행: python -m src.data_fetch.validate_peers

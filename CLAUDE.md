@@ -2,7 +2,7 @@
 
 ## Goal
 ECM 직무 포트폴리오. AI 데이터센터 전력 수요 → 전력 인프라 밸류체인 → 가상 비상장 기업의
-IPO 희망공모가 밴드 산정. 독자는 증권사 ECM/IB 실무자와 면접관.
+IPO 희망공모가 밴드 산정. 독자는 증권사 ECM·IB 실무자.
 
 ## Data rules (가장 중요)
 - 공개 데이터만 사용. 출처(URL 또는 기관명)와 기준일을 항상 기록.
@@ -19,7 +19,7 @@ IPO 희망공모가 밴드 산정. 독자는 증권사 ECM/IB 실무자와 면�
   명시한 뒤 나머지 작업을 계속할 것.
 - 모든 raw 파일은 같은 이름의 .meta.json 동반: source, endpoint, params(키 제외), fetched_at, as_of, license_note
 - 소스 우선순위: 공식 공시(DART, SEC) > 공공기관(ECOS, FRED, EIA, KRX, KPX) > 보조 라이브러리(pykrx, FDR, yfinance).
-  보조 라이브러리 수치는 공식 소스와 교차검증 결과를 reports/에 기록.
+  보조 라이브러리 수치는 공식 소스와 교차검증 결과를 docs/qa/에 기록.
 - API 키는 .env에서만 로드(python-dotenv). 코드·로그·커밋에 키 출력 금지.
 
 ## Conventions

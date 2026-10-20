@@ -328,39 +328,63 @@ def risk_matrix(points: Sequence[tuple[str, float, float]], c: Mapping, xlabel: 
 # ---------------------------------------------------------------------------
 # 파이프라인 구조도 (A3)
 # ---------------------------------------------------------------------------
-def pipeline(sources: Sequence[dict], stages: Sequence[tuple[str, Sequence[str]]], c: Mapping, lang: str) -> Draw:
+def flow4(steps: Sequence[tuple[str, Sequence[str]]], c: Mapping) -> Draw:
+    """4단계 흐름도 (분석 방법). 마지막 단계는 차콜 박스."""
     def draw(path: Path, w: float, h: float) -> None:
         fig = _fig(w, h)
         ax = fig.add_axes([0, 0, 1, 1])
         ax.set_xlim(0, 100)
         ax.set_ylim(0, 100)
         ax.axis("off")
-        n = len(sources)
-        bh, gap = 86 / n - 2.2, 2.2
-        for i, s in enumerate(sources):
-            y = 96 - (i + 1) * bh - i * gap
-            done = s["ok"]
-            ax.add_patch(FancyBboxPatch((1, y), 27, bh, boxstyle="round,pad=0.3,rounding_size=1",
-                                        fc=c["panel"] if done else "white", ec=c["gold"] if done else c["warm_grey"],
-                                        lw=1.0, ls="-" if done else (0, (3, 2))))
-            ax.text(2.6, y + bh * 0.66, s["org_kr"] if lang == "kr" else s["org_en"], fontsize=FS + 0.6,
-                    fontweight="bold", va="center", color=c["text"] if done else c["warm_grey"])
-            ax.text(2.6, y + bh * 0.28, (s["status_kr"] if lang == "kr" else s["status_en"]), fontsize=FS - 0.4,
-                    va="center", color=c["brown_dark"] if done else c["warm_grey"])
-        xs, sw = [35, 57, 79], 19.5
-        for i, (title, items) in enumerate(stages):
-            ax.add_patch(FancyBboxPatch((xs[i], 18), sw, 64, boxstyle="round,pad=0.4,rounding_size=1.2",
-                                        fc=c["charcoal"] if i == 2 else "white", ec=c["charcoal"], lw=1.1))
-            col = "white" if i == 2 else c["text"]
-            ax.text(xs[i] + 1.6, 78, title, fontsize=FS + 2, fontweight="bold", va="top",
-                    color=c["gold"] if i == 2 else c["brown_dark"])
+        n = len(steps)
+        gap = 4.0
+        bw = (100 - 2 - gap * (n - 1)) / n
+        top, bh = 88, 70
+        for i, (title, items) in enumerate(steps):
+            x = 1 + i * (bw + gap)
+            last = i == n - 1
+            ax.add_patch(FancyBboxPatch((x, top - bh), bw, bh, boxstyle="round,pad=0.4,rounding_size=1.2",
+                                        fc=c["charcoal"] if last else (c["panel"] if i == 0 else "white"),
+                                        ec=c["charcoal"] if last else c["gold"], lw=1.2))
+            ax.text(x + 2, top - 5, title, fontsize=FS + 4.5, fontweight="bold", va="top",
+                    color=c["gold"] if last else c["brown_dark"])
+            ax.plot([x + 2, x + bw - 2], [top - 14, top - 14], color=c["gold"], lw=0.8)
             for k, it in enumerate(items):
-                ax.text(xs[i] + 1.6, 69 - k * 8.4, it, fontsize=FS, va="top", color=col)
-        for x0, x1 in ((29, xs[0] - 0.6), (xs[0] + sw + 0.4, xs[1] - 0.6), (xs[1] + sw + 0.4, xs[2] - 0.6)):
-            ax.add_patch(FancyArrowPatch((x0, 50), (x1, 50), arrowstyle="-|>", mutation_scale=11, color=c["gold"],
-                                         lw=1.3))
+                ax.text(x + 2.4, top - 20 - k * 7.6, it, fontsize=FS + 2.2, va="top",
+                        color="white" if last else c["text"])
+            if i < n - 1:
+                ax.add_patch(FancyArrowPatch((x + bw + 0.4, top - bh / 2), (x + bw + gap - 0.4, top - bh / 2),
+                                             arrowstyle="-|>", mutation_scale=16, color=c["gold"], lw=1.6))
         _save(fig, path)
     return draw
+
+
+def exhibit_png(path: Path, draw: Draw, title: str, legend: Sequence[tuple[str, str]], unit: str, foot: str,
+                c: Mapping, w_pt: float = 720.0, h_pt: float = 400.0, wrap: int = 60) -> Path:
+    """단독 Exhibit 그림 (README용): 제목 · 범례/단위 · 차트 · 출처 각주를 한 PNG로."""
+    import textwrap
+    inner = path.with_name(path.stem + "_inner.png")
+    head, tail = 62.0, 30.0
+    draw(inner, w_pt, h_pt - head - tail)
+    fig = _fig(w_pt, h_pt)
+    fig.patch.set_facecolor("white")
+    fig.text(14 / w_pt, 1 - 12 / h_pt, textwrap.fill(title, wrap), fontsize=FS + 4.4, fontweight="bold",
+             color=c["text"], va="top")
+    fig.add_artist(plt.Line2D([14 / w_pt, 1 - 14 / w_pt], [1 - 40 / h_pt] * 2, color=c["gold"], lw=1.0))
+    x = 14 / w_pt
+    for col, lab in legend:
+        fig.add_artist(Rectangle((x, 1 - 54 / h_pt), 8 / w_pt, 8 / h_pt, color=col, transform=fig.transFigure))
+        fig.text(x + 11 / w_pt, 1 - 50 / h_pt, lab, fontsize=FS + 1, color=c["text"], va="center")
+        x += (len(lab) * 6.2 + 30) / w_pt
+    if unit:
+        fig.text(1 - 14 / w_pt, 1 - 50 / h_pt, unit, fontsize=FS + 1, color=c["note"], va="center", ha="right")
+    ax = fig.add_axes([0, tail / h_pt, 1, (h_pt - head - tail) / h_pt])
+    ax.imshow(plt.imread(inner))
+    ax.axis("off")
+    fig.text(14 / w_pt, 10 / h_pt, foot, fontsize=FS, color=c["note"], va="bottom")
+    _save(fig, path)
+    inner.unlink(missing_ok=True)
+    return path
 
 
 # ---------------------------------------------------------------------------

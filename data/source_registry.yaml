@@ -115,7 +115,7 @@ sources:
     stages: [1]
     usage: "미국 데이터센터 전력소비 추정·전망"
 
-  # ---- 보조 라이브러리 (공식 소스와 교차검증 필수, 결과는 reports/에 기록) ----
+  # ---- 보조 라이브러리 (공식 소스와 교차검증 필수, 결과는 docs/qa/에 기록) ----
   - id: pykrx
     name: "pykrx"
     url: "https://github.com/sharebook-kr/pykrx"

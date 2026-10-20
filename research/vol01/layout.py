@@ -65,6 +65,7 @@ class Cell:
     bullets: list[str] | None = None                          # 패널(음영 박스) 글머리표
     panel_lead: str = ""
     placeholder: tuple[str, str] | None = None                # (사유, 실행 명령)
+    strip: str = ""                                           # 본문 아래 음영 띠 한 줄 (예: 구현 방법)
 
 
 @dataclass
@@ -376,7 +377,9 @@ def draw_cell(c, ctx: Ctx, cell: Cell, x: float, y_top: float, w: float, h: floa
         lines.append(f"{ctx.labels['note']}: {cell.note}")
     fps = [para(s, fn_st) for s in lines]
     fh = sum(p.wrap(w, 1000)[1] for p in fps) + (4 if fps else 0)
-    body_h = y - (y_top - h) - fh - 2
+    sp = para(cell.strip, style(ctx, 9.2, leading=1.35)) if cell.strip else None
+    sh = (sp.wrap(w - 22, 1000)[1] + 14) if sp else 0
+    body_h = y - (y_top - h) - fh - 2 - (sh + 8 if sp else 0)
     if cell.placeholder:
         draw_placeholder(c, ctx, x, y, w, body_h, *cell.placeholder)
     elif cell.chart:
@@ -387,6 +390,13 @@ def draw_cell(c, ctx: Ctx, cell: Cell, x: float, y_top: float, w: float, h: floa
         draw_table(c, ctx, cell.table, x, y, w, body_h)
     elif cell.bullets is not None:
         draw_panel(c, ctx, x, y, w, body_h, cell.panel_lead, cell.bullets)
+    if sp:
+        sy = y - body_h - 8                                   # 띠 위쪽
+        c.setFillColor(hexc(col["panel"]))
+        c.rect(x, sy - sh, w, sh, stroke=0, fill=1)
+        c.setFillColor(hexc(col["gold"]))
+        c.rect(x, sy - sh, 3, sh, stroke=0, fill=1)
+        draw_para(c, sp, x + 14, sy - 7, w - 22)
     fy = y_top - h + fh - 2
     for p in fps:
         fy -= draw_para(c, p, x, fy, w)

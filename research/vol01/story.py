@@ -1,13 +1,14 @@
 """Vol.1 페이지 구성·문구 (국문/영문). 숫자는 모두 data.Facts에서, 서술 방향도 데이터로 결정한다.
 
-판단 문장에는 '(저자 견해)' / '(author's view)'를 붙인다.
+공개용 원칙: 제목에 '(저자 견해)'를 붙이지 않고, 요약 쪽 하단과 뒤표지에 "본문의 판단은 저자 개인의 견해" 한 줄만 둔다.
+내부 파일·설정·실행 명령은 보고서에 쓰지 않는다(만드는 과정은 GitHub에 공개).
 """
 from __future__ import annotations
 
 from typing import Mapping
 
 from . import charts
-from .data import CMD_DART, GROWTH_LABELS, Facts, SumGrowth, Unavailable, growth_kind, ok
+from .data import GROWTH_LABELS, Facts, SumGrowth, Unavailable, growth_kind, ok
 from .layout import BigBox, Cell, Page, TableSpec
 
 COMPANY_COLORS = ("gold", "brown_dark", "brown_mid", "warm_grey")
@@ -42,7 +43,7 @@ class Story:
         return row["company"] if self.kr else row["company_en"]
 
     def view(self) -> str:
-        return self.T(" (저자 견해)", " (author's view)")
+        return ""   # 공개용: 판단 표기는 요약 쪽 하단·뒤표지 한 줄로 대체
 
     def reason(self, u: Unavailable) -> str:
         return u.reason if self.kr or not u.reason_en else u.reason_en
@@ -265,8 +266,8 @@ class Story:
                           [0.58, 0.33, 0.09], ["L", "R", "C"], shade_rows=shade, gold_cells=gold, font_size=8.6,
                           single_line_cols={1})
         left = Cell(title=self.T("핵심 지표", "Key metrics"), src=["iea_ai", "iea_kq", "eia", "krx", "dart"],
-                    table=table, note=self.T("KSJ Research 계산. 각 지표의 정의·계산은 해당 쪽 각주 참조",
-                                             "KSJ Research calculations; see footnotes on each page"))
+                    table=table, note=self.T("KSJ Research 계산. 각 지표의 정의·계산은 해당 쪽 각주 참조. 본문의 판단은 저자 개인의 견해",
+                                             "KSJ Research calculations; see footnotes on each page. Judgements are the author's own"))
         boxes = [self.box_demand(), self.box_ground(), self.box_market()]
         return Page("exec", label="i", title=title, subtitle=" · ".join(sub), cells=[left], boxes=boxes)
 
@@ -345,8 +346,8 @@ class Story:
         names = [self.T("수요", "Demand"), self.T("현장", "Ground truth"), self.T("실적", "Earnings"),
                  self.T("시장", "Market"), self.T("시사점", "Implications")]
         toc = [(n, nm, h.title, h.label) for n, nm, h in zip(["I", "II", "III", "IV", "V"], names, heads)]
-        toc.append(("App.", "Appendix", self.T("A1 예상 질의응답 · A2 데이터 노트(출처·API·기준일·주식수 검산) · A3 What I built · A4 용어",
-                                               "A1 Q&A · A2 Data notes (sources, APIs, dates, share-count check) · A3 What I built · A4 Glossary"),
+        toc.append(("App.", "Appendix", self.T("A1 예상 질의응답 · A2 데이터 노트(출처·데이터셋·기준일·주식수 검산) · A3 분석 방법과 데이터 · A4 용어",
+                                               "A1 Q&A · A2 Data notes (sources, datasets, dates, share-count check) · A3 Methodology · A4 Glossary"),
                     "A1–A4"))
         return Page("toc", label="ii", title=self.T("목차", "Contents"),
                     subtitle=self.T("수요 → 현장 → 실적 → 시장 → 시사점: 각 장의 결론", "Demand → ground → earnings → market → implications: "
@@ -515,8 +516,8 @@ class Story:
         grp = self.group_label(sg_ni, y0, y1)
         excl = self.excl_note(sg_ni, y0, y1)
         missing = fin.missing_years
-        miss_note = self.T(f" FY{', FY'.join(map(str, missing))}A는 수집 후 추가 ({CMD_DART})",
-                           f" FY{', FY'.join(map(str, missing))}A added after collection ({CMD_DART})") if missing else ""
+        miss_note = self.T(f" FY{', FY'.join(map(str, missing))}A는 데이터 수집 후 추가",
+                           f" FY{', FY'.join(map(str, missing))}A to be added") if missing else ""
         dc = self.f.decomp
         if ok(dc):   # p4와 같은 방향: 이익이 시총 증가의 몇 %를 설명하나
             a = dc.agg
@@ -798,8 +799,8 @@ class Story:
                     unit=self.T("배 (로그 축)", "x (log scale)"), chart_key="per",
                     chart=charts.grouped(names, [(self.T("최근 (FY2025A)", "Latest (FY2025A)"), list(val.per["per"]), c["gold"])], c,
                                          lambda x: f"{x:,.1f}", horizontal=True, log=True),
-                    note=self.T(f"PER = 최근 시총 ÷ {val.fy} 지배순이익 (KSJ Research 계산). 로그 축. 2023 초 PER(FY2022A 기준)은 수집 후 표시 ({CMD_DART})",
-                                f"P/E = latest cap ÷ {val.fy} NI (KSJ Research). Log scale. Start-2023 P/E (FY2022A) shown after collection ({CMD_DART})")))
+                    note=self.T(f"PER = 최근 시총 ÷ {val.fy} 지배순이익 (KSJ Research 계산). 로그 축. 2023 초 PER(FY2022A 기준)은 데이터 수집 후 표시",
+                                f"P/E = latest cap ÷ {val.fy} NI (KSJ Research). Log scale. Start-2023 P/E (FY2022A) shown once collected")))
             else:
                 cells.append(self.pending_cell(self.T("PER: 2023 초 vs 최근", "P/E: start-2023 vs latest"), ["krx", "dart"], val))
             cells.append(self.pending_cell(self.T("회사별 분해 결과표 (FY2022A 기준)", "Split by company (FY2022A base)"), ["krx", "dart"], dc,
@@ -849,7 +850,7 @@ class Story:
         ]
         cells = [Cell(title=self.T("세 렌즈로 본 시사점: 데이터 → 판단", "Three lenses: data → judgement"), src=["krx", "dart", "eia", "iea_ai"],
                       table=TableSpec([self.T("렌즈", "Lens"), self.T("데이터가 말하는 것", "What the data says"),
-                                       self.T("시사점 (저자 견해)", "Implication (author's view)")], lens_rows, [0.17, 0.38, 0.45],
+                                       self.T("시사점", "Implication")], lens_rows, [0.17, 0.38, 0.45],
                                       ["L", "L", "L"], shade_rows={0}, font_size=8.2),
                       note=self.T("데이터 열의 숫자는 p1~p4에서 계산한 값", "Figures in the data column come from pages 1–4"))]
         # 리스크 매트릭스
@@ -877,13 +878,13 @@ class Story:
             unit=self.T("정성 1~5", "qualitative 1–5"), chart_key="risk",
             chart=charts.risk_matrix(pts, c, self.T("발생 가능성 →", "Likelihood →"), self.T("영향 →", "Impact →"),
                                      (self.T("낮음", "Low"), self.T("높음", "High"))),
-            note=self.T("근거: " + " · ".join(anchors) + ". 위치는 저자 정성 판단(config ASSUMPTION)",
-                        "Anchors: " + " · ".join(anchors) + ". Positions are the author's judgement (config ASSUMPTION)")))
+            note=self.T("근거: " + " · ".join(anchors) + ". 위치는 저자의 정성 판단",
+                        "Anchors: " + " · ".join(anchors) + ". Positions reflect the author's qualitative judgement")))
         cells.append(Cell(
             title=self.T("Vol.2 예고: 가상 비상장 전력기기 기업의 희망공모가 밴드", "Next in Vol.2: price range for a hypothetical unlisted power-equipment IPO"),
             panel_lead=self.T(q_kr, q_en[:1].upper() + q_en[1:]),
-            bullets=[self.T("가상 기업 Target Co. 설정 — 사업·재무 가정은 모두 ASSUMPTION으로 공개", "Set up Target Co. — every business and financial assumption disclosed"),
-                     self.T("피어 PER·EV/EBITDA 산출: 국내 4사 + 해외 peers(SEC 수집 재개 후)", "Peer P/E and EV/EBITDA: 4 Korean names + overseas peers (after SEC resumes)"),
+            bullets=[self.T("가상 기업 Target Co. 설정 — 사업·재무 가정과 근거를 함께 공개", "Set up a hypothetical Target Co. — assumptions disclosed with their rationale"),
+                     self.T("국내 피어 PER·EV/EBITDA 산출 (해외 피어 비교는 Vol.3에서 다룸)", "Korean peer P/E and EV/EBITDA (overseas peer comparison in Vol.3)"),
                      self.T("적정 시총 → 공모 할인 → 희망공모가 밴드", "Fair value → IPO discount → indicative price range"),
                      self.T("몬테카를로로 밴드 민감도 점검", "Monte Carlo sensitivity of the range")],
             note=self.T("Vol.2 일정·방법은 변경될 수 있음", "Timing and method of Vol.2 may change")))
@@ -893,7 +894,7 @@ class Story:
                      self.T("IEA 수치는 보고서 요약값을 원문 대조해 수기 입력했다", "IEA figures are summary values entered manually and checked against the source"),
                      self.T("시총 구간(2023.1~2026.10)과 실적 구간(FY2022A~FY2025A)은 완전히 일치하지 않는다", "The market window (Jan 2023–Oct 2026) and earnings window (FY2022A–FY2025A) do not match exactly"),
                      self.T("PER은 지배순이익 기준이며 일회성 손익을 조정하지 않았다. 이익이 작은 회사는 PER이 크게 왜곡된다", "P/E uses reported NI without one-off adjustments; thin earnings distort P/E"),
-                     self.T("표본은 국내 4사다. 해외 peers(SEC)는 준비 중이다", "The sample is four Korean names; overseas peers (SEC) are in progress")]
+                     self.T("표본은 국내 4사다. 해외 피어 비교는 Vol.3에서 다룬다", "The sample is four Korean names; overseas peer comparison comes in Vol.3")]
             + ([self.T(f"분해·대표 PER은 기준 이익이 양수인 {self.f.decomp.n_valid}사 기준이다 — " + ", ".join(f"{e['company']}({e['reason']})" for e in self.f.decomp.excluded) + " 제외",
                        f"The split and headline P/E cover the {self.f.decomp.n_valid} names with positive base NI — excluding " + ", ".join(f"{e['company_en']} ({e['reason_en']})" for e in self.f.decomp.excluded))]
                if ok(self.f.decomp) and self.f.decomp.excluded else []),
@@ -1005,40 +1006,54 @@ class Story:
                              f"{self.per_rep()}. {hi['company_en']}'s {self.x(hi['per'], 0)} reflects thin NI ({self.num(hi['ni'])}, KRW 100mn). It depends on earnings durability{self.view()}")
             qa.append([self.T("PER이 높은데 거품인가?", "P/Es are high — is it a bubble?"), ans, "4, 5"])
         qa.append([self.T("이 분석을 어떻게 재현하나?", "How can this be reproduced?"),
-                   self.T("python -m src.data_fetch.fetch_all → python -m research.vol01.fetch_extra → python -m research.vol01.build. 모든 숫자는 코드가 data/ 파일에서 계산한다",
-                          "python -m src.data_fetch.fetch_all → python -m research.vol01.fetch_extra → python -m research.vol01.build. Code computes every figure from data/ files"), "A3"])
+                   self.T(f"전체 코드와 데이터 출처는 GitHub에 공개: {self.cfg['research']['repo_url']}",
+                          f"Full code and data sources are public on GitHub: {self.cfg['research']['repo_url']}"), "A3"])
         cell = Cell(title=self.T(f"예상 질문 {len(qa)}개와 답", f"{len(qa)} expected questions"), src=["iea_ai", "eia", "krx", "dart", "corp"],
                     table=TableSpec([self.T("질문", "Question"), self.T("답", "Answer"), self.T("근거 쪽", "Page")], qa, [0.24, 0.68, 0.08],
                                     ["L", "L", "C"], shade_rows=key, font_size=8.1),
                     note=self.T("답의 숫자는 본문과 같은 계산 결과. 음영 = 데이터 처리 방식 관련 질문", "Numbers match the body; shaded = data-treatment questions"))
         return Page("full", "A1", self.T("예상 질의응답: 숫자로 답한다", "Expected Q&A: answered with numbers"),
-                    self.T("면접·실사에서 나올 질문과 근거 쪽수", "Questions likely in interviews or due diligence, with page references"), [cell], grid="1x1")
+                    self.T("투자검토·실사에서 나올 질문과 근거 쪽수", "Questions likely in investment review or due diligence, with page references"), [cell], grid="1x1")
+
+    # A2 데이터셋 이름 (API 코드명 대신 통계 이름)
+    DATASETS = {
+        "dart": ("단일회사 전체 재무제표 (사업보고서, 연결 우선)", "Single-company full financial statements (annual report, consolidated first)"),
+        "krx": ("유가증권 일별매매정보", "KOSPI daily trading data"),
+        "eia": ("Electricity retail sales (주별·부문별, 연간)", "Electricity retail sales (by state and sector, annual)"),
+        "ecos": ("시장금리(일별), 주요국 통화의 대원화환율", "Market interest rates (daily), KRW exchange rates"),
+        "fred": ("10-Year Treasury Constant Maturity (DGS10), KRW/USD (DEXKOUS)", "10-Year Treasury Constant Maturity (DGS10), KRW/USD (DEXKOUS)"),
+        "iea": ("Energy and AI (2025.4), Key Questions on Energy and AI (2026.4)", "Energy and AI (Apr 2025), Key Questions on Energy and AI (Apr 2026)"),
+    }
+    BUILT_WITH_KR = "구현: AI 코딩 도구(Claude Code)로 데이터 수집·계산·보고서 생성 코드를 작성. 질문 설계, 분석 범위 결정, 숫자 검증은 저자."
+    BUILT_WITH_EN = "Built with an AI coding tool (Claude Code); question design, scope decisions and number verification by the author."
+    PUBLIC_SOURCES = ("dart", "krx", "eia", "ecos", "fred", "iea")   # 해외 피어(SEC)는 Vol.3
 
     def a2(self) -> Page:
         mk = self.f.market
-        rows = [[s["org_kr"] if self.kr else s["org_en"], s["api"] if self.kr else s["api_en"], s["item_kr"] if self.kr else s["item_en"], s["as_of"] or "—",
-                 s["status_kr"] if self.kr else s["status_en"]] for s in self.f.sources]
-        pend = {i for i, s in enumerate(self.f.sources) if not s["ok"]}
-        c1 = Cell(title=self.T("데이터 소스 · API · 기준일 · 상태", "Data sources · APIs · as-of · status"),
-                  table=TableSpec([self.T("소스", "Source"), "API", self.T("항목", "Items"), self.T("기준일", "As of"), self.T("상태", "Status")],
+        srcs = [s for s in self.f.sources if s["id"] in self.PUBLIC_SOURCES]
+        rows = [[s["org_kr"] if self.kr else s["org_en"], self.T(*self.DATASETS[s["id"]]), s["item_kr"] if self.kr else s["item_en"],
+                 s["as_of"] or "—", s["status_kr"] if self.kr else s["status_en"]] for s in srcs]
+        pend = {i for i, s in enumerate(srcs) if not s["ok"]}
+        c1 = Cell(title=self.T("데이터 소스 · 통계 · 기준일", "Data sources · datasets · as-of dates"),
+                  table=TableSpec([self.T("소스", "Source"), self.T("통계", "Dataset"), self.T("항목", "Items"), self.T("기준일", "As of"), self.T("상태", "Status")],
                                   rows, [0.17, 0.36, 0.23, 0.11, 0.13], ["L", "L", "L", "C", "C"], shade_rows=pend,
-                                  brick_cells={(i, 4) for i in pend}, font_size=8.2),
-                  note=self.T(f"기준일 = 각 파일 .meta.json의 as_of(IEA는 원문 대조일). 원자료(data/raw)는 커밋하지 않고 가공본(data/processed)·수기 입력(data/manual)만 커밋. 저장소: {self.cfg['research']['repo_url']}",
-                              f"As-of = as_of in each .meta.json (IEA: verification date). Raw API data (data/raw) is not committed; processed and manual files are. Repo: {self.cfg['research']['repo_url']}"))
+                                  brick_cells={(i, 4) for i in pend}, font_size=8.4),
+                  note=self.T("기준일 = 데이터 수집 기준일(IEA는 원문 대조일). 해외 피어 비교는 Vol.3에서 다룸",
+                              "As-of = data collection date (IEA: date checked against the source). Overseas peer comparison comes in Vol.3"))
         if ok(mk):
             krows, shade, brick = [], set(), set()
             for i, (_, r) in enumerate(mk.table.iterrows()):
                 act = {"split_consistent": self.T(f"{r['action_date']} {r['split_factor']:.0f}:1 액면분할 (주식수 비율 일치)", f"{r['split_factor']:.0f}:1 split {r['action_date']} (ratio matches)"),
-                       "split_mismatch": self.T("분할 기록과 주식수 비율 불일치 — 확인 필요", "Split record and share ratio differ — check"),
+                       "split_mismatch": self.T("분할 비율과 주식수 비율 불일치 — 확인 필요", "Split ratio and share ratio differ — check"),
                        "unchanged": self.T("변동 없음", "No change"),
-                       "changed_unexplained": self.T(f"주식수 {(r['share_ratio'] - 1) * 100:+.2f}% — 기업행위 기록 없음, 공시 확인 필요", f"Shares {(r['share_ratio'] - 1) * 100:+.2f}% — no recorded action; check filings")}[r["share_note"]]
+                       "changed_unexplained": self.T(f"주식수 {(r['share_ratio'] - 1) * 100:+.2f}% — 공시 확인 필요(시총 배수 영향 미미)", f"Shares {(r['share_ratio'] - 1) * 100:+.2f}% — to be checked in filings (negligible effect)")}[r["share_note"]]
                 krows.append([self.name(r), self.num(r["shares_t0"]), self.num(r["shares_t1"]), act, self.x(r["price_multiple_raw"], 2),
                               self.x(r["price_multiple_adj"], 2), self.x(r["multiple"], 2), f"{max(abs(r['mcap_check_t0']), abs(r['mcap_check_t1'])):.2f}%"])
                 if r["share_note"] != "unchanged":
                     shade.add(i)
                 if r["share_note"] in ("split_mismatch", "changed_unexplained"):
                     brick.add((i, 3))
-            c2 = Cell(title=self.T(f"KRX 시총 검산: 각 시점 상장주식수 사용 확인 ({mk.t0} · {mk.t1})", f"KRX market-cap check: listed shares at each date ({mk.t0} · {mk.t1})"),
+            c2 = Cell(title=self.T(f"시총 검산: 각 시점 상장주식수 사용 확인 ({mk.t0} · {mk.t1})", f"Market-cap check: listed shares at each date ({mk.t0} · {mk.t1})"),
                       src=["krx", "corp"],
                       table=TableSpec([self.T("회사", "Company"), self.T(f"상장주식수 {mk.t0}", f"Shares {mk.t0}"), self.T(f"상장주식수 {mk.t1}", f"Shares {mk.t1}"),
                                        self.T("증자·분할", "Corporate action"), self.T("주가 배수(원)", "Price x (raw)"), self.T("분할 조정 주가 배수", "Split-adj. price x"),
@@ -1047,45 +1062,41 @@ class Story:
                                       shade_rows=shade, brick_cells=brick,
                                       gold_cells={(i, 6) for i, (_, r) in enumerate(mk.table.iterrows()) if r["split_factor"] != 1},
                                       font_size=8.0),
-                      note=self.T("시총 = KRX MKTCAP(각 시점 종가 × 그 시점 상장주식수). 검산 오차 = 종가 × 상장주식수 ÷ MKTCAP − 1. 분할 조정 주가 배수 = 주가 배수 × 분할 비율. "
-                                  "주가 차트를 그릴 때는 분할 조정 주가를 쓴다. 기업행위는 data/manual/krx_corporate_actions.csv(저자 검산)에 기록",
-                                  "Cap = KRX MKTCAP (close × listed shares at each date). Check = close × shares ÷ MKTCAP − 1. Split-adjusted price x = price x × split ratio. "
-                                  "Price charts must use split-adjusted prices. Actions are recorded in data/manual/krx_corporate_actions.csv (author's check)"))
+                      note=self.T("시총 = 한국거래소 시가총액(각 시점 종가 × 그 시점 상장주식수). 검산 오차 = 종가 × 상장주식수 ÷ 시가총액 − 1. 분할 조정 주가 배수 = 주가 배수 × 분할 비율. "
+                                  "주가를 비교할 때는 분할 조정 주가를 쓴다. 기업행위는 회사 공시로 확인",
+                                  "Cap = KRX market cap (close × listed shares at each date). Check = close × shares ÷ market cap − 1. Split-adjusted price x = price x × split ratio. "
+                                  "Price comparisons use split-adjusted prices. Corporate actions checked against company filings"))
         else:
-            c2 = self.pending_cell(self.T("KRX 시총 검산", "KRX market-cap check"), ["krx"], mk)
-        return Page("full", "A2", self.T("데이터 노트: 출처·API·기준일, 그리고 KRX 시총 검산", "Data notes: sources, APIs, dates and the KRX market-cap check"),
-                    self.T("SEC는 준비 중 · LS ELECTRIC 액면분할 반영 방법 명시 · 시총은 각 시점 상장주식수 기준",
-                           "SEC in progress · LS ELECTRIC split treatment stated · market cap uses listed shares at each date"),
+            c2 = self.pending_cell(self.T("시총 검산", "Market-cap check"), ["krx"], mk)
+        return Page("full", "A2", self.T("데이터 노트: 출처·통계·기준일, 그리고 시총 검산", "Data notes: sources, datasets, dates and the market-cap check"),
+                    self.T("LS ELECTRIC 액면분할 반영 방법 명시 · 시총은 각 시점 상장주식수 기준 · 해외 피어 비교는 Vol.3",
+                           "LS ELECTRIC split treatment stated · market cap uses listed shares at each date · overseas peers in Vol.3"),
                     [c1, c2], grid="2x1")
 
     def a3(self) -> Page:
         f = self.f
-        n_ok = sum(s["ok"] for s in f.sources if s["id"] != "iea")
-        n_src = sum(1 for s in f.sources if s["id"] != "iea")
-        stages = [(self.T("자동 수집", "Collection"), [self.T("재시도·타임아웃·캐시", "Retries, timeouts, cache"), self.T("요청 속도 제한", "Rate limiting"),
-                                                      self.T("원본마다 .meta.json", ".meta.json per file"), self.T("API 키 마스킹", "API keys masked"),
-                                                      self.T("키 없으면 건너뜀", "Skip if no key")]),
-                  (self.T("검증", "Validation"), [self.T("식별자 (DART·SEC)", "IDs (DART, SEC)"), self.T("시총 = 종가×주식수 검산", "Cap = close × shares"),
-                                                 self.T("기업행위(분할) 대조", "Corporate actions"), self.T("분해식 항등 검산", "Split identity check"),
-                                                 self.T("pytest 단위테스트", "pytest unit tests")]),
-                  (self.T("보고서", "Report"), [self.T("결론형 제목 자동 생성", "Data-driven titles"), self.T("국문·영문 PDF", "KR & EN PDFs"),
-                                              self.T("없는 데이터는 회색 박스", "Gaps shown, not filled"), self.T("명령 한 줄로 재빌드", "One-command rebuild"),
-                                              self.T("판단에 (저자 견해)", "Judgements labelled")])]
-        c1 = Cell(title=self.T(f"공식 출처 {n_src}곳 → 자동 수집 → 검증 → 보고서", f"{n_src} official sources → collection → validation → report"),
-                  src=["ksj"], chart_key="pipeline", chart=charts.pipeline([s for s in f.sources if s["id"] != "iea"], stages, self.c, self.lang),
-                  note=self.T(f"수집 완료 {n_ok}/{n_src}곳 (SEC 준비 중). IEA 보고서 수치는 수기 입력 후 원문 대조", f"{n_ok}/{n_src} collected (SEC in progress). IEA figures entered manually and verified"))
-        c2 = Cell(title=self.T("재현 명령 (로컬)", "Reproduce (local)"),
-                  panel_lead=self.cfg["research"]["repo_url"],
-                  bullets=["pip install -r requirements.txt",
-                           "python -m src.data_fetch.fetch_all --source all --asof " + f.as_of,
-                           "python -m research.vol01.fetch_extra --asof " + f.as_of,
-                           "python -m research.vol01.build",
-                           "pytest -q",
-                           self.T("키는 .env에서만 로드, 원자료(data/raw)는 커밋하지 않음", "Keys only from .env; raw data (data/raw) not committed")],
-                  note=self.T("명령은 저장소 루트에서 실행", "Run from the repository root"))
-        return Page("full", "A3", self.T(f"What I built: 공식 출처 {n_src}곳을 자동 수집·검증해 이 보고서를 만든다", f"What I built: {n_src} official sources, collected and validated automatically into this report"),
-                    self.T("모든 숫자는 코드가 데이터 파일에서 계산한다 — 데이터가 없으면 회색 박스로 남긴다",
-                           "Code computes every number from data files — missing data stays a grey box"), [c1, c2], grid="2x1")
+        names = [s["org_kr"].split(" · ")[0] if self.kr else s["org_en"].split(" · ")[0]
+                 for s in f.sources if s["id"] in self.PUBLIC_SOURCES and s["id"] != "iea"]
+        steps = [
+            (self.T("1. 공식 출처 수집", "1. Official sources"),
+             names + [self.T("IEA 보고서(원문 대조)", "IEA reports (verified)")]),
+            (self.T("2. 검증", "2. Validation"),
+             [self.T("시총 = 종가 × 상장주식수", "Cap = close × listed shares"), self.T("액면분할 대조", "Stock-split check"),
+              self.T("종목 식별자 확인", "Identifier check"), self.T("단위·환율 검산", "Units and FX")]),
+            (self.T("3. 계산", "3. Calculation"),
+             [self.T("지수·CAGR", "Indices, CAGR"), self.T("로그 분해", "Log decomposition"), "Δln(cap) =", "Δln(NI) + Δln(P/E)",
+              self.T("기준 이익 ≤0 제외", "Exclude base NI ≤0")]),
+            (self.T("4. 보고서", "4. Report"),
+             [self.T("결론형 제목", "Conclusion titles"), self.T("국문·영문", "Korean & English"), self.T("출처·기준일 각주", "Sources and dates")]),
+        ]
+        url = self.cfg["research"]["repo_url"]
+        c1 = Cell(title=self.T("공식 출처 수집 → 검증 → 계산 → 보고서", "Official sources → validation → calculation → report"),
+                  src=["ksj"], chart_key="method", chart=charts.flow4(steps, self.c), strip=self.T(self.BUILT_WITH_KR, self.BUILT_WITH_EN),
+                  note=self.T(f"전체 코드·데이터 출처: GitHub {url}", f"Full code and data sources: GitHub {url}"))
+        return Page("full", "A3", self.T("분석 방법과 데이터: 공식 출처를 검증하고 계산해 보고서로", "Methodology: official data, validated and calculated into this report"),
+                    self.T("모든 숫자는 공식 출처 데이터에서 계산했고, 출처와 기준일을 각주에 적었다",
+                           "Every figure is calculated from official-source data, with sources and dates in the footnotes"),
+                    [c1], grid="1x1")
 
     def a4(self) -> Page:
         terms = [
