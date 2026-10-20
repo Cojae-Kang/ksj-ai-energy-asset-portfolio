@@ -21,6 +21,15 @@ Draw = Callable[[Path, float, float], None]
 FS = 7.6           # 기본 글자 크기(pt) — 페이지에서 실제 크기 그대로
 
 
+def label_frac(labels: Sequence[str], w_pt: float, lo: float = 0.14, hi: float = 0.46) -> float:
+    """y축 라벨이 잘리지 않도록 왼쪽 여백 비율을 라벨 실제 폭으로 계산 (한글 1em, 영문 약 0.56em)."""
+    import unicodedata
+    em = FS
+    widest = max((sum(em if unicodedata.east_asian_width(ch) in ("W", "F") else em * 0.56 for ch in str(s)) for s in labels),
+                 default=0)
+    return min(hi, max(lo, (widest + 10) / w_pt))
+
+
 def _fig(w_pt: float, h_pt: float):
     fig = plt.figure(figsize=(w_pt / 72, h_pt / 72))
     return fig
@@ -73,10 +82,11 @@ def bars(labels: Sequence[str], values: Sequence[float], colors: Sequence[str], 
 
 
 def hbars(labels: Sequence[str], values: Sequence[float], colors: Sequence[str], c: Mapping,
-          fmt: Callable[[float], str], left: float = 0.30, log: bool = False) -> Draw:
+          fmt: Callable[[float], str], left: float | None = None, log: bool = False) -> Draw:
     def draw(path: Path, w: float, h: float) -> None:
         fig = _fig(w, h)
-        ax = fig.add_axes([left, 0.06, 0.86 - left, 0.9])
+        lf = left if left is not None else label_frac(labels, w)
+        ax = fig.add_axes([lf, 0.06, 0.86 - lf, 0.9])
         y = range(len(labels))
         ax.barh(list(y), values, color=colors, height=0.56)
         vmax = max(values)
@@ -99,7 +109,7 @@ def hbars(labels: Sequence[str], values: Sequence[float], colors: Sequence[str],
 
 def grouped(cats: Sequence[str], series: Sequence[tuple[str, Sequence[float], str]], c: Mapping,
             fmt: Callable[[float], str], label_series: set[int] | None = None, horizontal: bool = False,
-            extra_labels: Sequence[str] | None = None, left: float = 0.07, log: bool = False,
+            extra_labels: Sequence[str] | None = None, left: float | None = None, log: bool = False,
             zero_line: bool = False) -> Draw:
     """series: [(이름, 값들, 색)]. label_series: 값 라벨을 붙일 시리즈 인덱스(기본: 전부)."""
     def draw(path: Path, w: float, h: float) -> None:
@@ -109,7 +119,8 @@ def grouped(cats: Sequence[str], series: Sequence[tuple[str, Sequence[float], st
         vals = [v for _, vs, _ in series for v in vs if v == v]
         vmax, vmin = max(vals), min(vals + [0])
         if horizontal:
-            ax = fig.add_axes([left, 0.05, 0.93 - left - 0.07, 0.92])
+            lf = left if left is not None else label_frac(cats, w)
+            ax = fig.add_axes([lf, 0.05, 0.86 - lf, 0.92])
             for k, (_, vs, col) in enumerate(series):
                 ys = [i + (k - (n - 1) / 2) * width for i in range(len(cats))]
                 ax.barh(ys, vs, height=width * 0.92, color=col)
@@ -155,6 +166,38 @@ def grouped(cats: Sequence[str], series: Sequence[tuple[str, Sequence[float], st
             if zero_line or vmin < 0:
                 ax.axhline(0, color=c["warm_grey"], lw=0.6)
             _style(ax, c)
+        _save(fig, path)
+    return draw
+
+
+def contrib_bars(names: Sequence[str], earn: Sequence[float], mult: Sequence[float], c: Mapping,
+                 labels: tuple[str, str]) -> Draw:
+    """회사별 이익 기여 vs 멀티플 기여 (% of Δln 시총). 음수 허용, 0 기준선."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        lf = label_frac(names, w)
+        ax = fig.add_axes([lf, 0.06, 0.93 - lf, 0.9])
+        n, hgt = len(names), 0.36
+        vals = list(earn) + list(mult)
+        lo, hi = min(0, min(vals)), max(vals)
+        span = hi - lo
+        for i in range(n):
+            for k, (v, col) in enumerate(((earn[i], c["brown_mid"]), (mult[i], c["gold"]))):
+                y = i + (k - 0.5) * hgt
+                ax.barh(y, v, height=hgt * 0.92, color=col if v >= 0 else c["brick"])
+                ax.text(v + (span * 0.015 if v >= 0 else -span * 0.015), y, f"{v:.0f}%", va="center",
+                        ha="left" if v >= 0 else "right", fontsize=FS + 0.6, fontweight="bold", color=c["text"])
+        ax.axvline(0, color=c["warm_grey"], lw=0.7)
+        ax.axvline(50, color=c["warm_grey_light"], lw=0.6, ls="--")
+        ax.text(50, -0.75, "50%", ha="center", va="bottom", fontsize=FS - 0.6, color=c["note"])
+        ax.set_yticks(range(n))
+        ax.set_yticklabels(names)
+        ax.invert_yaxis()
+        ax.set_ylim(n - 0.4, -0.95)
+        ax.set_xlim(lo - span * 0.12 if lo < 0 else 0, hi + span * 0.16)
+        ax.xaxis.set_major_locator(NullLocator())
+        _style(ax, c)
+        ax.spines["bottom"].set_visible(False)
         _save(fig, path)
     return draw
 

@@ -75,12 +75,20 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
                   f"- 합계 기준 {f.market.total_multiple:.2f}배 · 단순평균 {f.market.mean_multiple:.2f}배 · "
                   f"시작 시총 최대 비중 {f.market.largest_t0['company']} {f.market.largest_t0_share:.1f}%"]
     if data.ok(f.decomp):
-        rows = [{"회사": r_["company"], "Δln 시총": f"{r_.get('dln_mcap', float('nan')):.4f}", "Δln 이익": f"{r_.get('dln_ni', float('nan')):.4f}",
-                 "Δln PER": f"{r_.get('dln_per', float('nan')):.4f}", "이익 기여": f"{r_.get('earn_share', float('nan')):.1%}",
-                 "멀티플 기여": f"{r_.get('mult_share', float('nan')):.1%}"} for _, r_ in f.decomp.table.iterrows()]
+        rows = []
+        for _, r_ in f.decomp.table.iterrows():
+            if r_["valid"]:
+                rows.append({"회사": r_["company"], "Δln 시총": f"{r_['dln_mcap']:.4f}", "Δln 이익": f"{r_['dln_ni']:.4f}",
+                             "Δln PER": f"{r_['dln_per']:.4f}", "이익 기여": f"{r_['earn_share']:.1%}", "멀티플 기여": f"{r_['mult_share']:.1%}",
+                             "PER": f"{r_['per0']:.1f} → {r_['per1']:.1f}"})
+            else:
+                rows.append({"회사": r_["company"], "Δln 시총": f"분해 불가({r_['reason']})", "Δln 이익": "", "Δln PER": "",
+                             "이익 기여": "", "멀티플 기여": "", "PER": ""})
         a = f.decomp.agg
+        excl = "; ".join(f"{e['company']} 제외({e['reason']}, 시작 시총의 {e['share_t0']:.0f}%)" for e in f.decomp.excluded)
         lines += ["", f"## 시총 분해 ({f.decomp.fy0} → {f.decomp.fy1})", "", markdown_table(rows),
-                  f"- 합산: 이익 기여 {a['earn_share']:.1%} · 멀티플 기여 {a['mult_share']:.1%} · PER {a['per0']:.1f} → {a['per1']:.1f}배"]
+                  f"- {f.decomp.n_valid}사 합산: 이익 기여 {a['earn_share']:.1%} · 멀티플 기여 {a['mult_share']:.1%} · "
+                  f"PER {a['per0']:.1f} → {a['per1']:.1f}배" + (f" · {excl}" if excl else "")]
     else:
         lines += ["", "## 시총 분해", "", f"- 생성 보류: {f.decomp.reason} → `{f.decomp.command}`"]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

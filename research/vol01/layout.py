@@ -48,6 +48,8 @@ class TableSpec:
     font_size: float = 8.4
     fill: bool = True                         # 셀 높이에 맞춰 글자·행 간격을 키움
     max_grow: float = 1.32
+    single_line_cols: set[int] = field(default_factory=set)   # 줄바꿈 없이 한 줄로 유지할 열
+    spans: list[tuple[int, int, int]] = field(default_factory=list)  # (본문 행, 시작 열, 끝 열) 병합
 
 
 @dataclass
@@ -181,6 +183,12 @@ def grid_rects(ctx: Ctx, top: float, grid: str) -> list[tuple[float, float, floa
         return [(MX, top, full_w, full_h)]
     if grid == "2x1":
         return [(MX, top, full_w, ch), (MX, top - ch - ROW_GAP, full_w, ch)]
+    if grid == "3-2":   # 위 3칸 + 아래 2칸
+        gap = COL_GAP * 0.75
+        w3 = (full_w - 2 * gap) / 3
+        y2 = top - ch - ROW_GAP
+        return [(MX, top, w3, ch), (MX + w3 + gap, top, w3, ch), (MX + 2 * (w3 + gap), top, w3, ch),
+                (MX, y2, cw, ch), (MX + cw + COL_GAP, y2, cw, ch)]
     if grid == "1x2":
         return [(MX, top, cw, full_h), (MX + cw + COL_GAP, top, cw, full_h)]
     return [(MX, top, cw, ch), (MX + cw + COL_GAP, top, cw, ch),
@@ -194,22 +202,42 @@ def markers(src: list[str]) -> str:
     return ",".join(f"*{i}" for i in range(1, len(src) + 1))
 
 
-def draw_legend(c, ctx: Ctx, x: float, y: float, w: float, legend: list[tuple[str, str]], unit: str) -> None:
-    c.setFont(RL_REGULAR, 7.8)
-    cx = x
-    for color, label in legend:
-        c.setFillColor(hexc(color))
-        c.rect(cx, y - 1, 7, 7, fill=1, stroke=0)
-        c.setFillColor(hexc(ctx.colors["text"]))
-        c.drawString(cx + 10, y, label)
-        cx += 10 + stringWidth(label, RL_REGULAR, 7.8) + 12
+LEGEND_LINE = 11
+
+
+def legend_items(ctx: Ctx, legend: list[tuple[str, str]], unit: str) -> list[tuple[str | None, str, float]]:
+    items = [(color, label, 10 + stringWidth(label, RL_REGULAR, 7.8)) for color, label in legend]
     if unit:
-        c.setFillColor(hexc(ctx.colors["note"]))
         txt = f"{ctx.labels['unit']}: {unit}"
-        if cx > x and cx + stringWidth(txt, RL_REGULAR, 7.8) > x + w:
-            c.drawRightString(x + w, y, txt)
+        items.append((None, txt, stringWidth(txt, RL_REGULAR, 7.8)))
+    return items
+
+
+def legend_lines(ctx: Ctx, w: float, legend: list[tuple[str, str]], unit: str) -> int:
+    lines, cx = 1, 0.0
+    for _, _, iw in legend_items(ctx, legend, unit):
+        if cx > 0 and cx + iw > w:
+            lines, cx = lines + 1, 0.0
+        cx += iw + 12
+    return lines
+
+
+def draw_legend(c, ctx: Ctx, x: float, y: float, w: float, legend: list[tuple[str, str]], unit: str) -> None:
+    """범례·단위를 한 줄에 배치하고, 넘치면 다음 줄로 (겹침 방지)."""
+    c.setFont(RL_REGULAR, 7.8)
+    cx, cy = x, y
+    for color, label, iw in legend_items(ctx, legend, unit):
+        if cx > x and cx + iw > x + w:
+            cx, cy = x, cy - LEGEND_LINE
+        if color is None:
+            c.setFillColor(hexc(ctx.colors["note"]))
+            c.drawString(cx, cy, label)
         else:
-            c.drawString(cx if legend else x, y, txt)
+            c.setFillColor(hexc(color))
+            c.rect(cx, cy - 1, 7, 7, fill=1, stroke=0)
+            c.setFillColor(hexc(ctx.colors["text"]))
+            c.drawString(cx + 10, cy, label)
+        cx += iw + 12
 
 
 def build_table(ctx: Ctx, spec: TableSpec, w: float, size: float, pad: float = 2.6) -> Table:
@@ -235,6 +263,8 @@ def build_table(ctx: Ctx, spec: TableSpec, w: float, size: float, pad: float = 2
             ("LINEBELOW", (0, 1), (-1, -1), 0.3, hexc(col["warm_grey_light"]))]
     for r in spec.shade_rows:
         cmds.append(("BACKGROUND", (0, r + 1), (-1, r + 1), hexc(col["panel"])))
+    for r, c0, c1 in spec.spans:
+        cmds.append(("SPAN", (c0, r + 1), (c1, r + 1)))
     t.setStyle(TableStyle(cmds))
     return t
 
@@ -247,6 +277,16 @@ def _al(spec: TableSpec, i: int) -> int:
 def draw_table(c, ctx: Ctx, spec: TableSpec, x: float, y_top: float, w: float, h: float) -> None:
     """셀 높이에 맞춤: 넘치면 글자를 줄이고, 남으면 글자(최대 max_grow배) → 행 간격 순으로 키운다."""
     size, pad = spec.font_size, 2.6
+    # 한 줄 유지 열: 가장 긴 값이 열 폭(좌우 여백 8pt 제외)에 들어가는 글자 크기 상한
+    cap = 99.0
+    for j in spec.single_line_cols:
+        cw = spec.widths[j] * w - 8.5
+        for r, row in enumerate(spec.rows):
+            bold = r in spec.bold_rows or (r, j) in spec.gold_cells or (r, j) in spec.strong_cells
+            unit_w = stringWidth(str(row[j]), RL_BOLD if bold else RL_REGULAR, 1)
+            if unit_w:
+                cap = min(cap, cw / unit_w)
+    size = min(size, cap)
     t = build_table(ctx, spec, w, size, pad)
     _, th = t.wrap(w, h)
     while th > h and size > 6.0:
@@ -254,7 +294,7 @@ def draw_table(c, ctx: Ctx, spec: TableSpec, x: float, y_top: float, w: float, h
         t = build_table(ctx, spec, w, size, pad)
         _, th = t.wrap(w, h)
     if spec.fill and th < h * 0.9:
-        while size + 0.3 <= spec.font_size * spec.max_grow:
+        while size + 0.3 <= min(spec.font_size * spec.max_grow, cap):
             t2 = build_table(ctx, spec, w, size + 0.3, pad)
             _, th2 = t2.wrap(w, h)
             if th2 > h * 0.9:
@@ -323,10 +363,10 @@ def draw_cell(c, ctx: Ctx, cell: Cell, x: float, y_top: float, w: float, h: floa
     if cell.title:
         mk = markers(cell.src)
         t = escape(cell.title) + (f' <font color="{col["gold"]}" size="8"><super>{mk}</super></font>' if mk else "")
-        y -= draw_para(c, Paragraph(t, style(ctx, 11.2, bold=True, leading=1.28)), x, y, w) + 4
+        y -= draw_para(c, Paragraph(t, style(ctx, 11.2 if w > 330 else 10.2, bold=True, leading=1.28)), x, y, w) + 4
     if cell.legend or cell.unit:
         draw_legend(c, ctx, x, y - 8, w, cell.legend, cell.unit)
-        y -= 15
+        y -= 15 + LEGEND_LINE * (legend_lines(ctx, w, cell.legend, cell.unit) - 1)
     # 각주 두 줄 (높이 먼저 측정)
     fn_st = style(ctx, 6.9, color="note", leading=1.3)
     lines = []

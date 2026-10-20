@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Mapping
 
 from . import charts
-from .data import CMD_DART, Facts, Unavailable, ok
+from .data import CMD_DART, GROWTH_LABELS, Facts, SumGrowth, Unavailable, growth_kind, ok
 from .layout import BigBox, Cell, Page, TableSpec
 
 COMPANY_COLORS = ("gold", "brown_dark", "brown_mid", "warm_grey")
@@ -102,6 +102,37 @@ class Story:
         g = self.f.val.ni_growth.dropna(subset=["ni_multiple"])
         return int((g["mcap_multiple"] > g["ni_multiple"]).sum()), len(g)
 
+    # --- 기준값 0 이하 처리 -------------------------------------------------
+    def ename(self, e: dict) -> str:
+        return e["company"] if self.kr else e["company_en"]
+
+    def num_or_dash(self, v: float | None) -> str:
+        return "—" if v is None else self.num(v)
+
+    def gx(self, v0: float | None, v1: float | None) -> str:
+        """배수 또는 라벨(흑자전환·적자전환·적자 지속). 음수 배수는 절대 만들지 않는다."""
+        kind = growth_kind(v0, v1)
+        if kind == "multiple":
+            return self.x(v1 / v0)
+        kr, en = GROWTH_LABELS[kind]
+        return self.T(kr, en)
+
+    def loss_reason(self, e: dict, y0: int, y1: int) -> tuple[str, str]:
+        return {"turned_profit": (f"FY{y0} 지배순손실", f"FY{y0} net loss"),
+                "turned_loss": (f"FY{y1} 지배순손실", f"FY{y1} net loss"),
+                "loss_both": (f"FY{y0}·FY{y1} 지배순손실", f"FY{y0} and FY{y1} net loss"),
+                "missing": ("데이터 없음", "data missing")}[e["kind"]]
+
+    def excl_note(self, sg: SumGrowth, y0: int, y1: int) -> str:
+        """'두산에너빌리티 제외: FY2022 지배순손실' (제외 없으면 빈 문자열)."""
+        parts = [f"{self.ename(e)} {self.T('제외', 'excluded')}: {self.T(*self.loss_reason(e, y0, y1))}" for e in sg.excluded]
+        return "; ".join(parts)
+
+    def group_label(self, sg: SumGrowth, y0: int, y1: int) -> str:
+        """'3사(두산에너빌리티 제외: FY2022 지배순손실)' 또는 '4사'."""
+        ex = self.excl_note(sg, y0, y1)
+        return self.T(f"{sg.n}사" + (f"({ex})" if ex else ""), f"{sg.n} names" + (f" ({ex})" if ex else ""))
+
     def fin_sum(self, fy: int, col: str) -> float:
         t = self.f.fin.table
         return float(t[t["fy"] == fy][col].sum())
@@ -141,23 +172,47 @@ class Story:
         ]
         return Page("back", title="Disclosures", extra={"items": items, "repo": self.cfg["research"]["repo_url"]})
 
+    # --- 대표 PER ---------------------------------------------------------------
+    def per_rep(self) -> str | None:
+        """본문 대표 PER: 분해 가능하면 'n사 합산 PER 13.5배 → 40.1배', 아니면 현재 PER(가용 데이터)."""
+        dc, val = self.f.decomp, self.f.val
+        if ok(dc):
+            a = dc.agg
+            return self.T(f"{self.dc_short()} 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])}",
+                          f"aggregate P/E of {self.dc_short()} {self.x(a['per0'])} → {self.x(a['per1'])}")
+        if ok(val):
+            return self.T(f"현재 PER 합산 {self.x(val.agg_per)} · 중앙값 {self.x(val.median_per)} ({val.fy})",
+                          f"current P/E aggregate {self.x(val.agg_per)} · median {self.x(val.median_per)} ({val.fy})")
+        return None
+
+    def per4_footnote(self) -> str:
+        """p4 각주 전용: '두산 포함 4사 합산 64.2배(두산 503배: FY2025A 지배순이익 848억원의 분모 왜곡)'."""
+        val = self.f.val
+        if not ok(val):
+            return ""
+        hi = val.per.sort_values("per", ascending=False).iloc[0]
+        return self.T(f"{hi['company']} 포함 4사 합산 {self.x(val.agg_per)}({hi['company']} {self.x(hi['per'], 0)}: {val.fy} 지배순이익 {self.num(hi['ni'])}억원의 분모 왜곡)",
+                      f"Including {hi['company_en']}, 4-name aggregate {self.x(val.agg_per)} ({hi['company_en']} {self.x(hi['per'], 0)}: denominator distortion from {val.fy} NI of {self.num(hi['ni'])}, KRW 100mn)")
+
     # --- Executive Summary --------------------------------------------------
     def executive(self) -> Page:
         f, d, g, mk, dc, val = self.f, self.f.demand, self.f.ground, self.f.market, self.f.decomp, self.f.val
         led = self.multiple_led()
-        # 제목: 데이터로 결정
-        parts = []
-        parts.append(self.T("수요는 진짜이고", "Demand is real") if ok(d) else self.T("수요 데이터 확인 중", "Demand data pending"))
+        parts = [self.T("수요는 진짜이고", "Demand is real") if ok(d) else self.T("수요 데이터 확인 중", "Demand data pending")]
         if ok(g):
             parts.append({"ahead": self.T("현장에서도 보인다", "it shows up on the ground"),
                           "behind": self.T("현장 데이터는 엇갈린다", "ground data is mixed"),
                           "similar": self.T("현장 차이는 아직 작다", "the ground gap is still small")}[g.verdict])
         if ok(mk) and led is not None:
-            parts.append(self.T("시장은 이미 알고 있고 이익보다 멀티플이 앞서 달렸다" if led else
-                                "시장은 반영했고 이익이 이를 뒷받침한다",
-                                "the market already knows, and multiples ran ahead of earnings" if led else
-                                "the market has priced it, backed by earnings"))
-        title = self.T(" ".join([parts[0], parts[1] if len(parts) > 1 else ""]).strip() + (" — " + parts[2] if len(parts) > 2 else ""),
+            if ok(dc):
+                parts.append(self.T("시장은 이미 알고 있고 이익보다 멀티플이 앞서 달렸다" if led else
+                                    f"시장 상승은 이익이 이끌었지만 PER도 {self.x(dc.agg['per0'])}에서 {self.x(dc.agg['per1'])}로 올랐다",
+                                    "the market already knows, and multiples ran ahead of earnings" if led else
+                                    f"earnings led the market, but P/E also rose from {self.x(dc.agg['per0'])} to {self.x(dc.agg['per1'])}"))
+            else:
+                parts.append(self.T("시장은 이미 알고 있고 이익보다 멀티플이 앞서 달렸다" if led else "시장은 반영했고 이익이 이를 뒷받침한다",
+                                    "the market already knows, and multiples ran ahead of earnings" if led else "the market has priced it, backed by earnings"))
+        title = self.T(" ".join(parts[:2]) + (" — " + parts[2] if len(parts) > 2 else ""),
                        ", ".join(parts[:2]) + (" — " + parts[2] if len(parts) > 2 else "")) + (self.view() if len(parts) > 2 else "")
         sub = []
         if ok(d):
@@ -168,7 +223,7 @@ class Story:
                               f"Virginia commercial sales {self.pct(g.va_change_pct)} vs U.S. {self.pct(g.us_change_pct)}"))
         if ok(mk):
             sub.append(self.T(f"4사 시총 {self.market_basis()}", f"4 names' market cap {self.market_basis()}"))
-        # 왼쪽: 핵심 지표표
+        # 왼쪽: 핵심 지표표 — 지표명은 넓게, 값은 한 줄
         rows, shade, gold = [], set(), set()
 
         def add(label, value, page, key=False):
@@ -177,42 +232,38 @@ class Story:
                 gold.add((len(rows), 1))
             rows.append([label, value, page])
         if ok(d):
-            add(self.T("2030E 데이터센터 전력 소비", "2030E data-centre power use"),
-                self.T(f"{self.num(d.v['dc_2030'])} TWh (2024년의 {self.x(d.mult_2030)})",
-                       f"{self.num(d.v['dc_2030'])} TWh ({self.x(d.mult_2030)} 2024)"), "1", key=True)
-            add(self.T("2035E 전망 범위", "2035E outlook range"),
-                f"{self.num(d.v['dc_2035_low'])}~{self.num(d.v['dc_2035_high'])} TWh", "1")
-            add(self.T("2025 증가율: AI DC / DC / 전 세계", "2025 growth: AI DC / DC / world"),
-                f"{self.pct(d.v['growth_ai'])} / {self.pct(d.v['growth_dc'])} / {self.pct(d.v['growth_global'])}", "1")
+            add(self.T("2030E 데이터센터 전력", "2030E data-centre power"),
+                self.T(f"{self.num(d.v['dc_2030'])} TWh ({self.x(d.mult_2030)})", f"{self.num(d.v['dc_2030'])} TWh ({self.x(d.mult_2030)})"), "1", key=True)
+            add(self.T("2035E 전망 범위", "2035E outlook range"), f"{self.num(d.v['dc_2035_low'])}~{self.num(d.v['dc_2035_high'])} TWh", "1")
+            add(self.T("2025 증가율: AI DC · DC · 세계", "2025 growth: AI DC · DC · world"),
+                f"{self.pct(d.v['growth_ai'])} · {self.pct(d.v['growth_dc'])} · {self.pct(d.v['growth_global'])}", "1")
         if ok(g):
-            add(self.T(f"버지니아 상업용 판매 지수 {g.last_year} ({g.base_year}=100)",
-                       f"Virginia commercial sales index {g.last_year} ({g.base_year}=100)"),
-                self.T(f"{100 + g.va_change_pct:.0f} vs 미국 {100 + g.us_change_pct:.0f}",
-                       f"{100 + g.va_change_pct:.0f} vs U.S. {100 + g.us_change_pct:.0f}"), "2", key=True)
+            add(self.T(f"버지니아 상업용 지수 ({g.last_year})", f"Virginia commercial index ({g.last_year})"),
+                self.T(f"{100 + g.va_change_pct:.0f} vs 미국 {100 + g.us_change_pct:.0f}", f"{100 + g.va_change_pct:.0f} vs U.S. {100 + g.us_change_pct:.0f}"), "2", key=True)
         if ok(mk):
-            add(self.T("4사 시총 변화 (합계 기준)", "4 names' market cap (combined)"),
-                f"{self.x(mk.total_multiple)}  ({mk.t0} → {mk.t1})", "4", key=True)
-            add(self.T("4사 시총 변화 (단순평균 / 범위)", "4 names' market cap (simple avg / range)"),
+            add(self.T(f"4사 시총 합계 ({mk.t0[:7]}→{mk.t1[:7]})", f"4 names' combined cap ({mk.t0[:7]}→{mk.t1[:7]})"),
+                self.x(mk.total_multiple), "4", key=True)
+            add(self.T("4사 시총 단순평균 / 범위", "Simple average / range"),
                 f"{self.x(mk.mean_multiple)} / {self.x(mk.bottom['multiple'])}~{self.x(mk.top['multiple'])}", "4")
         if ok(dc):
-            add(self.T(f"이익 기여 vs 멀티플 기여 ({dc.fy0}→{dc.fy1})", f"Earnings vs multiple ({dc.fy0}→{dc.fy1})"),
-                f"{self.share(dc.agg['earn_share'])} vs {self.share(dc.agg['mult_share'])}", "4", key=True)
+            a = dc.agg
+            add(self.T(f"{dc.n_valid}사 이익 · 멀티플 기여", f"{dc.n_valid}-name earnings · multiple share"),
+                f"{self.share(a['earn_share'])} · {self.share(a['mult_share'])}", "4", key=True)
+            add(self.T(f"{dc.n_valid}사 합산 PER (2023 초→최근)", f"{dc.n_valid}-name P/E (start-2023→latest)"),
+                f"{a['per0']:.1f} → {self.x(a['per1'])}", "4", key=True)
         elif ok(val):
             n, tot = self.n_mcap_beats_ni()
-            add(self.T(f"이익 vs 시총 (가용: {val.growth_from}→{val.fy})", f"Earnings vs mkt cap (avail.: {val.growth_from}→{val.fy})"),
-                self.T(f"{tot}사 중 {n}곳 시총 배수 > 지배순이익 배수", f"{n} of {tot}: mkt-cap x > NI x"), "3·4", key=True)
-            add(self.T("이익·멀티플 기여 (FY2022A 기준)", "Earnings vs multiple (FY2022A base)"),
-                self.T("FY2022 수집 후 산출", "after FY2022 collection"), "4")
-        if ok(val):
-            add(self.T(f"현재 PER ({val.fy} 지배순이익)", f"Current P/E ({val.fy} NI to parent)"),
-                self.T(f"합산 {self.x(val.agg_per)} · 중앙값 {self.x(val.median_per)}",
-                       f"aggregate {self.x(val.agg_per)} · median {self.x(val.median_per)}"), "4")
+            add(self.T(f"시총 배수 > 이익 배수 ({val.growth_from}→{val.fy})", f"Cap x > NI x ({val.growth_from}→{val.fy})"),
+                self.T(f"{tot}사 중 {n}곳", f"{n} of {tot}"), "3·4", key=True)
+            add(self.T("이익 · 멀티플 기여 (FY2022A 기준)", "Earnings · multiple (FY2022A base)"), self.T("FY2022 수집 후", "after FY2022"), "4")
+            add(self.T(f"현재 PER ({val.fy})", f"Current P/E ({val.fy})"),
+                self.T(f"합산 {self.x(val.agg_per)} · 중앙값 {self.x(val.median_per)}", f"agg. {self.x(val.agg_per)} · median {self.x(val.median_per)}"), "4")
         r = f.rates
         if ok(r) and r.ktb10_t0 is not None:
-            add(self.T("국고채 10년 (2023 초 → 최근)", "KTB 10y (start-2023 → latest)"),
-                f"{r.ktb10_t0:.2f}% → {r.ktb10_t1:.2f}%", "5")
+            add(self.T("국고채 10년 (2023 초→최근)", "KTB 10y (start-2023→latest)"), f"{r.ktb10_t0:.2f} → {r.ktb10_t1:.2f}%", "5")
         table = TableSpec([self.T("핵심 지표", "Key metric"), self.T("값", "Value"), self.T("쪽", "Page")], rows,
-                          [0.47, 0.43, 0.10], ["L", "R", "C"], shade_rows=shade, gold_cells=gold, font_size=8.6)
+                          [0.58, 0.33, 0.09], ["L", "R", "C"], shade_rows=shade, gold_cells=gold, font_size=8.6,
+                          single_line_cols={1})
         left = Cell(title=self.T("핵심 지표", "Key metrics"), src=["iea_ai", "iea_kq", "eia", "krx", "dart"],
                     table=table, note=self.T("KSJ Research 계산. 각 지표의 정의·계산은 해당 쪽 각주 참조",
                                              "KSJ Research calculations; see footnotes on each page"))
@@ -239,8 +290,8 @@ class Story:
         g, s = self.f.ground, self.f.sectors
         if not ok(g):
             return BigBox("—", self.reason(g), self.T("현장: 데이터 확인 중", "Ground: data pending"), [g.command])
-        title = {"ahead": self.T(f"현장에서도 보인다 — 미국 전체({self.pct(g.us_change_pct)})를 {g.gap_pts:.0f}p 앞섰다",
-                                 f"It shows up on the ground — {g.gap_pts:.0f} pts ahead of the U.S. ({self.pct(g.us_change_pct)})"),
+        title = {"ahead": self.T(f"현장에서도 보인다 — 미국 전체({self.pct(g.us_change_pct)})를 지수 {g.gap_pts:.0f}포인트 앞섰다",
+                                 f"It shows up on the ground — {g.gap_pts:.0f} index points ahead of the U.S. ({self.pct(g.us_change_pct)})"),
                  "behind": self.T(f"현장 데이터는 엇갈린다 — 미국 전체({self.pct(g.us_change_pct)})보다 느렸다",
                                   f"Ground data is mixed — behind the U.S. ({self.pct(g.us_change_pct)})"),
                  "similar": self.T(f"현장 차이는 아직 작다 — 미국 전체 {self.pct(g.us_change_pct)}",
@@ -261,30 +312,29 @@ class Story:
         if not ok(mk):
             return BigBox("—", self.reason(mk), self.T("시장: 데이터 확인 중", "Market: data pending"), [mk.command])
         led = self.multiple_led()
+        big = mk.largest_t0
+        bl = [self.T(f"단순평균 {self.x(mk.mean_multiple)} — 시작 시총의 {mk.largest_t0_share:.0f}%인 {self.name(big)}({self.x(big['multiple'])})가 합계를 낮춤",
+                     f"Simple average {self.x(mk.mean_multiple)} — {self.name(big)} ({self.x(big['multiple'])}), {mk.largest_t0_share:.0f}% of starting cap, drags the total")]
         if ok(dc):
-            title = self.T(f"시장은 이미 알고 있다 — 시총 증가의 {self.share(dc.agg['mult_share'])}가 멀티플 확대{self.view()}"
-                           if led else f"이익이 시총 증가의 {self.share(dc.agg['earn_share'])}를 설명한다{self.view()}",
-                           f"The market already knows — {self.share(dc.agg['mult_share'])} of the gain is multiple expansion{self.view()}"
-                           if led else f"Earnings explain {self.share(dc.agg['earn_share'])} of the gain{self.view()}")
+            a, g = dc.agg, self.dc_short()
+            title = (self.T(f"시장은 이미 알고 있다 — {g} 시총 증가의 {self.share(a['mult_share'])}가 멀티플 확대", f"The market already knows — {self.share(a['mult_share'])} of the gain for {g} is multiple expansion")
+                     if led else
+                     self.T(f"이익이 이끌었다 — {g} 시총 증가의 {self.share(a['earn_share'])}가 이익 증가", f"Earnings led — {self.share(a['earn_share'])} of the gain for {g} is earnings growth")) + self.view()
+            bl.append(self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])} (2023 초 ↔ {dc.fy0}, 최근 ↔ {dc.fy1})",
+                             f"{dc.n_valid}-name aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])} (start-2023 ↔ {dc.fy0}, latest ↔ {dc.fy1})"))
+            bl.append(self.contrib_sentence())
         else:
-            n, tot = self.n_mcap_beats_ni()
+            n, tot = self.n_mcap_beats_ni() if ok(val) else (0, 0)
             title = self.T(f"시장은 이미 알고 있다 — {tot}사 중 {n}곳은 시총이 이익보다 빠르게 늘었다{self.view()}"
                            if led else f"시장은 반영했지만 이익도 따라왔다{self.view()}",
                            f"The market already knows — for {n} of {tot}, market cap outgrew earnings{self.view()}"
                            if led else f"Priced in, but earnings kept pace{self.view()}")
-        big = mk.largest_t0
-        bl = [self.T(f"단순평균 {self.x(mk.mean_multiple)} — 시작 시총의 {mk.largest_t0_share:.0f}%인 {self.name(big)}({self.x(big['multiple'])})가 합계를 낮춤",
-                     f"Simple average {self.x(mk.mean_multiple)} — {self.name(big)} ({self.x(big['multiple'])}), {mk.largest_t0_share:.0f}% of starting cap, drags the total")]
-        if ok(val):
-            bl.append(self.T(f"현재 PER 합산 {self.x(val.agg_per)}, 중앙값 {self.x(val.median_per)} (최근 시총 ÷ {val.fy} 지배순이익)",
-                             f"Current P/E aggregate {self.x(val.agg_per)}, median {self.x(val.median_per)} (latest cap ÷ {val.fy} NI)"))
-        if ok(dc):
-            bl.append(self.T(f"이익 기여 {self.share(dc.agg['earn_share'])} vs 멀티플 기여 {self.share(dc.agg['mult_share'])} ({dc.fy0}→{dc.fy1}, 로그 분해)",
-                             f"Earnings {self.share(dc.agg['earn_share'])} vs multiple {self.share(dc.agg['mult_share'])} ({dc.fy0}→{dc.fy1}, log split)"))
-        elif ok(val):
-            ni0, ni1 = self.fin_sum(int(val.growth_from[2:6]), "ni"), self.fin_sum(int(val.fy[2:6]), "ni")
-            bl.append(self.T(f"4사 지배순이익 {val.growth_from}→{val.fy} {self.x(ni1 / ni0)} vs 시총 {self.x(mk.total_multiple)} — FY2022 기준 분해는 수집 후",
-                             f"4 names' NI {val.growth_from}→{val.fy} {self.x(ni1 / ni0)} vs cap {self.x(mk.total_multiple)}; FY2022-based split after collection"))
+            if ok(val):
+                bl.append(self.T(f"현재 PER 합산 {self.x(val.agg_per)}, 중앙값 {self.x(val.median_per)} (최근 시총 ÷ {val.fy} 지배순이익)",
+                                 f"Current P/E aggregate {self.x(val.agg_per)}, median {self.x(val.median_per)} (latest cap ÷ {val.fy} NI)"))
+                sg = self.f.fin.sum_growth("ni", int(val.growth_from[2:6]), int(val.fy[2:6]))
+                bl.append(self.T(f"{self.group_label(sg, int(val.growth_from[2:6]), int(val.fy[2:6]))} 지배순이익 {val.growth_from}→{val.fy} {self.x(sg.multiple)} vs 시총 {self.x(mk.total_multiple)} — FY2022 기준 분해는 수집 후",
+                                 f"NI of {self.group_label(sg, int(val.growth_from[2:6]), int(val.fy[2:6]))} {val.growth_from}→{val.fy} {self.x(sg.multiple)} vs cap {self.x(mk.total_multiple)}; FY2022-based split after collection"))
         return BigBox(self.x(mk.total_multiple), self.T(f"4사 시총 합계 기준, {mk.t0}→{mk.t1} (회사별 {self.x(mk.bottom['multiple'])}~{self.x(mk.top['multiple'])})",
                                                         f"4 names, combined cap, {mk.t0}→{mk.t1} (range {self.x(mk.bottom['multiple'])}–{self.x(mk.top['multiple'])})"),
                       title, bl)
@@ -348,7 +398,7 @@ class Story:
                  chart=charts.hbars([self.T("미국", "U.S."), self.T("중국", "China"), self.T("유럽", "Europe"), self.T("기타", "Other")],
                                     [v["region_us"], v["region_cn"], v["region_eu"], d.region_other],
                                     [c["gold"], c["brown_mid"], c["brown_mid"], c["warm_grey_light"]], c,
-                                    lambda x: f"{x:.0f}%", left=0.16),
+                                    lambda x: f"{x:.0f}%"),
                  note=self.T(f"기타 = 100 − 미국·중국·유럽 (KSJ Research 계산). 데이터센터 전력 2017~2024년 연 {v['cagr_17_24']:.0f}% 증가, "
                              f"2024년 세계 전력의 {v['share_2024']:.1f}%",
                              f"Other = 100 − U.S., China, Europe (KSJ Research). Data-centre power grew {v['cagr_17_24']:.0f}%/yr in "
@@ -372,8 +422,8 @@ class Story:
         g, s, c = self.f.ground, self.f.sectors, self.c
         cells = []
         if ok(g):
-            title = {"ahead": self.T(f"현장에서도 보인다: 버지니아 상업용 전력 판매 {g.base_year}년 대비 {self.pct(g.va_change_pct)}, 미국 전체({self.pct(g.us_change_pct)})를 {g.gap_pts:.0f}p 앞섰다",
-                                     f"It shows up on the ground: Virginia commercial sales {self.pct(g.va_change_pct)} since {g.base_year}, {g.gap_pts:.0f} pts ahead of the U.S. ({self.pct(g.us_change_pct)})"),
+            title = {"ahead": self.T(f"현장에서도 보인다: 버지니아 상업용 전력 판매 {g.base_year}년 대비 {self.pct(g.va_change_pct)}, 미국 전체({self.pct(g.us_change_pct)})를 지수 {g.gap_pts:.0f}포인트 앞섰다",
+                                     f"It shows up on the ground: Virginia commercial sales {self.pct(g.va_change_pct)} since {g.base_year}, {g.gap_pts:.0f} index points ahead of the U.S. ({self.pct(g.us_change_pct)})"),
                      "behind": self.T(f"현장 데이터는 엇갈린다: 버지니아 상업용 판매({self.pct(g.va_change_pct)})가 미국({self.pct(g.us_change_pct)})보다 느렸다",
                                       f"Ground data is mixed: Virginia commercial sales ({self.pct(g.va_change_pct)}) lagged the U.S. ({self.pct(g.us_change_pct)})"),
                      "similar": self.T(f"현장 차이는 아직 작다: 버지니아 {self.pct(g.va_change_pct)} vs 미국 {self.pct(g.us_change_pct)}",
@@ -385,8 +435,8 @@ class Story:
                               f" — U.S. commercial prices rose {self.pct(s.change_pct('price', 'COM'))}")
             yrs = list(g.index["period"])
             cells.append(Cell(
-                title=self.T(f"버지니아 상업용 판매 {self.pct(g.va_change_pct)} vs 미국 {self.pct(g.us_change_pct)} — {g.last_year}년 지수 차이 {g.gap_pts:.0f}p",
-                             f"Virginia commercial sales {self.pct(g.va_change_pct)} vs U.S. {self.pct(g.us_change_pct)} — {g.gap_pts:.0f}-pt gap in {g.last_year}"),
+                title=self.T(f"버지니아 상업용 판매 {self.pct(g.va_change_pct)} vs 미국 {self.pct(g.us_change_pct)} — {g.last_year}년 지수 차이 {g.gap_pts:.0f}포인트",
+                             f"Virginia commercial sales {self.pct(g.va_change_pct)} vs U.S. {self.pct(g.us_change_pct)} — {g.gap_pts:.0f}-index-point gap in {g.last_year}"),
                 src=["eia"], legend=[(c["gold"], self.T("버지니아", "Virginia")), (c["warm_grey"], self.T("미국 전체", "U.S. total"))],
                 unit=self.T(f"지수 ({g.base_year}=100)", f"Index ({g.base_year}=100)"), chart_key="va_us",
                 chart=charts.lines(yrs, [(self.T("버지니아", "VA"), list(g.index["VA"]), c["gold"], 2.2),
@@ -431,7 +481,7 @@ class Story:
                 cells.append(self.pending_cell(t, ["eia"], s))
         if ok(g):
             y = g.yoy[g.yoy["period"] >= g.last_year - 7].reset_index(drop=True)
-            rows = [[str(int(r["period"])), self.pct(r["VA"], 1), self.pct(r["US"], 1), f"{r['VA'] - r['US']:+.1f}p"]
+            rows = [[str(int(r["period"])), self.pct(r["VA"], 1), self.pct(r["US"], 1), f"{r['VA'] - r['US']:+.1f}%p"]
                     for _, r in y.iterrows()]
             n = len(rows)
             best = int((y["VA"] - y["US"]).idxmax())
@@ -459,34 +509,44 @@ class Story:
                         [self.pending_cell(self.T("실적", "Earnings"), ["dart"], fin)] * 4)
         t, yrs = fin.table, fin.years
         y0, y1 = yrs[0], yrs[-1]
-        peers = list(dict.fromkeys(t["ticker"]))
+        peers = fin.tickers()
         nm = {r["ticker"]: self.name(r) for _, r in t.iterrows()}
-        rev0, rev1 = self.fin_sum(y0, "revenue"), self.fin_sum(y1, "revenue")
-        op0, op1 = self.fin_sum(y0, "op"), self.fin_sum(y1, "op")
-        ni0, ni1 = self.fin_sum(y0, "ni"), self.fin_sum(y1, "ni")
+        sg_rev, sg_op, sg_ni = (fin.sum_growth(col, y0, y1) for col in ("revenue", "op", "ni"))
+        grp = self.group_label(sg_ni, y0, y1)
+        excl = self.excl_note(sg_ni, y0, y1)
         missing = fin.missing_years
         miss_note = self.T(f" FY{', FY'.join(map(str, missing))}A는 수집 후 추가 ({CMD_DART})",
                            f" FY{', FY'.join(map(str, missing))}A added after collection ({CMD_DART})") if missing else ""
-        slower = ok(mk) and ni1 / ni0 < mk.total_multiple
-        title = self.T(f"실적도 늘었다: 4사 지배순이익 합계 FY{y0}A→FY{y1}A {self.x(ni1 / ni0)}"
-                       + (f" — 다만 시총({self.x(mk.total_multiple)})보다 느렸다" if slower else ""),
-                       f"Earnings grew too: 4 names' NI to parent {self.x(ni1 / ni0)} from FY{y0}A to FY{y1}A"
-                       + (f" — but slower than market cap ({self.x(mk.total_multiple)})" if slower else ""))
-        sub = self.T(f"4사 합계 매출 {self.pct((rev1 / rev0 - 1) * 100)}, 영업이익 {self.pct((op1 / op0 - 1) * 100)} (FY{y0}A→FY{y1}A, 연결 기준)",
-                     f"4 names combined: revenue {self.pct((rev1 / rev0 - 1) * 100)}, operating profit {self.pct((op1 / op0 - 1) * 100)} (FY{y0}A→FY{y1}A, consolidated)")
+        dc = self.f.decomp
+        if ok(dc):   # p4와 같은 방향: 이익이 시총 증가의 몇 %를 설명하나
+            a = dc.agg
+            title = self.T(f"실적도 늘었다: {grp} 지배순이익 {self.x(sg_ni.multiple)} — 시총 증가({self.x(a['mcap1'] / a['mcap0'])})의 {self.share(a['earn_share'])}를 설명",
+                           f"Earnings grew too: NI to parent of {grp} {self.x(sg_ni.multiple)} explains {self.share(a['earn_share'])} of the market-cap gain ({self.x(a['mcap1'] / a['mcap0'])})")
+        else:
+            slower = ok(mk) and sg_ni.multiple < mk.total_multiple
+            title = self.T(f"실적도 늘었다: {grp} 지배순이익 합계 FY{y0}A→FY{y1}A {self.x(sg_ni.multiple)}"
+                           + (f" — 다만 시총({self.x(mk.total_multiple)})보다 느렸다" if slower else ""),
+                           f"Earnings grew too: NI to parent of {grp} {self.x(sg_ni.multiple)} from FY{y0}A to FY{y1}A"
+                           + (f" — but slower than market cap ({self.x(mk.total_multiple)})" if slower else ""))
+        sub = self.T(f"{self.group_label(sg_rev, y0, y1)} 합계 매출 {self.pct((sg_rev.multiple - 1) * 100)}, "
+                     f"{self.group_label(sg_op, y0, y1)} 합계 영업이익 {self.pct((sg_op.multiple - 1) * 100)} (FY{y0}A→FY{y1}A, 연결 기준)",
+                     f"Combined revenue of {self.group_label(sg_rev, y0, y1)} {self.pct((sg_rev.multiple - 1) * 100)}, operating profit of "
+                     f"{self.group_label(sg_op, y0, y1)} {self.pct((sg_op.multiple - 1) * 100)} (FY{y0}A→FY{y1}A, consolidated)")
         fy_colors = {2022: c["warm_grey_light"], 2023: c["warm_grey"], 2024: c["brown_mid"], 2025: c["gold"]}
-        # 1) 매출
-        rg = {tk: (fin.value(tk, y1, "revenue") / fin.value(tk, y0, "revenue") - 1) * 100 for tk in peers}
-        top = max(rg, key=rg.get)
+        # 1) 매출 지수 (FY{y0}=100) — 회사별 성장 차이. 절대값은 오른쪽 아래 표
         cats = [nm[tk] for tk in peers]
-        rev_series = [(f"FY{y}A", [fin.value(tk, y, "revenue") or float("nan") for tk in peers], fy_colors.get(y, c["warm_grey"])) for y in yrs]
+        ridx = {tk: [fin.value(tk, y, "revenue") / fin.value(tk, y0, "revenue") * 100 for y in yrs] for tk in peers}
+        top = max(peers, key=lambda tk: ridx[tk][-1])
+        low = min(peers, key=lambda tk: ridx[tk][-1])
         cells = [Cell(
-            title=self.T(f"4사 매출 FY{y0}A→FY{y1}A: 합계 {self.pct((rev1 / rev0 - 1) * 100)}, {nm[top]} {self.pct(rg[top])}로 최대",
-                         f"Revenue FY{y0}A→FY{y1}A: combined {self.pct((rev1 / rev0 - 1) * 100)}; {nm[top]} leads at {self.pct(rg[top])}"),
-            src=["dart"], legend=[(col, lab) for lab, _, col in rev_series], unit=self.T("억원", "KRW 100mn"),
-            chart_key="revenue", chart=charts.grouped(cats, rev_series, c, lambda x: f"{x:,.0f}", label_series={len(rev_series) - 1}),
-            note=self.T("연결 기준(없으면 별도), 사업보고서 당기 금액. 막대 위 값 = 최근 연도." + miss_note,
-                        "Consolidated (separate if unavailable), as reported. Labels = latest year." + miss_note))]
+            title=self.T(f"매출 지수(FY{y0}=100): {nm[top]} {ridx[top][-1]:.0f}로 최대 · {nm[low]} {ridx[low][-1]:.0f} — 합계 {self.pct((sg_rev.multiple - 1) * 100)}",
+                         f"Revenue index (FY{y0}=100): {nm[top]} highest at {ridx[top][-1]:.0f} · {nm[low]} {ridx[low][-1]:.0f} — combined {self.pct((sg_rev.multiple - 1) * 100)}"),
+            src=["dart"], legend=[(c[COMPANY_COLORS[i]], nm[tk]) for i, tk in enumerate(peers)],
+            unit=self.T(f"지수 (FY{y0}=100)", f"Index (FY{y0}=100)"), chart_key="revenue_idx",
+            chart=charts.lines(yrs, [(nm[tk], ridx[tk], c[COMPANY_COLORS[i]], 2.0 if tk == top else 1.5) for i, tk in enumerate(peers)],
+                               c, lambda x: f"{x:.0f}", ref=100, right=0.66),
+            note=self.T(f"지수 = 매출 ÷ FY{y0}A 매출 × 100 (KSJ Research 계산). 연결 기준, 절대값은 FY{y1}A 요약표 참조." + miss_note,
+                        f"Index = revenue ÷ FY{y0}A × 100 (KSJ Research). Consolidated; absolute values in the FY{y1}A table." + miss_note))]
         # 2) 영업이익률
         opm = {tk: [fin.value(tk, y, "opm") for y in yrs] for tk in peers}
         best = max(peers, key=lambda tk: opm[tk][-1])
@@ -499,42 +559,106 @@ class Story:
                                c, lambda x: f"{x:.1f}%", right=0.66),
             note=self.T("영업이익률 = 영업이익 ÷ 매출 (KSJ Research 계산)." + miss_note,
                         "Operating margin = operating profit ÷ revenue (KSJ Research)." + miss_note)))
-        # 3) 지배순이익 증가율
+        # 3) 지배순이익 증가율 (직전 연도 적자면 증가율 생략)
         yoy_years = [y for y in yrs if y - 1 in yrs]
         series = [(f"FY{y}A", [fin.value(tk, y, "ni_yoy") if fin.value(tk, y, "ni_yoy") is not None else float("nan") for tk in peers],
                    fy_colors.get(y, c["brown_mid"])) for y in yoy_years]
-        nim = {tk: fin.value(tk, y1, "ni") / fin.value(tk, y0, "ni") for tk in peers if (fin.value(tk, y0, "ni") or 0) > 0}
-        topn = max(nim, key=nim.get)
+        nim = {tk: fin.value(tk, y1, "ni") / fin.value(tk, y0, "ni") for tk in peers
+               if growth_kind(fin.value(tk, y0, "ni"), fin.value(tk, y1, "ni")) == "multiple"}
+        topn = max(nim, key=nim.get) if nim else None
+        turned = [e for e in sg_ni.excluded if e["kind"] == "turned_profit"]
+        tail_kr = "".join(f", {self.ename(e)} 흑자전환" for e in turned)
+        tail_en = "".join(f"; {self.ename(e)} turned profitable" for e in turned)
         cells.append(Cell(
-            title=self.T(f"지배순이익 FY{y0}A→FY{y1}A: 4사 합계 {self.x(ni1 / ni0)}, {nm[topn]} {self.x(nim[topn])}로 최대",
-                         f"NI to parent FY{y0}A→FY{y1}A: combined {self.x(ni1 / ni0)}; {nm[topn]} leads at {self.x(nim[topn])}"),
+            title=self.T(f"지배순이익 FY{y0}A→FY{y1}A: {grp} 합계 {self.x(sg_ni.multiple)}"
+                         + (f", {nm[topn]} {self.x(nim[topn])}로 최대" if topn else "") + tail_kr,
+                         f"NI to parent FY{y0}A→FY{y1}A: {grp} combined {self.x(sg_ni.multiple)}"
+                         + (f"; {nm[topn]} leads at {self.x(nim[topn])}" if topn else "") + tail_en),
             src=["dart"], legend=[(col, lab) for lab, _, col in series] + [(c["brick"], self.T("감소", "Decline"))],
             unit=self.T("전년 대비 %", "% y/y"), chart_key="ni_yoy",
             chart=charts.grouped(cats, series, c, lambda x: f"{x:+.0f}%", zero_line=True),
-            note=self.T("지배기업 소유주 귀속 당기순이익. 직전 연도 적자면 증가율 생략." + miss_note,
-                        "Net income attributable to owners of the parent; growth omitted after a loss year." + miss_note)))
-        # 4) 재무 요약표
-        rows, gold = [], set()
+            note=self.T("지배기업 소유주 귀속 당기순이익. 직전 연도가 적자면 증가율을 계산하지 않음(막대 없음)." + (f" 합계 배수는 {excl}." if excl else "") + miss_note,
+                        "NI attributable to owners of the parent; no growth rate after a loss year (no bar)." + (f" Combined multiple {excl}." if excl else "") + miss_note)))
+        # 4) 재무 요약표: 기준·최근 지배순이익 실제 값 + 배수(또는 흑자전환 라벨)
+        rows, gold, brick = [], set(), set()
         for i, tk in enumerate(peers):
-            rv, o, n, m = (fin.value(tk, y1, k) for k in ("revenue", "op", "ni", "opm"))
-            rows.append([nm[tk], self.num(rv), self.num(o), f"{m:.1f}%", self.num(n), self.x(nim.get(tk, float("nan")))])
+            rv, o, m = (fin.value(tk, y1, k) for k in ("revenue", "op", "opm"))
+            n0, n1 = fin.value(tk, y0, "ni"), fin.value(tk, y1, "ni")
+            rows.append([nm[tk], self.num(rv), self.num(o), f"{m:.1f}%", self.num_or_dash(n0), self.num_or_dash(n1), self.gx(n0, n1)])
             if tk == topn:
-                gold.add((i, 5))
-        rows.append([self.T("4사 합계", "Total"), self.num(rev1), self.num(op1), f"{op1 / rev1 * 100:.1f}%", self.num(ni1), self.x(ni1 / ni0)])
+                gold.add((i, 6))
+            if n0 is not None and n0 <= 0:
+                brick.add((i, 4))
+            if n1 is not None and n1 <= 0:
+                brick.add((i, 5))
+            if growth_kind(n0, n1) != "multiple":
+                brick.add((i, 6))
+        tot = lambda y, col: sum(fin.value(tk, y, col) or 0 for tk in peers)  # noqa: E731
+        rows.append([self.T(f"{len(peers)}사 합계", "Total"), self.num(tot(y1, "revenue")), self.num(tot(y1, "op")),
+                     f"{tot(y1, 'op') / tot(y1, 'revenue') * 100:.1f}%", self.num(tot(y0, "ni")), self.num(tot(y1, "ni")),
+                     self.x(sg_ni.multiple) + (self.T(f" ({sg_ni.n}사)", f" ({sg_ni.n} names)") if sg_ni.excluded else "")])
         k = len(rows) - 1
         cells.append(Cell(
-            title=self.T(f"FY{y1}A 4사 합계 매출 {self.num(rev1)}억원 · 영업이익 {self.num(op1)}억원 · 지배순이익 {self.num(ni1)}억원",
-                         f"FY{y1}A combined: revenue {self.num(rev1)}, OP {self.num(op1)}, NI {self.num(ni1)} (KRW 100mn)"),
+            title=self.T(f"FY{y1}A 합계 매출 {self.num(tot(y1, 'revenue'))}억원 · 영업이익 {self.num(tot(y1, 'op'))}억원 · 지배순이익 {self.num(tot(y1, 'ni'))}억원",
+                         f"FY{y1}A combined: revenue {self.num(tot(y1, 'revenue'))}, OP {self.num(tot(y1, 'op'))}, NI {self.num(tot(y1, 'ni'))} (KRW 100mn)"),
             src=["dart"], unit=self.T("억원, %, 배", "KRW 100mn, %, x"),
             table=TableSpec([self.T("회사", "Company"), self.T("매출", "Revenue"), self.T("영업이익", "OP"), self.T("영업이익률", "OPM"),
-                             self.T("지배순이익", "NI"), self.T(f"순이익 배수 FY{y0}→{y1}", f"NI x FY{y0}→{y1}")],
-                            rows, [0.25, 0.15, 0.14, 0.14, 0.14, 0.18], shade_rows={k}, bold_rows={k}, gold_cells=gold,
-                            strong_cells={(k, 5)}, font_size=8.4),
-            note=self.T(f"FY{y1}A 연결 기준. 순이익 배수 = FY{y1}A ÷ FY{y0}A 지배순이익 (KSJ Research 계산)",
-                        f"FY{y1}A consolidated. NI multiple = FY{y1}A ÷ FY{y0}A (KSJ Research)")))
+                             self.T(f"지배순이익 FY{y0}", f"NI FY{y0}"), self.T(f"지배순이익 FY{y1}", f"NI FY{y1}"),
+                             self.T("순이익 배수", "NI x")],
+                            rows, [0.21, 0.13, 0.12, 0.11, 0.14, 0.14, 0.15], shade_rows={k}, bold_rows={k}, gold_cells=gold,
+                            brick_cells=brick, strong_cells={(k, 6)}, font_size=8.2),
+            note=self.T(f"매출·영업이익·영업이익률은 FY{y1}A 연결 기준. 순이익 배수 = FY{y1}A ÷ FY{y0}A, 기준 이익이 0 이하이면 배수 대신 라벨"
+                        + (f". 합계 배수는 {excl}" if excl else "") + " (KSJ Research 계산)",
+                        f"Revenue, OP and OPM are FY{y1}A consolidated. NI x = FY{y1}A ÷ FY{y0}A; a label replaces the multiple when the base is ≤0"
+                        + (f". Combined multiple {excl}" if excl else "") + " (KSJ Research)")))
         return Page("body", "3", title, sub, cells)
 
     # --- p4 시장 (핵심) -------------------------------------------------------
+    def dc_group(self) -> str:
+        """분해 대상 표기: '3사(두산에너빌리티 제외: FY2022 지배순손실)' 또는 '4사'."""
+        dc = self.f.decomp
+        ex = "; ".join(f"{self.ename(e)} {self.T('제외', 'excluded')}: {self.T(e['reason'], e['reason_en'])}" for e in dc.excluded)
+        return self.T(f"{dc.n_valid}사" + (f"({ex})" if ex else ""), f"{dc.n_valid} names" + (f" ({ex})" if ex else ""))
+
+    def dc_short(self) -> str:
+        """제목용 짧은 표기: '3사(두산에너빌리티 제외)'."""
+        dc = self.f.decomp
+        ex = ", ".join(self.ename(e) for e in dc.excluded)
+        return self.T(f"{dc.n_valid}사" + (f"({ex} 제외)" if ex else ""), f"{dc.n_valid} names" + (f" (ex. {ex})" if ex else ""))
+
+    def dc_excl_sentence(self) -> str:
+        """'두산에너빌리티(시작 시총의 72%)는 FY2022 지배순손실로 분해에서 제외 — 4사 합계 시총 배수 7.7배와 별도'."""
+        dc, mk = self.f.decomp, self.f.market
+        if not dc.excluded:
+            return ""
+        parts = [self.T(f"{e['company']}(시작 시총의 {e['share_t0']:.0f}%)는 {e['reason']}로 분해에서 제외",
+                        f"{e['company_en']} ({e['share_t0']:.0f}% of starting cap) is excluded from the split: {e['reason_en']}")
+                 for e in dc.excluded]
+        return "; ".join(parts) + self.T(f" — 4사 합계 시총 배수 {self.x(mk.total_multiple)}와는 별도",
+                                         f" — separate from the 4-name combined {self.x(mk.total_multiple)}")
+
+    def contrib_sentence(self) -> str:
+        """회사별 해석: 이익 기여 최대 회사 + 멀티플 기여가 더 큰 회사 (계산값으로 생성)."""
+        dc = self.f.decomp
+        v = dc.valid_rows
+        top = v.sort_values("earn_share", ascending=False).iloc[0]
+        led = v[v["mult_share"] > v["earn_share"]]
+        n = len(v)
+        s_top = self.T(f"{top['company']} 이익 기여 {self.share(top['earn_share'])}로 최대",
+                       f"{top['company_en']} has the largest earnings share ({self.share(top['earn_share'])})")
+        if len(led) == 0:
+            s_led = self.T(f"{n}사 모두 이익 기여가 더 컸다", f"earnings outweighed multiples for all {n}")
+        elif len(led) == 1:
+            r = led.iloc[0]
+            s_led = self.T(f"{r['company']}만 멀티플 기여가 더 컸다({self.share(r['mult_share'])})",
+                           f"only {r['company_en']} was multiple-led ({self.share(r['mult_share'])})")
+        elif len(led) == n:
+            s_led = self.T(f"{n}사 모두 멀티플 기여가 더 컸다", f"all {n} were multiple-led")
+        else:
+            names = ", ".join(self.name(r) for _, r in led.iterrows())
+            s_led = self.T(f"{names}는 멀티플 기여가 더 컸다", f"{names} were multiple-led")
+        return s_top + " — " + s_led
+
     def p4(self) -> Page:
         mk, dc, val, c = self.f.market, self.f.decomp, self.f.val, self.c
         if not ok(mk):
@@ -543,13 +667,15 @@ class Story:
         led = self.multiple_led()
         if ok(dc):
             a = dc.agg
-            title = (self.T(f"시장은 이미 알고 있다: 4사 시총 증가의 {self.share(a['mult_share'])}는 멀티플 확대, {self.share(a['earn_share'])}는 이익 증가",
-                            f"The market already knows: {self.share(a['mult_share'])} of the 4 names' gain is multiple expansion, {self.share(a['earn_share'])} earnings")
+            g = self.dc_short()
+            title = (self.T(f"시장은 이미 알고 있다: {g} 시총 증가의 {self.share(a['mult_share'])}는 멀티플 확대, {self.share(a['earn_share'])}는 이익 증가",
+                            f"The market already knows: {self.share(a['mult_share'])} of the gain for {g} is multiple expansion, {self.share(a['earn_share'])} earnings")
                      if led else
-                     self.T(f"이익이 주도했다: 4사 시총 증가의 {self.share(a['earn_share'])}는 이익 증가, {self.share(a['mult_share'])}는 멀티플",
-                            f"Earnings led: {self.share(a['earn_share'])} of the gain is earnings growth, {self.share(a['mult_share'])} multiple")) + self.view()
-            sub = self.T(f"4사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])} · 시총 배수 = 지배순이익 배수 × PER 배수 ({dc.fy0}→{dc.fy1})",
-                         f"Aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])} · market-cap multiple = NI multiple × P/E multiple ({dc.fy0}→{dc.fy1})")
+                     self.T(f"이익이 주도했다: {g} 시총 증가의 {self.share(a['earn_share'])}는 이익 증가, {self.share(a['mult_share'])}는 멀티플 확대",
+                            f"Earnings led: for {g}, {self.share(a['earn_share'])} of the gain is earnings growth, {self.share(a['mult_share'])} multiple expansion")) + self.view()
+            excl = self.dc_excl_sentence()
+            sub = self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])}" + (f" · {excl}" if excl else ""),
+                         f"{dc.n_valid}-name aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])}" + (f" · {excl}" if excl else ""))
         else:
             title = self.T(f"시장은 이미 크게 움직였다: 4사 시총 {self.market_basis()}",
                            f"The market has already moved: 4 names' market cap {self.market_basis()}")
@@ -560,9 +686,8 @@ class Story:
             else:
                 sub = self.T("이익·멀티플 분해는 FY2022 수집 후", "Earnings/multiple split after FY2022 collection")
         t = mk.table
-        split_rows = t[t["split_factor"] != 1]
         split_note = ""
-        for _, r in split_rows.iterrows():
+        for _, r in t[t["split_factor"] != 1].iterrows():
             split_note += self.T(f" {r['company']}: {r['action_date']} {r['split_factor']:.0f}:1 액면분할 — 주가 배수 {r['price_multiple_raw']:.1f}배가 아닌 시총 배수 {r['multiple']:.1f}배 사용"
                                  f"(분할 조정 주가 배수 {r['price_multiple_adj']:.1f}배와 일치).",
                                  f" {r['company_en']}: {r['split_factor']:.0f}:1 split on {r['action_date']} — we use the market-cap multiple "
@@ -576,98 +701,132 @@ class Story:
             chart=charts.grouped([self.name(r) for _, r in t.iterrows()],
                                  [(mk.t0, list(t["mcap_t0"]), c["warm_grey_light"]), (mk.t1, list(t["mcap_t1"]), c["brown_dark"])],
                                  c, lambda x: f"{x:,.0f}", label_series={1}, horizontal=True,
-                                 extra_labels=[f"×{m:.1f}" for m in t["multiple"]], left=0.25),
+                                 extra_labels=[f"×{m:.1f}" for m in t["multiple"]]),
             note=self.T(f"시총 = 각 시점 종가 × 그 시점 상장주식수(KRX MKTCAP). 합계 기준은 시작 시총의 {mk.largest_t0_share:.0f}%인 {big['company']}({big['multiple']:.1f}배)의 비중이 커 단순평균보다 낮다." + split_note,
                         f"Market cap = close × listed shares at each date (KRX MKTCAP). The combined multiple is below the average because "
                         f"{big['company_en']} ({big['multiple']:.1f}x) was {mk.largest_t0_share:.0f}% of the starting cap." + split_note))]
         decomp_note = self.T("로그 분해 Δln(시총) = Δln(지배순이익) + Δln(PER). 2023 초 시총 ↔ FY2022A, 최근 시총 ↔ FY2025A 지배순이익. "
-                             "억원 배분 = Δ시총 × 각 항의 로그 비중 (KSJ Research 계산)",
+                             "기준·최근 지배순이익이 모두 양수인 회사만 분해 (KSJ Research 계산)",
                              "Log split Δln(cap) = Δln(NI) + Δln(P/E). Start-2023 cap ↔ FY2022A, latest cap ↔ FY2025A NI to parent. "
-                             "KRW split = Δcap × each term's log share (KSJ Research)")
+                             "Only names with positive NI in both years are split (KSJ Research)")
         if ok(dc):
             a = dc.agg
+            g = self.dc_group()
+            # 2) 합산 폭포
             cells.append(Cell(
-                title=self.T(f"시총 증가 {self.num(a['d_mcap'])}억원 = 이익 기여 {self.num(a['earn_part'])}억원 + 멀티플 기여 {self.num(a['mult_part'])}억원",
-                             f"Cap gain {self.num(a['d_mcap'])} = earnings {self.num(a['earn_part'])} + multiple {self.num(a['mult_part'])} (KRW 100mn)"),
+                title=self.T(f"{self.dc_short()} 시총 증가 {self.num(a['d_mcap'])}억원 = 이익 기여 {self.num(a['earn_part'])}억원 + 멀티플 기여 {self.num(a['mult_part'])}억원",
+                             f"Cap gain for {self.dc_short()}: {self.num(a['d_mcap'])} = earnings {self.num(a['earn_part'])} + multiple {self.num(a['mult_part'])} (KRW 100mn)"),
                 src=["krx", "dart"], legend=[(c["brown_dark"], mk.t0), (c["brown_mid"], self.T("기여(+)", "Contribution (+)")),
                                               (c["brick"], self.T("기여(−)", "Contribution (−)")), (c["gold"], mk.t1)],
-                unit=self.T("억원 (분해 가능 기업 합산)", "KRW 100mn (names with positive NI)"), chart_key="waterfall",
+                unit=self.T(f"억원, {dc.n_valid}사 합산", f"KRW 100mn, {dc.n_valid} names"), chart_key="waterfall",
                 chart=charts.waterfall([(mk.t0, a["mcap0"], "total"), (self.T("이익 기여", "Earnings"), a["earn_part"], "delta"),
                                         (self.T("멀티플 기여", "Multiple"), a["mult_part"], "delta"), (mk.t1, a["mcap1"], "total")],
                                        c, lambda x: f"{x:,.0f}"),
-                note=decomp_note + (self.T(f" 합산 대상 {a['n_in_agg']}사.", f" {a['n_in_agg']} names included.") if a["n_in_agg"] < len(t) else "")))
-        else:
-            cells.append(self.pending_cell(self.T("시총 변화 분해: 이익 기여 vs 멀티플 기여 (FY2022A 기준)", "Market-cap change split: earnings vs multiple (FY2022A base)"),
-                                           ["krx", "dart"], dc, note=decomp_note))
-        # PER
-        if ok(val):
-            names = [self.name(r) for _, r in val.per.iterrows()]
-            if ok(dc):
-                d = dc.table.set_index("ticker")
-                ser = [(self.T("2023 초 (FY2022A)", "Start-2023 (FY2022A)"), [d.loc[tk, "per0"] if d.loc[tk, "valid"] else float("nan") for tk in val.per["ticker"]], c["warm_grey_light"]),
-                       (self.T("최근 (FY2025A)", "Latest (FY2025A)"), list(val.per["per"]), c["gold"])]
-                ttl = self.T(f"PER 4사 합산 {self.x(dc.agg['per0'])} → {self.x(dc.agg['per1'])} — {dc.n_multiple_led}사에서 멀티플 기여가 이익 기여보다 컸다",
-                             f"Aggregate P/E {self.x(dc.agg['per0'])} → {self.x(dc.agg['per1'])}; multiple outweighed earnings for {dc.n_multiple_led} names")
-                pnote = self.T("PER = 시가총액 ÷ 지배순이익 (KSJ Research 계산). 로그 축", "P/E = market cap ÷ NI to parent (KSJ Research). Log scale")
-            else:
-                ser = [(self.T("최근 (FY2025A)", "Latest (FY2025A)"), list(val.per["per"]), c["gold"])]
-                hi = val.per.sort_values("per", ascending=False).iloc[0]
-                ttl = self.T(f"현재 PER: 합산 {self.x(val.agg_per)} · 중앙값 {self.x(val.median_per)} — {hi['company']} {self.x(hi['per'], 0)}는 작은 이익의 영향",
-                             f"Current P/E: aggregate {self.x(val.agg_per)} · median {self.x(val.median_per)} — {hi['company_en']} {self.x(hi['per'], 0)} reflects thin earnings")
-                pnote = self.T(f"PER = 최근 시총 ÷ {val.fy} 지배순이익 (KSJ Research 계산). 로그 축. 2023 초 PER(FY2022A 기준)은 수집 후 표시 ({CMD_DART})",
-                               f"P/E = latest cap ÷ {val.fy} NI (KSJ Research). Log scale. Start-2023 P/E (FY2022A) shown after collection ({CMD_DART})")
-            cells.append(Cell(title=ttl, src=["krx", "dart"], legend=[(col, lab) for lab, _, col in ser],
-                              unit=self.T("배 (로그 축)", "x (log scale)"), chart_key="per",
-                              chart=charts.grouped(names, ser, c, lambda x: f"{x:,.1f}", horizontal=True, log=True, left=0.25),
-                              note=pnote))
-        else:
-            cells.append(self.pending_cell(self.T("PER: 2023 초 vs 최근", "P/E: start-2023 vs latest"), ["krx", "dart"], val))
-        # 분해 결과표
-        if ok(dc):
-            rows, gold, brick = [], set(), set()
+                note=self.T(f"대상: {g}. 억원 배분 = Δ시총 × 각 항의 로그 비중. ", f"Scope: {g}. KRW split = Δcap × each term's log share. ") + decomp_note))
+            # 3) PER 2023 초 vs 최근 — 분해 가능한 회사만 막대, 제외 회사는 각주
+            v = dc.valid_rows
+            ex_notes = []
+            for e in dc.excluded:   # 최근 PER 왜곡은 per4_footnote 한 곳에서만 설명
+                ex_notes.append(self.T(f"{e['company']}: 막대 제외, 시작 PER 없음({e['reason']})",
+                                       f"{e['company_en']}: not shown, no starting P/E ({e['reason_en']})"))
+            hi_per = v.sort_values("per1", ascending=False).iloc[0]
+            cells.append(Cell(
+                title=self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])} — {hi_per['company']} {self.x(hi_per['per1'])}로 최고",
+                             f"{dc.n_valid}-name P/E {self.x(a['per0'])} → {self.x(a['per1'])}; {hi_per['company_en']} highest at {self.x(hi_per['per1'])}"),
+                src=["krx", "dart"], legend=[(c["warm_grey_light"], self.T(f"2023 초 ({dc.fy0})", f"Start-2023 ({dc.fy0})")),
+                                              (c["gold"], self.T(f"최근 ({dc.fy1})", f"Latest ({dc.fy1})"))],
+                unit=self.T("배", "x"), chart_key="per",
+                chart=charts.grouped([self.name(r) for _, r in v.iterrows()],
+                                     [(dc.fy0, list(v["per0"]), c["warm_grey_light"]), (dc.fy1, list(v["per1"]), c["gold"])],
+                                     c, lambda x: f"{x:,.1f}", horizontal=True),
+                note=self.T("PER = 시총 ÷ 지배순이익. " + "; ".join(ex_notes) + ". " + self.per4_footnote(),
+                            "P/E = cap ÷ NI to parent. " + "; ".join(ex_notes) + ". " + self.per4_footnote())))
+            # 4) 회사별 이익 vs 멀티플 기여
+            cells.append(Cell(
+                title=self.contrib_sentence(),
+                src=["krx", "dart"], legend=[(c["brown_mid"], self.T("이익 기여", "Earnings share")), (c["gold"], self.T("멀티플 기여", "Multiple share")),
+                                              (c["brick"], self.T("음(−)의 기여", "Negative share"))],
+                unit=self.T("Δln(시총) 대비 %", "% of Δln(cap)"), chart_key="contrib",
+                chart=charts.contrib_bars([self.name(r) for _, r in v.iterrows()], [r["earn_share"] * 100 for _, r in v.iterrows()],
+                                          [r["mult_share"] * 100 for _, r in v.iterrows()], c,
+                                          (self.T("이익", "Earnings"), self.T("멀티플", "Multiple"))),
+                note=self.T("이익 기여 = Δln(지배순이익)/Δln(시총), 멀티플 기여 = Δln(PER)/Δln(시총), 두 값의 합 = 100%. 점선 = 50%. "
+                            + "; ".join(f"{e['company']}: {e['reason']}로 분해 불가" for e in dc.excluded),
+                            "Earnings share = Δln(NI)/Δln(cap); multiple share = Δln(P/E)/Δln(cap); they sum to 100%. Dashed = 50%. "
+                            + "; ".join(f"{e['company_en']}: not split ({e['reason_en']})" for e in dc.excluded))))
+            # 5) 분해 결과표 (PER 포함)
+            rows, gold, brick, shade, spans = [], set(), set(), set(), []
             for i, (_, r) in enumerate(dc.table.iterrows()):
+                cap_x = self.x(r["mcap_t1"] / r["mcap_t0"])
                 if not r["valid"]:
-                    rows.append([self.name(r), self.x(r["mcap_t1"] / r["mcap_t0"]), "n/a", "n/a", "n/a", self.T("분해 불가(적자)", "n/a (loss)")])
+                    label = self.T(f"분해 불가({r['reason']})", f"Not split ({r['reason_en']})")
+                    rows.append([self.name(r), cap_x, self.gx(r["ni0"], r["ni1"]), "—", label, ""])
+                    brick |= {(i, 2), (i, 4)}
+                    spans.append((i, 4, 5))
                     continue
-                rows.append([self.name(r), self.x(r["mcap_t1"] / r["mcap_t0"]), self.x(r["ni1"] / r["ni0"]), self.x(r["per1"] / r["per0"]),
-                             self.share(r["earn_share"]), self.share(r["mult_share"])])
-                if r["mult_share"] > 0.5:
+                rows.append([self.name(r), cap_x, self.x(r["ni1"] / r["ni0"]),
+                             f"{r['per0']:.1f} → {r['per1']:.1f}", self.share(r["earn_share"]), self.share(r["mult_share"])])
+                if r["mult_share"] > r["earn_share"]:
                     gold.add((i, 5))
+                    shade.add(i)
                 for j, val_ in ((4, r["earn_share"]), (5, r["mult_share"])):
                     if val_ < 0:
                         brick.add((i, j))
-            a = dc.agg
-            rows.append([self.T("4사 합산", "Aggregate"), self.x(a["mcap1"] / a["mcap0"]), self.x(a["ni1"] / a["ni0"]), self.x(a["per1"] / a["per0"]),
-                         self.share(a["earn_share"]), self.share(a["mult_share"])])
+            rows.append([self.T(f"{dc.n_valid}사 합산", f"{dc.n_valid}-name total"), self.x(a["mcap1"] / a["mcap0"]), self.x(a["ni1"] / a["ni0"]),
+                         f"{a['per0']:.1f} → {a['per1']:.1f}", self.share(a["earn_share"]), self.share(a["mult_share"])])
             k = len(rows) - 1
-            n_led = dc.n_multiple_led
             cells.append(Cell(
-                title=self.T(f"{dc.n_valid}사 중 {n_led}곳은 멀티플 기여가 이익 기여보다 컸다 — 합산 멀티플 기여 {self.share(a['mult_share'])}",
-                             f"Multiple outweighed earnings for {n_led} of {dc.n_valid} names; aggregate multiple share {self.share(a['mult_share'])}"),
-                src=["krx", "dart"], unit=self.T("배, 로그 기여 비중 %", "x, share of log change %"),
-                table=TableSpec([self.T("회사", "Company"), self.T("시총 배수", "Cap x"), self.T("지배순이익 배수", "NI x"), self.T("PER 배수", "P/E x"),
+                title=self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])}: 지배순이익 {self.x(a['ni1'] / a['ni0'])} × PER {self.x(a['per1'] / a['per0'])} = 시총 {self.x(a['mcap1'] / a['mcap0'])}",
+                             f"{dc.n_valid}-name aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])}: NI {self.x(a['ni1'] / a['ni0'])} × P/E {self.x(a['per1'] / a['per0'])} = cap {self.x(a['mcap1'] / a['mcap0'])}"),
+                src=["krx", "dart"], unit=self.T("배, PER은 배(2023 초 → 최근), 기여는 %", "x; P/E start-2023 → latest; shares in %"),
+                table=TableSpec([self.T("회사", "Company"), self.T("시총 배수", "Cap x"), self.T("지배순이익 배수", "NI x"), self.T("PER (전 → 후)", "P/E (start → latest)"),
                                  self.T("이익 기여", "Earnings"), self.T("멀티플 기여", "Multiple")], rows,
-                                [0.26, 0.14, 0.17, 0.14, 0.14, 0.15], shade_rows={k}, bold_rows={k}, gold_cells=gold | {(k, 5)},
-                                brick_cells=brick, font_size=8.6),
-                note=self.T("기여 비중 = Δln(지배순이익)/Δln(시총), Δln(PER)/Δln(시총). 시총 배수 = 지배순이익 배수 × PER 배수 (검산: 표 값 곱 = 시총 배수)",
-                            "Shares = Δln(NI)/Δln(cap), Δln(P/E)/Δln(cap). Cap x = NI x × P/E x (check: product of columns = cap x)")))
+                                [0.22, 0.12, 0.15, 0.19, 0.17, 0.15], shade_rows=shade | {k}, bold_rows={k}, gold_cells=gold | {(k, 5)},
+                                brick_cells=brick, font_size=8.4, spans=spans),
+                note=self.T("PER = 시총 ÷ 지배순이익(2023 초 ↔ FY2022A, 최근 ↔ FY2025A). 시총 배수 = 지배순이익 배수 × PER 배수. 음영 = 멀티플 기여가 더 큰 회사. 기준 이익이 0 이하인 회사는 배수 대신 라벨",
+                            "P/E = cap ÷ NI (start-2023 ↔ FY2022A, latest ↔ FY2025A). Cap x = NI x × P/E x. Shaded = multiple-led. A label replaces the multiple when the base NI is ≤0")))
         else:
+            cells.append(self.pending_cell(self.T("시총 변화 분해: 이익 기여 vs 멀티플 기여 (FY2022A 기준)", "Market-cap change split: earnings vs multiple (FY2022A base)"),
+                                           ["krx", "dart"], dc, note=decomp_note))
+            if ok(val):
+                names = [self.name(r) for _, r in val.per.iterrows()]
+                hi = val.per.sort_values("per", ascending=False).iloc[0]
+                cells.append(Cell(
+                    title=self.T(f"현재 PER: 합산 {self.x(val.agg_per)} · 중앙값 {self.x(val.median_per)} — {hi['company']} {self.x(hi['per'], 0)}는 작은 이익의 영향",
+                                 f"Current P/E: aggregate {self.x(val.agg_per)} · median {self.x(val.median_per)} — {hi['company_en']} {self.x(hi['per'], 0)} reflects thin earnings"),
+                    src=["krx", "dart"], legend=[(c["gold"], self.T("최근 (FY2025A)", "Latest (FY2025A)"))],
+                    unit=self.T("배 (로그 축)", "x (log scale)"), chart_key="per",
+                    chart=charts.grouped(names, [(self.T("최근 (FY2025A)", "Latest (FY2025A)"), list(val.per["per"]), c["gold"])], c,
+                                         lambda x: f"{x:,.1f}", horizontal=True, log=True),
+                    note=self.T(f"PER = 최근 시총 ÷ {val.fy} 지배순이익 (KSJ Research 계산). 로그 축. 2023 초 PER(FY2022A 기준)은 수집 후 표시 ({CMD_DART})",
+                                f"P/E = latest cap ÷ {val.fy} NI (KSJ Research). Log scale. Start-2023 P/E (FY2022A) shown after collection ({CMD_DART})")))
+            else:
+                cells.append(self.pending_cell(self.T("PER: 2023 초 vs 최근", "P/E: start-2023 vs latest"), ["krx", "dart"], val))
             cells.append(self.pending_cell(self.T("회사별 분해 결과표 (FY2022A 기준)", "Split by company (FY2022A base)"), ["krx", "dart"], dc,
-                                           note=self.T("표 열: 시총 배수 · 지배순이익 배수 · PER 배수 · 이익 기여 · 멀티플 기여",
-                                                       "Columns: cap x · NI x · P/E x · earnings share · multiple share")))
-        return Page("body", "4", title, sub, cells)
+                                           note=self.T("표 열: 시총 배수 · 지배순이익 배수 · PER · 이익 기여 · 멀티플 기여",
+                                                       "Columns: cap x · NI x · P/E · earnings share · multiple share")))
+        return Page("body", "4", title, sub, cells, grid="3-2" if len(cells) == 5 else "2x2")
 
     # --- p5 시사점 ------------------------------------------------------------
     def p5(self) -> Page:
-        c, d, g, s, mk, val, r, fin = self.c, self.f.demand, self.f.ground, self.f.sectors, self.f.market, self.f.val, self.f.rates, self.f.fin
+        c, d, g, s, mk, r, fin = self.c, self.f.demand, self.f.ground, self.f.sectors, self.f.market, self.f.rates, self.f.fin
         led = self.multiple_led()
-        title = self.T("그래서 Vol.2: " + ("멀티플이 높아진 섹터에서 IPO 공모가는 어떻게 정하나" if led else "이익이 이끈 섹터에서 IPO 공모가는 어떻게 정하나") + self.view(),
-                       "Hence Vol.2: how to price an IPO in a sector whose multiples have " + ("re-rated" if led else "followed earnings") + self.view())
-        sub = self.T("세 렌즈(ECM 공모가 · 데이터센터 PF · 증설 옵션)와 네 가지 리스크로 본 시사점",
-                     "Implications through three lenses (ECM pricing · data-centre PF · capacity options) and four risks")
-        ecm_data = (self.T(f"피어 현재 PER 중앙값 {self.x(val.median_per)}, 합산 {self.x(val.agg_per)}; 시총 {self.market_basis()}",
-                           f"Peer P/E median {self.x(val.median_per)}, aggregate {self.x(val.agg_per)}; cap {self.market_basis()}")
-                    if ok(val) and ok(mk) else self.T("데이터 확인 중", "pending"))
+        dc = self.f.decomp
+        if ok(dc):
+            a = dc.agg
+            up = a["per1"] > a["per0"]
+            q_kr = (f"{'멀티플이 이끈' if led else '이익이 이끈'} 섹터, {'그러나 ' if up and not led else ''}PER {a['per1']:.0f}배: IPO 공모가는 어떻게 정하나")
+            q_en = (f"{'a multiple-led' if led else 'an earnings-led'} sector{', yet' if up and not led else ' at'} {a['per1']:.0f}x P/E: how should an IPO be priced?")
+            sub = self.T(f"{self.dc_short()} 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])} · 세 렌즈(ECM 공모가 · 데이터센터 PF · 증설 옵션)와 네 가지 리스크",
+                         f"Aggregate P/E of {self.dc_short()} {self.x(a['per0'])} → {self.x(a['per1'])} · three lenses (ECM pricing · data-centre PF · capacity) and four risks")
+        else:
+            q_kr = "멀티플이 높아진 섹터에서 IPO 공모가는 어떻게 정하나" if led else "이익이 이끈 섹터에서 IPO 공모가는 어떻게 정하나"
+            q_en = "how to price an IPO in a sector whose multiples have " + ("re-rated" if led else "followed earnings")
+            sub = self.T("세 렌즈(ECM 공모가 · 데이터센터 PF · 증설 옵션)와 네 가지 리스크로 본 시사점",
+                         "Implications through three lenses (ECM pricing · data-centre PF · capacity options) and four risks")
+        title = self.T("그래서 Vol.2: " + q_kr, "Hence Vol.2: " + q_en) + self.view()
+        ecm_data = (f"{self.per_rep()}; " + self.T(f"시총 {self.market_basis()}", f"cap {self.market_basis()}")
+                    if self.per_rep() and ok(mk) else self.T("데이터 확인 중", "pending"))
         pf_data = (self.T(f"버지니아 상업용 판매 연 {g.va_cagr_pct:.1f}%" + (f", 미국 상업용 요금 {self.pct(s.change_pct('price', 'COM'))} ({s.first_year}→{s.last_year})" if ok(s) else ""),
                           f"Virginia commercial sales {g.va_cagr_pct:.1f}%/yr" + (f"; U.S. commercial price {self.pct(s.change_pct('price', 'COM'))} ({s.first_year}→{s.last_year})" if ok(s) else ""))
                    if ok(g) else self.T("데이터 확인 중", "pending"))
@@ -680,11 +839,7 @@ class Story:
         else:
             cap_data = self.T("데이터 확인 중", "pending")
         lens_rows = [
-            [self.T("ECM 공모가", "ECM pricing"), ecm_data,
-             self.T("피어 멀티플이 이익보다 앞서 오른 구간에서는 피어 PER을 그대로 쓰기보다 이익 추정의 보수성과 공모 할인으로 방어해야 한다" if led
-                    else "피어 멀티플이 이익을 따라온 구간이라 이익 추정의 신뢰성이 공모가의 핵심이다",
-                    "When peer multiples have run ahead of earnings, defend the price with conservative earnings and an IPO discount rather than raw peer P/E"
-                    if led else "With multiples tracking earnings, the credibility of the earnings forecast drives pricing")],
+            [self.T("ECM 공모가", "ECM pricing"), ecm_data, self.ecm_implication(led)],
             [self.T("데이터센터 PF", "Data-centre PF"), pf_data,
              self.T("물량과 요금이 함께 오른 지역에서는 전력구매계약·계통 접속 일정이 PF 현금흐름의 핵심 변수다",
                     "Where volume and price rise together, PPAs and grid-connection timing are the key PF cash-flow variables")],
@@ -706,8 +861,8 @@ class Story:
         if ok(d):
             anchors.append(self.T(f"IEA 2035 범위 기준 대비 ±{(d.v['dc_2035_high'] / d.v['dc_2035'] - 1) * 100:.0f}%",
                                   f"IEA 2035 range ±{(d.v['dc_2035_high'] / d.v['dc_2035'] - 1) * 100:.0f}% vs base"))
-        if ok(val):
-            anchors.append(self.T(f"현재 PER 중앙값 {self.x(val.median_per)}", f"current P/E median {self.x(val.median_per)}"))
+        if self.per_rep():
+            anchors.append(self.per_rep())
         if ok(r) and r.ktb10_t0 is not None:
             anchors.append(self.T(f"국고채 10년 {r.ktb10_t0:.2f}→{r.ktb10_t1:.2f}%", f"KTB 10y {r.ktb10_t0:.2f}→{r.ktb10_t1:.2f}%"))
         if ok(r) and r.ust10_t0 is not None:
@@ -726,8 +881,7 @@ class Story:
                         "Anchors: " + " · ".join(anchors) + ". Positions are the author's judgement (config ASSUMPTION)")))
         cells.append(Cell(
             title=self.T("Vol.2 예고: 가상 비상장 전력기기 기업의 희망공모가 밴드", "Next in Vol.2: price range for a hypothetical unlisted power-equipment IPO"),
-            panel_lead=self.T("멀티플이 높아진 섹터에서 IPO 공모가는 어떻게 정하나" if led else "이익이 이끈 섹터에서 IPO 공모가는 어떻게 정하나",
-                              "How to price an IPO when sector multiples have re-rated" if led else "How to price an IPO when earnings lead"),
+            panel_lead=self.T(q_kr, q_en[:1].upper() + q_en[1:]),
             bullets=[self.T("가상 기업 Target Co. 설정 — 사업·재무 가정은 모두 ASSUMPTION으로 공개", "Set up Target Co. — every business and financial assumption disclosed"),
                      self.T("피어 PER·EV/EBITDA 산출: 국내 4사 + 해외 peers(SEC 수집 재개 후)", "Peer P/E and EV/EBITDA: 4 Korean names + overseas peers (after SEC resumes)"),
                      self.T("적정 시총 → 공모 할인 → 희망공모가 밴드", "Fair value → IPO discount → indicative price range"),
@@ -739,14 +893,31 @@ class Story:
                      self.T("IEA 수치는 보고서 요약값을 원문 대조해 수기 입력했다", "IEA figures are summary values entered manually and checked against the source"),
                      self.T("시총 구간(2023.1~2026.10)과 실적 구간(FY2022A~FY2025A)은 완전히 일치하지 않는다", "The market window (Jan 2023–Oct 2026) and earnings window (FY2022A–FY2025A) do not match exactly"),
                      self.T("PER은 지배순이익 기준이며 일회성 손익을 조정하지 않았다. 이익이 작은 회사는 PER이 크게 왜곡된다", "P/E uses reported NI without one-off adjustments; thin earnings distort P/E"),
-                     self.T("표본은 국내 4사다. 해외 peers(SEC)는 준비 중이다", "The sample is four Korean names; overseas peers (SEC) are in progress")],
+                     self.T("표본은 국내 4사다. 해외 peers(SEC)는 준비 중이다", "The sample is four Korean names; overseas peers (SEC) are in progress")]
+            + ([self.T(f"분해·대표 PER은 기준 이익이 양수인 {self.f.decomp.n_valid}사 기준이다 — " + ", ".join(f"{e['company']}({e['reason']})" for e in self.f.decomp.excluded) + " 제외",
+                       f"The split and headline P/E cover the {self.f.decomp.n_valid} names with positive base NI — excluding " + ", ".join(f"{e['company_en']} ({e['reason_en']})" for e in self.f.decomp.excluded))]
+               if ok(self.f.decomp) and self.f.decomp.excluded else []),
             note=self.T("한계는 Vol.2 이후 순차 보완", "To be addressed from Vol.2 onward")))
         return Page("body", "5", title, sub, cells)
+
+    def ecm_implication(self, led: bool | None) -> str:
+        """ECM 렌즈 시사점: 멀티플 주도 / 이익 주도 + PER 상승 / 이익 주도 + PER 정체를 데이터로 구분."""
+        dc = self.f.decomp
+        per_up = ok(dc) and dc.agg["per1"] > dc.agg["per0"]
+        if led:
+            return self.T("피어 멀티플이 이익보다 앞서 오른 구간에서는 피어 PER을 그대로 쓰기보다 이익 추정의 보수성과 공모 할인으로 방어해야 한다",
+                          "When peer multiples have run ahead of earnings, defend the price with conservative earnings and an IPO discount rather than raw peer P/E")
+        if per_up:
+            a = dc.agg
+            return self.T(f"시총 상승은 이익이 주로 설명하지만 PER도 {self.x(a['per0'])}→{self.x(a['per1'])}로 올랐다. 피어 PER을 그대로 쓰기보다 이익 지속성 검증과 공모 할인으로 방어해야 한다",
+                          f"Earnings explain most of the gain, but P/E also rose {self.x(a['per0'])}→{self.x(a['per1'])}. Rather than applying peer P/E as is, test earnings durability and apply an IPO discount")
+        return self.T("피어 멀티플이 이익을 따라온 구간이라 이익 추정의 신뢰성이 공모가의 핵심이다",
+                      "With multiples tracking earnings, the credibility of the earnings forecast drives pricing")
 
     # --- Appendix -----------------------------------------------------------
     def a1(self) -> Page:
         d, g, mk, dc, val, fin = self.f.demand, self.f.ground, self.f.market, self.f.decomp, self.f.val, self.f.fin
-        qa = []
+        qa, key = [], set()
         if ok(d):
             qa.append([self.T("AI 전력 수요는 과장 아닌가?", "Isn't AI power demand overhyped?"),
                        self.T(f"IEA 기준 2030E {self.num(d.v['dc_2030'])}TWh(2024년의 {self.x(d.mult_2030)}), 2025년 AI 데이터센터 {self.pct(d.v['growth_ai'])} vs 전 세계 {self.pct(d.v['growth_global'])}. "
@@ -759,19 +930,28 @@ class Story:
                               f"It is one state. But commercial sales are {self.pct(g.va_change_pct)} since {g.base_year} (U.S. {self.pct(g.us_change_pct)}) and the gap is widening ({g.va_recent_cagr_pct:.1f}%/yr over 3 years). Industrial classification is a stated limitation"), "2, 5"])
         if ok(fin):
             y0, y1 = fin.years[0], fin.years[-1]
-            qa.append([self.T("실적이 받쳐주나?", "Do earnings support it?"),
-                       self.T(f"4사 지배순이익 합계 FY{y0}A→FY{y1}A {self.x(self.fin_sum(y1, 'ni') / self.fin_sum(y0, 'ni'))}, 매출 {self.pct((self.fin_sum(y1, 'revenue') / self.fin_sum(y0, 'revenue') - 1) * 100)}. 이익은 늘었지만 시총보다는 느렸다",
-                              f"Combined NI {self.x(self.fin_sum(y1, 'ni') / self.fin_sum(y0, 'ni'))} FY{y0}A→FY{y1}A; revenue {self.pct((self.fin_sum(y1, 'revenue') / self.fin_sum(y0, 'revenue') - 1) * 100)}. Earnings grew, but slower than market cap"), "3"])
+            sg = fin.sum_growth("ni", y0, y1)
+            grp = self.group_label(sg, y0, y1)
+            if ok(dc):
+                a = dc.agg
+                ans = self.T(f"{grp} 지배순이익 {self.x(sg.multiple)}(FY{y0}A→FY{y1}A)로 시총 증가({self.x(a['mcap1'] / a['mcap0'])})의 {self.share(a['earn_share'])}를 설명한다",
+                             f"NI of {grp} rose {self.x(sg.multiple)} (FY{y0}A→FY{y1}A), explaining {self.share(a['earn_share'])} of the market-cap gain ({self.x(a['mcap1'] / a['mcap0'])})")
+            else:
+                ans = self.T(f"{grp} 지배순이익 FY{y0}A→FY{y1}A {self.x(sg.multiple)}, 이익은 늘었지만 시총({self.x(mk.total_multiple)})보다는 느렸다" if ok(mk) else f"{grp} 지배순이익 {self.x(sg.multiple)}",
+                             f"NI of {grp} {self.x(sg.multiple)} FY{y0}A→FY{y1}A — growing, but slower than market cap ({self.x(mk.total_multiple)})" if ok(mk) else f"NI of {grp} {self.x(sg.multiple)}")
+            qa.append([self.T("실적이 받쳐주나?", "Do earnings support it?"), ans, "3, 4"])
         if ok(mk):
             if ok(dc):
-                ans = self.T(f"그렇다고 본다. 4사 시총 증가의 {self.share(dc.agg['mult_share'])}가 멀티플 확대({dc.fy0}→{dc.fy1}, 로그 분해){self.view()}",
-                             f"We think so: {self.share(dc.agg['mult_share'])} of the gain is multiple expansion ({dc.fy0}→{dc.fy1}, log split){self.view()}")
+                a = dc.agg
+                ans = self.T(f"{self.dc_short()} 시총 증가 중 이익 기여 {self.share(a['earn_share'])}, 멀티플 기여 {self.share(a['mult_share'])}. PER은 {self.x(a['per0'])} → {self.x(a['per1'])}로 올랐다{self.view()}",
+                             f"For {self.dc_short()}, earnings explain {self.share(a['earn_share'])} and multiples {self.share(a['mult_share'])}; P/E rose {self.x(a['per0'])} → {self.x(a['per1'])}{self.view()}")
             else:
                 n, tot = self.n_mcap_beats_ni() if ok(val) else (0, 0)
                 ans = self.T(f"4사 시총 {self.market_basis()}. 가용 실적으로도 {tot}사 중 {n}곳은 시총이 이익보다 빨랐다{self.view()}. FY2022 기준 분해는 수집 후",
                              f"Cap {self.market_basis()}; on available earnings, {n} of {tot} saw cap outgrow NI{self.view()}. FY2022-based split after collection")
             qa.append([self.T("시장은 이미 반영했나?", "Has the market priced it in?"), ans, "4"])
             for _, r in mk.table[mk.table["split_factor"] != 1].iterrows():
+                key.add(len(qa))
                 qa.append([self.T(f"{r['company']} 주가는 {r['price_multiple_raw']:.0f}배인데 왜 시총은 {r['multiple']:.0f}배인가?",
                                   f"Why is {r['company_en']}'s price up {r['price_multiple_raw']:.0f}x but its market cap {r['multiple']:.0f}x?"),
                            self.T(f"{r['action_date']} {r['split_factor']:.0f}:1 액면분할 때문이다. 주가 {self.num(r['close_t0'])}원 → {self.num(r['close_t1'])}원({r['price_multiple_raw']:.2f}배)은 분할 전후 주식 1주의 크기가 다르다. "
@@ -780,6 +960,7 @@ class Story:
                                   f"split-adjusted {r['price_multiple_raw']:.2f}×{r['split_factor']:.0f} = {r['price_multiple_adj']:.1f}x, matching the cap multiple (shares {self.num(r['shares_t0'])}→{self.num(r['shares_t1'])})"),
                            "4, A2"])
             big = mk.largest_t0
+            key.add(len(qa))
             qa.append([self.T(f"합계 {self.x(mk.total_multiple)}와 평균 {self.x(mk.mean_multiple)} 중 무엇이 맞나?",
                               f"Which is right: {self.x(mk.total_multiple)} combined or {self.x(mk.mean_multiple)} average?"),
                        self.T(f"둘 다 맞고 질문이 다르다. 합계는 4사 바스켓(시총 가중), 평균은 회사별 동일 가중이다. 시작 시총의 {mk.largest_t0_share:.0f}%가 {big['company']}({big['multiple']:.1f}배)라 합계가 낮다. "
@@ -787,21 +968,49 @@ class Story:
                               f"Both — they answer different questions. Combined is a cap-weighted basket; the average weights names equally. {big['company_en']} ({big['multiple']:.1f}x) was "
                               f"{mk.largest_t0_share:.0f}% of the starting cap, pulling the combined figure down. Use combined for sector value, average for per-name re-rating"),
                        "4"])
-        if ok(val):
-            hi = val.per.sort_values("per", ascending=False).iloc[0]
-            qa.append([self.T("현재 PER이 높은데 거품인가?", "P/Es are high — is it a bubble?"),
-                       self.T(f"합산 {self.x(val.agg_per)}, 중앙값 {self.x(val.median_per)}. {hi['company']} {self.x(hi['per'], 0)}는 지배순이익 {self.num(hi['ni'])}억원으로 분모가 작아 생긴 왜곡이다. "
-                              f"거품 여부는 이익 지속성에 달렸다{self.view()}",
-                              f"Aggregate {self.x(val.agg_per)}, median {self.x(val.median_per)}. {hi['company_en']}'s {self.x(hi['per'], 0)} reflects thin NI ({self.num(hi['ni'])}, KRW 100mn). "
-                              f"Whether it is a bubble depends on earnings durability{self.view()}"), "4, 5"])
+        if ok(dc):
+            # 분해에서 빠진 회사
+            for e in dc.excluded:
+                key.add(len(qa))
+                cur = self.f.val.per.set_index("ticker").loc[e["ticker"]] if ok(val) else None
+                qa.append([self.T(f"{e['company']}는 왜 분해에서 빠졌나?", f"Why is {e['company_en']} excluded from the split?"),
+                           self.T(f"PER = 시총 ÷ 지배순이익인데 {dc.fy0} 지배순이익이 {self.num(e['ni0'])}억원으로 0 이하라 시작 PER과 로그 변화를 정의할 수 없다"
+                                  f"({dc.fy1} {self.num(e['ni1'])}억원, 흑자전환). 시작 시총의 {e['share_t0']:.0f}%라 4사 합계 시총 배수({self.x(mk.total_multiple)})에는 포함하고, 분해·대표 PER은 {dc.n_valid}사 기준으로 계산했다"
+                                  + (f". 최근 PER {self.x(cur['per'], 0)}는 작은 이익의 분모 왜곡" if cur is not None and cur['per'] == cur['per'] else ""),
+                                  f"P/E = cap ÷ NI, and {dc.fy0} NI was {self.num(e['ni0'])} (KRW 100mn), ≤0, so the starting P/E and log change are undefined "
+                                  f"({dc.fy1}: {self.num(e['ni1'])}, turned profitable). At {e['share_t0']:.0f}% of the starting cap it stays in the 4-name combined multiple ({self.x(mk.total_multiple)}), "
+                                  f"but the split and headline P/E use {dc.n_valid} names"
+                                  + (f". Its latest P/E of {self.x(cur['per'], 0)} reflects a thin denominator" if cur is not None and cur['per'] == cur['per'] else "")),
+                           "3, 4"])
+            # 멀티플이 주도한 회사 (데이터 범위 내 답)
+            v = dc.valid_rows
+            ranked = v.assign(nix=v["ni1"] / v["ni0"]).sort_values("nix")
+            for _, r in v[v["mult_share"] > v["earn_share"]].iterrows():
+                rank = list(ranked["ticker"]).index(r["ticker"]) + 1
+                only = len(v[v["mult_share"] > v["earn_share"]]) == 1
+                key.add(len(qa))
+                qa.append([self.T(f"{r['company']}{'만' if only else '는'} 멀티플이 주도한 이유는?", f"Why was {r['company_en']} multiple-led?"),
+                           self.T(f"시총 {self.x(r['mcap_t1'] / r['mcap_t0'])} 중 지배순이익은 {self.x(r['ni1'] / r['ni0'])}로 {dc.n_valid}사 중 {rank}번째로 작게 늘었고, PER은 {self.x(r['per0'])} → {self.x(r['per1'])}로 올라 "
+                                  f"멀티플 기여가 {self.share(r['mult_share'])}가 됐다. 수주·사업 구성 등 원인은 이 노트의 데이터 범위 밖이라 판단하지 않는다",
+                                  f"Its cap rose {self.x(r['mcap_t1'] / r['mcap_t0'])} while NI rose {self.x(r['ni1'] / r['ni0'])} (rank {rank} of {dc.n_valid}, smallest first), and P/E went "
+                                  f"{self.x(r['per0'])} → {self.x(r['per1'])}, so the multiple share is {self.share(r['mult_share'])}. Causes such as orders or business mix are outside this note's data"),
+                           "4"])
+        if self.per_rep():
+            if ok(dc):
+                ans = self.T(f"대표값은 {self.per_rep()}. 이익이 늘었는데도 PER이 올랐다는 점이 핵심이다. 거품 여부는 이익 지속성에 달렸다{self.view()}",
+                             f"Headline: {self.per_rep()}. P/E rose even as earnings grew; whether it is a bubble depends on earnings durability{self.view()}")
+            else:
+                hi = val.per.sort_values("per", ascending=False).iloc[0]
+                ans = self.T(f"{self.per_rep()}. {hi['company']} {self.x(hi['per'], 0)}는 지배순이익 {self.num(hi['ni'])}억원으로 분모가 작아 생긴 왜곡이다. 거품 여부는 이익 지속성에 달렸다{self.view()}",
+                             f"{self.per_rep()}. {hi['company_en']}'s {self.x(hi['per'], 0)} reflects thin NI ({self.num(hi['ni'])}, KRW 100mn). It depends on earnings durability{self.view()}")
+            qa.append([self.T("PER이 높은데 거품인가?", "P/Es are high — is it a bubble?"), ans, "4, 5"])
         qa.append([self.T("이 분석을 어떻게 재현하나?", "How can this be reproduced?"),
                    self.T("python -m src.data_fetch.fetch_all → python -m research.vol01.fetch_extra → python -m research.vol01.build. 모든 숫자는 코드가 data/ 파일에서 계산한다",
                           "python -m src.data_fetch.fetch_all → python -m research.vol01.fetch_extra → python -m research.vol01.build. Code computes every figure from data/ files"), "A3"])
         cell = Cell(title=self.T(f"예상 질문 {len(qa)}개와 답", f"{len(qa)} expected questions"), src=["iea_ai", "eia", "krx", "dart", "corp"],
                     table=TableSpec([self.T("질문", "Question"), self.T("답", "Answer"), self.T("근거 쪽", "Page")], qa, [0.24, 0.68, 0.08],
-                                    ["L", "L", "C"], shade_rows={i for i, q in enumerate(qa) if "LS" in q[0] or "7.7" in q[0] or "합계" in q[0] or "combined" in q[0]},
-                                    font_size=8.3),
-                    note=self.T("답의 숫자는 본문과 같은 계산 결과", "Numbers in answers match the body calculations"))
+                                    ["L", "L", "C"], shade_rows=key, font_size=8.1),
+                    note=self.T("답의 숫자는 본문과 같은 계산 결과. 음영 = 데이터 처리 방식 관련 질문", "Numbers match the body; shaded = data-treatment questions"))
         return Page("full", "A1", self.T("예상 질의응답: 숫자로 답한다", "Expected Q&A: answered with numbers"),
                     self.T("면접·실사에서 나올 질문과 근거 쪽수", "Questions likely in interviews or due diligence, with page references"), [cell], grid="1x1")
 
@@ -858,7 +1067,7 @@ class Story:
                                                       self.T("키 없으면 건너뜀", "Skip if no key")]),
                   (self.T("검증", "Validation"), [self.T("식별자 (DART·SEC)", "IDs (DART, SEC)"), self.T("시총 = 종가×주식수 검산", "Cap = close × shares"),
                                                  self.T("기업행위(분할) 대조", "Corporate actions"), self.T("분해식 항등 검산", "Split identity check"),
-                                                 self.T(f"테스트 함수 {f.n_tests}개", f"{f.n_tests} test functions")]),
+                                                 self.T("pytest 단위테스트", "pytest unit tests")]),
                   (self.T("보고서", "Report"), [self.T("결론형 제목 자동 생성", "Data-driven titles"), self.T("국문·영문 PDF", "KR & EN PDFs"),
                                               self.T("없는 데이터는 회색 박스", "Gaps shown, not filled"), self.T("명령 한 줄로 재빌드", "One-command rebuild"),
                                               self.T("판단에 (저자 견해)", "Judgements labelled")])]

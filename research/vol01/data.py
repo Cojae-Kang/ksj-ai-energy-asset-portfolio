@@ -199,6 +199,37 @@ def sectors(cfg: Mapping) -> Sectors | Unavailable:
 # ---------------------------------------------------------------------------
 # III. 실적 (DART)
 # ---------------------------------------------------------------------------
+GROWTH_LABELS = {
+    "turned_profit": ("흑자전환", "Turned profitable"),
+    "turned_loss": ("적자전환", "Turned to loss"),
+    "loss_both": ("적자 지속", "Loss in both years"),
+    "missing": ("데이터 없음", "n/a"),
+}
+
+
+def growth_kind(v0: float | None, v1: float | None) -> str:
+    """배수를 정의할 수 있는지: 기준값이 0 이하이면 배수 대신 흑자전환/적자 지속 라벨."""
+    if v0 is None or v1 is None or v0 != v0 or v1 != v1:
+        return "missing"
+    if v0 > 0 and v1 > 0:
+        return "multiple"
+    if v0 <= 0 < v1:
+        return "turned_profit"
+    if v0 > 0 >= v1:
+        return "turned_loss"
+    return "loss_both"
+
+
+@dataclass
+class SumGrowth:
+    """합계 배수 = Σ끝 ÷ Σ시작. 기준값이 양수이고 끝값도 양수인 회사만 포함."""
+    multiple: float
+    n: int
+    v0: float
+    v1: float
+    excluded: list[dict]          # ticker, company, company_en, kind, v0, v1
+
+
 @dataclass
 class Financials:
     table: pd.DataFrame                 # company, company_en, ticker, fiscal_year, fy(int), revenue, op, ni, opm, ni_yoy
@@ -214,6 +245,26 @@ class Financials:
         if hit.empty or pd.isna(hit.iloc[0][col]):
             return None
         return float(hit.iloc[0][col])
+
+    def tickers(self) -> list[str]:
+        return list(dict.fromkeys(self.table["ticker"]))
+
+    def names(self, ticker: str) -> tuple[str, str]:
+        r = self.table[self.table["ticker"] == ticker].iloc[0]
+        return r["company"], r["company_en"]
+
+    def sum_growth(self, col: str, y0: int, y1: int) -> SumGrowth:
+        inc0 = inc1 = 0.0
+        n, excluded = 0, []
+        for t in self.tickers():
+            v0, v1 = self.value(t, y0, col), self.value(t, y1, col)
+            kind = growth_kind(v0, v1)
+            if kind == "multiple":
+                inc0, inc1, n = inc0 + v0, inc1 + v1, n + 1
+            else:
+                kr, en = self.names(t)
+                excluded.append({"ticker": t, "company": kr, "company_en": en, "kind": kind, "v0": v0, "v1": v1})
+        return SumGrowth(inc1 / inc0 if inc0 > 0 else float("nan"), n, inc0, inc1, excluded)
 
 
 def financials(cfg: Mapping) -> Financials | Unavailable:
@@ -353,6 +404,11 @@ class Decomposition:
                             # d_mcap, earn_part, mult_part (억원, 로그 비중 배분)
     n_valid: int
     n_multiple_led: int     # 멀티플 기여가 이익 기여보다 큰 회사 수
+    excluded: list[dict] = field(default_factory=list)   # 분해 제외 회사 (사유, 시작 시총 비중)
+
+    @property
+    def valid_rows(self) -> pd.DataFrame:
+        return self.table[self.table["valid"]]
 
 
 def decompose(cfg: Mapping, mk: Market | Unavailable, fin: Financials | Unavailable) -> Decomposition | Unavailable:
@@ -371,9 +427,17 @@ def decompose(cfg: Mapping, mk: Market | Unavailable, fin: Financials | Unavaila
     for _, r in mk.table.iterrows():
         ni0, ni1 = fin.value(r["ticker"], fy0, "ni"), fin.value(r["ticker"], fy1, "ni")
         valid = ni0 is not None and ni1 is not None and ni0 > 0 and ni1 > 0
+        if valid:
+            why_kr = why_en = ""
+        elif ni0 is None or ni1 is None:
+            why_kr, why_en = "지배순이익 없음", "NI missing"
+        elif ni0 <= 0:
+            why_kr, why_en = f"{d['fy_start']} 지배순손실", f"{d['fy_start']} net loss"
+        else:
+            why_kr, why_en = f"{d['fy_end']} 지배순손실", f"{d['fy_end']} net loss"
         row = {"company": r["company"], "company_en": r["company_en"], "ticker": r["ticker"],
                "mcap_t0": r["mcap_t0"], "mcap_t1": r["mcap_t1"], "ni0": ni0, "ni1": ni1, "valid": valid,
-               "reason": "" if valid else "적자 또는 이익 없음 → 분해 불가"}
+               "reason": why_kr, "reason_en": why_en, "share_t0": r["mcap_t0"] / mk.total_t0 * 100}
         if valid:
             dm = math.log(r["mcap_t1"] / r["mcap_t0"])
             dn = math.log(ni1 / ni0)
@@ -393,7 +457,9 @@ def decompose(cfg: Mapping, mk: Market | Unavailable, fin: Financials | Unavaila
     agg = {"mcap0": m0, "mcap1": m1, "ni0": n0, "ni1": n1, "per0": m0 / n0, "per1": m1 / n1, "dln_mcap": dm,
            "dln_ni": dn, "dln_per": dp, "earn_share": dn / dm, "mult_share": dp / dm, "d_mcap": d_mcap,
            "earn_part": d_mcap * dn / dm, "mult_part": d_mcap * dp / dm, "n_in_agg": len(v)}
-    return Decomposition(t, d["fy_start"], d["fy_end"], agg, len(v), int((v["dln_per"] > v["dln_ni"]).sum()))
+    excluded = t[~t["valid"]][["company", "company_en", "ticker", "reason", "reason_en", "share_t0", "ni0", "ni1"]]
+    return Decomposition(t, d["fy_start"], d["fy_end"], agg, len(v), int((v["dln_per"] > v["dln_ni"]).sum()),
+                         excluded.to_dict("records"))
 
 
 @dataclass
@@ -517,11 +583,6 @@ def source_status(cfg: Mapping) -> list[dict]:
     return rows
 
 
-def count_tests(root: Path | None = None) -> int:
-    root = root or resolve_path("tests")
-    return sum(Path(p).read_text(encoding="utf-8").count("\ndef test_") for p in root.glob("test_*.py"))
-
-
 # ---------------------------------------------------------------------------
 # 전체 묶음
 # ---------------------------------------------------------------------------
@@ -537,10 +598,9 @@ class Facts:
     val: Valuation | Unavailable
     rates: Rates | Unavailable
     sources: list[dict] = field(default_factory=list)
-    n_tests: int = 0
 
 
 def load_facts(cfg: Mapping, as_of: str) -> Facts:
     mk, fin = market(cfg), financials(cfg)
     return Facts(as_of, demand(cfg), ground(cfg), sectors(cfg), fin, mk, decompose(cfg, mk, fin),
-                 valuation(cfg, mk, fin), rates(cfg, mk, as_of), source_status(cfg), count_tests())
+                 valuation(cfg, mk, fin), rates(cfg, mk, as_of), source_status(cfg))

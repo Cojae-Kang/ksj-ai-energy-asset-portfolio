@@ -400,3 +400,105 @@ def test_build_landscape_pdfs(cfg, tmp_path, fy2022):
     assert "KRX 시총 검산" in summary and "split_consistent" in summary
     assert ("시총 분해 (FY2022A → FY2025A)" in summary) == fy2022
     assert (out / "_build").exists()
+
+
+# ---------------------------------------------------------------------------
+# 기준 이익 0 이하: 배수 미계산·라벨, 3사 표기, 대표 PER (두산 FY2022 지배순손실 시나리오)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("v0, v1, kind", [(100, 300, "multiple"), (-50, 80, "turned_profit"), (0, 80, "turned_profit"),
+                                          (50, -10, "turned_loss"), (-5, -10, "loss_both"), (None, 3, "missing")])
+def test_growth_kind(v0, v1, kind):
+    assert data.growth_kind(v0, v1) == kind
+
+
+def test_sum_growth_excludes_non_positive_base(cfg):
+    write_dart(p(cfg, "dart", 0))
+    write_dart(p(cfg, "dart", 1), years=(2022,), ni_override={("034020", 2022): -500})
+    fin = data.financials(cfg)
+    sg = fin.sum_growth("ni", 2022, 2025)
+    assert sg.n == 3 and [e["ticker"] for e in sg.excluded] == ["034020"] and sg.excluded[0]["kind"] == "turned_profit"
+    assert sg.multiple == pytest.approx((7326.1 + 2866.2 + 5198.9) / (1500 + 1700 + 900))
+    assert sg.multiple > 0
+
+
+def loss_case(cfg):
+    full_inputs(cfg, fy2022=False)
+    write_dart(p(cfg, "dart", 1), years=(2022,), ni_override={("034020", 2022): -500})
+    return data.load_facts(cfg, "2026-10-20")
+
+
+def _pages(cfg, f, lang):
+    pytest.importorskip("matplotlib")
+    from research.vol01.story import Story
+    return Story(cfg, f, lang).pages()
+
+
+def _titles_tables(pages) -> list[str]:
+    out = []
+    for pg in pages:
+        out += [pg.title, pg.subtitle]
+        for c in pg.cells:
+            out.append(c.title)
+            if c.table:
+                out += c.table.header + [str(v) for r in c.table.rows for v in r]
+        for b in pg.boxes:
+            out += [b.number, b.title, b.caption]
+    return out
+
+
+def test_no_negative_multiples_in_titles(cfg):
+    f = loss_case(cfg)
+    for lang, pat in (("kr", r"[-−]\d+(\.\d+)?배"), ("en", r"[-−]\d+(\.\d+)?x\b")):
+        texts = _titles_tables(_pages(cfg, f, lang))
+        bad = [t for t in texts if re.search(pat, t)]
+        assert not bad, bad[:3]
+
+
+def test_three_name_labels_and_doosan_rows(cfg):
+    f = loss_case(cfg)
+    pages = {pg.label: pg for pg in _pages(cfg, f, "kr")}
+    texts = "\n".join(_titles_tables(pages.values()))
+    assert "4사 합산" not in texts                                              # 표·제목에 4사 합산 오표기 없음
+    assert "3사(두산에너빌리티 제외: FY2022 지배순손실)" in pages["3"].title       # p3 제목에 제외 명시
+    p3_table = pages["3"].cells[3].table
+    doosan = next(r for r in p3_table.rows if r[0] == "두산에너빌리티")
+    assert doosan[4] == "-500" and doosan[6] == "흑자전환"                       # 실제 값 + 라벨
+    assert "3사(두산에너빌리티 제외)" in pages["4"].title
+    assert "시작 시총의 72%" in pages["4"].subtitle and "FY2022A 지배순손실" in pages["4"].subtitle
+    assert pages["4"].grid == "3-2" and len(pages["4"].cells) == 5
+    t4 = pages["4"].cells[4].table
+    assert any("분해 불가(FY2022A 지배순손실)" in v for r in t4.rows for v in r)
+    assert t4.rows[-1][0] == "3사 합산"
+    per_cell = pages["4"].cells[2]
+    assert "4사 합산 64.2배" in per_cell.note and "분모 왜곡" in per_cell.note    # 4사 값은 p4 각주에만
+
+
+def test_representative_per_is_three_name(cfg):
+    f = loss_case(cfg)
+    a = f.decomp.agg
+    rep = f"{a['per0']:.1f}배 → {a['per1']:.1f}배"
+    pages = {pg.label: pg for pg in _pages(cfg, f, "kr")}
+    agg4 = f"{f.val.agg_per:.1f}배"
+    med = f"{f.val.median_per:.1f}배"
+    for lab in ("i", "5", "A1"):
+        texts = "\n".join(_titles_tables([pages[lab]]) + [b for pg in [pages[lab]] for c in pg.cells for b in (c.bullets or [])]
+                          + [bl for b in pages[lab].boxes for bl in b.bullets])
+        assert agg4 not in texts and med not in texts, lab                       # 4사 합산·중앙값은 대표값으로 쓰지 않음
+    es_rows = {r[0]: r[1] for r in pages["i"].cells[0].table.rows}
+    assert es_rows["3사 합산 PER (2023 초→최근)"] == f"{a['per0']:.1f} → {a['per1']:.1f}배"
+    assert rep in pages["5"].subtitle and f"PER {a['per1']:.0f}배" in pages["5"].title
+
+
+def test_a1_questions_and_wording(cfg):
+    f = loss_case(cfg)
+    pages = {pg.label: pg for pg in _pages(cfg, f, "kr")}
+    qs = [r[0] for r in pages["A1"].cells[0].table.rows]
+    assert "두산에너빌리티는 왜 분해에서 빠졌나?" in qs
+    led = f.decomp.valid_rows[f.decomp.valid_rows["mult_share"] > f.decomp.valid_rows["earn_share"]]
+    for _, r in led.iterrows():
+        assert any(q.startswith(r["company"]) and "멀티플이 주도한 이유" in q for q in qs)
+    assert re.search(r"지수 \d+포인트", pages["2"].title) and not re.search(r"\d+p ", pages["2"].title)
+    a3 = "\n".join(b for c in pages["A3"].cells for b in (c.bullets or []))
+    assert "테스트 함수" not in a3
+    en = {pg.label: pg for pg in _pages(cfg, f, "en")}
+    assert "index points" in en["2"].title
