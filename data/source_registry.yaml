@@ -1,0 +1,144 @@
+# data/source_registry.yaml — 데이터 소스 등록부
+# priority: 1 = 공식 공시, 2 = 공공기관, 3 = 보조 라이브러리/보고서 (CLAUDE.md 소스 우선순위)
+# stages: 1 테마, 2 Comps, 3 가상 타깃, 4 IPO 공모가, 5 몬테카를로
+# license_note는 사용 전 각 사이트 이용약관으로 재확인할 것.
+
+sources:
+  - id: dart
+    name: "DART 전자공시 (Open DART API)"
+    url: "https://opendart.fss.or.kr"
+    priority: 1
+    api_key_required: true
+    env_key: "DART_API_KEY"
+    license_note: "금융감독원 공개 공시. Open DART 이용약관 확인."
+    stages: [2, 3, 4]
+    usage: "국내 peers 재무제표, 증권신고서(공모 구조·밸류에이션 방법)"
+
+  - id: sec_edgar
+    name: "SEC EDGAR"
+    url: "https://www.sec.gov/edgar"
+    api_url: "https://data.sec.gov"
+    priority: 1
+    api_key_required: false
+    env_key: "SEC_USER_AGENT"        # 키 대신 User-Agent 헤더 필수, 요청 속도 제한 준수
+    license_note: "미국 정부 공개 공시. SEC fair access 정책 준수."
+    stages: [2]
+    usage: "해외 peers 10-K/10-Q, XBRL 재무 데이터"
+
+  - id: krx
+    name: "KRX 정보데이터시스템 / KRX Open API"
+    url: "https://data.krx.co.kr"
+    api_url: "https://openapi.krx.co.kr"
+    priority: 2
+    api_key_required: true
+    env_key: "KRX_API_KEY"
+    license_note: "한국거래소 이용약관 확인."
+    stages: [2, 4]
+    usage: "국내 peers 주가·시가총액·상장주식수"
+
+  - id: kind
+    name: "KIND 기업공시채널"
+    url: "https://kind.krx.co.kr"
+    priority: 2
+    api_key_required: false
+    license_note: "한국거래소 공개 정보. 수작업 다운로드 후 data/manual/ 보관."
+    stages: [4]
+    usage: "최근 IPO 공모가·수요예측·상장 후 수익률 사례"
+
+  - id: ecos
+    name: "ECOS 한국은행 경제통계시스템"
+    url: "https://ecos.bok.or.kr"
+    api_url: "https://ecos.bok.or.kr/api/"
+    priority: 2
+    api_key_required: true
+    env_key: "ECOS_API_KEY"
+    license_note: "한국은행 공개 통계. 출처 표기."
+    stages: [2, 4, 5]
+    usage: "원/달러 환율, 국고채 금리(무위험이자율)"
+
+  - id: epsis
+    name: "EPSIS 전력통계정보시스템 (전력거래소 KPX)"
+    url: "https://epsis.kpx.or.kr"
+    priority: 2
+    api_key_required: false          # 웹 다운로드 기준. 공공데이터포털 API 사용 시 DATA_GO_KR_API_KEY
+    env_key: "DATA_GO_KR_API_KEY"
+    license_note: "공공데이터. 출처 표기."
+    stages: [1]
+    usage: "국내 전력수요·설비용량·전력거래 통계"
+
+  - id: data_go_kr
+    name: "공공데이터포털"
+    url: "https://www.data.go.kr"
+    priority: 2
+    api_key_required: true
+    env_key: "DATA_GO_KR_API_KEY"
+    license_note: "데이터셋별 이용허락범위 확인."
+    stages: [1]
+    usage: "KPX 등 공공기관 API 경유 수집"
+
+  - id: fred
+    name: "FRED (Federal Reserve Bank of St. Louis)"
+    url: "https://fred.stlouisfed.org"
+    api_url: "https://api.stlouisfed.org/fred/"
+    priority: 2
+    api_key_required: true
+    env_key: "FRED_API_KEY"
+    license_note: "시리즈별 저작권 표기 확인 (일부 제3자 데이터 포함)."
+    stages: [2, 5]
+    usage: "미국 국채 금리, 매크로 지표"
+
+  - id: eia
+    name: "U.S. EIA Open Data"
+    url: "https://www.eia.gov/opendata/"
+    priority: 2
+    api_key_required: true
+    env_key: "EIA_API_KEY"
+    license_note: "미국 정부 공개 데이터. 출처 표기."
+    stages: [1]
+    usage: "미국 전력 소비·발전·전력가격"
+
+  - id: iea_reports
+    name: "IEA 보고서 (예: Energy and AI)"
+    url: "https://www.iea.org"
+    priority: 3
+    api_key_required: false
+    license_note: "보고서별 라이선스 상이. 인용 범위·출처 표기 확인. PDF는 data/manual/ (커밋 제외)."
+    stages: [1]
+    usage: "글로벌 데이터센터 전력수요 전망"
+
+  - id: lbnl_reports
+    name: "LBNL 데이터센터 에너지 보고서"
+    url: "https://eta.lbl.gov"
+    priority: 3
+    api_key_required: false
+    license_note: "공개 보고서. 이용조건 확인 후 출처 표기."
+    stages: [1]
+    usage: "미국 데이터센터 전력소비 추정·전망"
+
+  # ---- 보조 라이브러리 (공식 소스와 교차검증 필수, 결과는 reports/에 기록) ----
+  - id: pykrx
+    name: "pykrx"
+    url: "https://github.com/sharebook-kr/pykrx"
+    priority: 3
+    api_key_required: false
+    license_note: "KRX 웹 데이터 래퍼. 원 데이터는 KRX 약관 적용."
+    stages: [2, 4]
+    usage: "국내 주가·시총 보조 수집"
+
+  - id: finance_datareader
+    name: "FinanceDataReader"
+    url: "https://github.com/FinanceData/FinanceDataReader"
+    priority: 3
+    api_key_required: false
+    license_note: "원 데이터 제공처 약관 적용."
+    stages: [2]
+    usage: "국내외 주가·환율 보조 수집"
+
+  - id: yfinance
+    name: "yfinance"
+    url: "https://github.com/ranaroussi/yfinance"
+    priority: 3
+    api_key_required: false
+    license_note: "Yahoo Finance 비공식 래퍼. 개인·연구 용도, Yahoo 약관 적용."
+    stages: [2]
+    usage: "해외 peers 주가·시총 보조 수집"

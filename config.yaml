@@ -1,0 +1,106 @@
+# config.yaml — 프로젝트 전역 파라미터
+# 규칙: 숫자를 지어내지 않는다. 값이 없으면 null + TODO(data), 가정치는 ASSUMPTION 태그 + 근거.
+
+project:
+  name: "AI 데이터센터 전력 밸류체인 — 가상 비상장 전력기기 기업 IPO 밸류에이션"
+  as_of_date: "2026-10-20"          # 기준일
+  target_name: "Target Co."         # 가상 기업 (실존 비상장사 사용 금지)
+
+currency:
+  base: "KRW"
+  secondary: "USD"
+  units:
+    KRW: "억원"
+    USD: "mn"
+
+fx:
+  # TODO(data): ECOS 원/달러 매매기준율 — 기준일(as_of_date) 종가 및 기간 평균
+  usdkrw_spot: null
+  usdkrw_avg_fy: null
+  source: "ECOS (한국은행 경제통계시스템)"
+  as_of: null
+
+discount_rate:
+  # ASSUMPTION: 시나리오별 할인율 — 근거(무위험이자율, ERP, 베타, 규모 프리미엄)를 채운 뒤 값 입력
+  risk_free_rate:
+    value: null                     # TODO(data): ECOS 국고채 10년 / FRED DGS10
+    source: null
+  equity_risk_premium:
+    value: null                     # ASSUMPTION: 근거 기재 필요
+    rationale: null
+  scenarios:
+    bear:
+      wacc: null                    # ASSUMPTION:
+      rationale: null
+    base:
+      wacc: null                    # ASSUMPTION:
+      rationale: null
+    bull:
+      wacc: null                    # ASSUMPTION:
+      rationale: null
+
+ipo:
+  # ASSUMPTION: 할인율(공모가 할인), 밴드 폭 등은 KIND 최근 IPO 사례 근거로 채울 것
+  ipo_discount_range: [null, null]
+  band_width: null
+
+monte_carlo:
+  n_sims: null                      # ASSUMPTION:
+  seed: 42
+
+peers:
+  # 티커는 KRX / SEC EDGAR / 각 거래소에서 재확인할 것
+  domestic:
+    - name: "HD현대일렉트릭"
+      ticker: "267260"
+      market: "KOSPI"
+      segment: "변압기·전력기기"
+    - name: "LS ELECTRIC"
+      ticker: "010120"
+      market: "KOSPI"
+      segment: "전력기기·배전"
+    - name: "효성중공업"
+      ticker: "298040"
+      market: "KOSPI"
+      segment: "변압기·중공업"
+    - name: "두산에너빌리티"
+      ticker: "034020"
+      market: "KOSPI"
+      segment: "발전설비"
+  overseas:
+    - name: "Vertiv"
+      ticker: "VRT"
+      market: "NYSE"
+      segment: "데이터센터 전력·냉각"
+    - name: "Eaton"
+      ticker: "ETN"
+      market: "NYSE"
+      segment: "전력관리·배전"
+    - name: "GE Vernova"
+      ticker: "GEV"
+      market: "NYSE"
+      segment: "발전·송전설비"
+    - name: "Schneider Electric"
+      ticker: "SU.PA"
+      market: "Euronext Paris"
+      segment: "전력관리·자동화"
+    - name: "Constellation Energy"
+      ticker: "CEG"
+      market: "NASDAQ"
+      segment: "발전사업자(IPP)"
+    - name: "Vistra"
+      ticker: "VST"
+      market: "NYSE"
+      segment: "발전사업자(IPP)"
+
+paths:
+  raw: "data/raw"
+  processed: "data/processed"
+  manual: "data/manual"
+  figures: "figures"
+  reports: "reports"
+  source_registry: "data/source_registry.yaml"
+
+figures:
+  dpi: 200
+  formats: ["png", "pdf"]

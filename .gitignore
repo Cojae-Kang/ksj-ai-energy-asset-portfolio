@@ -1,0 +1,43 @@
+# ---- Secrets (절대 커밋 금지) ----
+.env
+.env.*
+!.env.example
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ---- Testing / coverage ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Editors / OS ----
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Office temp files ----
+~$*
+
+# ---- Data ----
+data/raw/large/
+data/manual/*.pdf

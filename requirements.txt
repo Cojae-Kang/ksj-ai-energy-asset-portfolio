@@ -1,0 +1,13 @@
+pandas
+numpy
+scipy
+matplotlib
+pyyaml
+openpyxl
+requests
+python-dotenv
+pykrx
+finance-datareader
+yfinance
+pytest
+tqdm
