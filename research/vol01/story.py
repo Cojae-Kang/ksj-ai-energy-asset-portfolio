@@ -825,7 +825,7 @@ class Story:
             q_en = "how to price an IPO in a sector whose multiples have " + ("re-rated" if led else "followed earnings")
             sub = self.T("세 렌즈(ECM 공모가 · 데이터센터 PF · 증설 옵션)와 네 가지 리스크로 본 시사점",
                          "Implications through three lenses (ECM pricing · data-centre PF · capacity options) and four risks")
-        title = self.T("그래서 Vol.2: " + q_kr, "Hence Vol.2: " + q_en) + self.view()
+        title = self.T("그래서 Vol.2 — " + q_kr, "Hence Vol.2 — " + q_en) + self.view()
         ecm_data = (f"{self.per_rep()}; " + self.T(f"시총 {self.market_basis()}", f"cap {self.market_basis()}")
                     if self.per_rep() and ok(mk) else self.T("데이터 확인 중", "pending"))
         pf_data = (self.T(f"버지니아 상업용 판매 연 {g.va_cagr_pct:.1f}%" + (f", 미국 상업용 요금 {self.pct(s.change_pct('price', 'COM'))} ({s.first_year}→{s.last_year})" if ok(s) else ""),
@@ -991,7 +991,7 @@ class Story:
                 only = len(v[v["mult_share"] > v["earn_share"]]) == 1
                 key.add(len(qa))
                 qa.append([self.T(f"{r['company']}{'만' if only else '는'} 멀티플이 주도한 이유는?", f"Why was {r['company_en']} multiple-led?"),
-                           self.T(f"시총 {self.x(r['mcap_t1'] / r['mcap_t0'])} 중 지배순이익은 {self.x(r['ni1'] / r['ni0'])}로 {dc.n_valid}사 중 {rank}번째로 작게 늘었고, PER은 {self.x(r['per0'])} → {self.x(r['per1'])}로 올라 "
+                           self.T(f"시총 {self.x(r['mcap_t1'] / r['mcap_t0'])} 중 지배순이익은 {self.x(r['ni1'] / r['ni0'])}로 {dc.n_valid}사 중 {'가장' if rank == 1 else f'{rank}번째로'} 작게 늘었고, PER은 {self.x(r['per0'])} → {self.x(r['per1'])}로 올라 "
                                   f"멀티플 기여가 {self.share(r['mult_share'])}가 됐다. 수주·사업 구성 등 원인은 이 노트의 데이터 범위 밖이라 판단하지 않는다",
                                   f"Its cap rose {self.x(r['mcap_t1'] / r['mcap_t0'])} while NI rose {self.x(r['ni1'] / r['ni0'])} (rank {rank} of {dc.n_valid}, smallest first), and P/E went "
                                   f"{self.x(r['per0'])} → {self.x(r['per1'])}, so the multiple share is {self.share(r['mult_share'])}. Causes such as orders or business mix are outside this note's data"),
@@ -1084,7 +1084,7 @@ class Story:
              [self.T("시총 = 종가 × 상장주식수", "Cap = close × listed shares"), self.T("액면분할 대조", "Stock-split check"),
               self.T("종목 식별자 확인", "Identifier check"), self.T("단위·환율 검산", "Units and FX")]),
             (self.T("3. 계산", "3. Calculation"),
-             [self.T("지수·CAGR", "Indices, CAGR"), self.T("로그 분해", "Log decomposition"), "Δln(cap) =", "Δln(NI) + Δln(P/E)",
+             [self.T("지수·CAGR", "Indices, CAGR"), self.T("로그 분해", "Log decomposition"), "Δln(cap) = Δln(NI) + Δln(P/E)",
               self.T("기준 이익 ≤0 제외", "Exclude base NI ≤0")]),
             (self.T("4. 보고서", "4. Report"),
              [self.T("결론형 제목", "Conclusion titles"), self.T("국문·영문", "Korean & English"), self.T("출처·기준일 각주", "Sources and dates")]),
