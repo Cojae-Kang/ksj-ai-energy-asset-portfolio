@@ -6,7 +6,7 @@ from typing import Mapping
 
 import pandas as pd
 
-from .base import (FetchError, FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS,
+from .base import (FetchError, FetchResult, Progress, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS,
                    build_url, get_secret, make_client, mask_secrets, resolve_path, save_processed,
                    save_raw, to_number)
 
@@ -50,11 +50,14 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: FredClient 
     c = client or FredClient(cfg, as_of, use_cache=use_cache)
     specs = cfg["data_fetch"]["fred"]["series"]
     data, notes, outputs = {}, [], []
+    prog = Progress(SOURCE, "시계열", len(specs))
     for spec in specs:
         try:
-            data[spec["id"]] = c.fetch_series(spec["id"], spec.get("unit"))
+            with prog.step(spec["id"]) as st:
+                data[spec["id"]] = c.fetch_series(spec["id"], spec.get("unit"))
+                st["note"] = f"({data[spec['id']].notna().sum()}건)"
             outputs.append(str(c.raw_dir / f"{spec['id']}.json"))
-        except FetchError as e:
+        except FetchError as e:  # 타임아웃 포함: 해당 시리즈만 건너뜀
             notes.append(mask_secrets(f"{spec['id']} 실패: {e}"))
     if data:
         df = pd.DataFrame(data).rename_axis("date").reset_index()

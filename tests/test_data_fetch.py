@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 import types
+import warnings
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -17,14 +18,16 @@ import requests
 
 from src.data_fetch import (base, consolidate, dart, ecos, eia, fetch_all, fred, krx, market_global, sec,
                             validate_peers)
-from src.data_fetch.base import FetchError, HttpClient, SkipSource
+from src.data_fetch.base import FetchError, HttpClient, RequestTimeout, SkipSource
 
 
 # ---------------------------------------------------------------------------
 # 공통 fixture / fake
 # ---------------------------------------------------------------------------
 class FakeResp:
-    def __init__(self, status=200, body=b"", url="https://example.test"):
+    """stream=True 응답 흉내. chunks/on_chunk로 '느리게 흘러오는 응답'을 재현할 수 있다."""
+
+    def __init__(self, status=200, body=b"", url="https://example.test", chunks=None, on_chunk=None):
         self.status_code = status
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
@@ -34,6 +37,33 @@ class FakeResp:
         self.text = body.decode("utf-8", errors="replace")
         self.headers = {"Content-Type": "application/json"}
         self.url = url
+        self._chunks = chunks if chunks is not None else [body]
+        self._on_chunk = on_chunk
+        self.closed = False
+
+    def iter_content(self, chunk_size=1):
+        for c in self._chunks:
+            if self._on_chunk:
+                self._on_chunk()
+            yield c
+
+    def close(self):
+        self.closed = True
+
+
+class FakeClock:
+    """테스트용 시계: sleep하면 시간이 흐른다."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, s):
+        self.sleeps.append(s)
+        self.now += s
 
 
 class FakeSession:
@@ -44,8 +74,9 @@ class FakeSession:
         self.calls: list[dict] = []
         self.headers: dict = {}
 
-    def get(self, url, params=None, headers=None, timeout=None):
-        self.calls.append({"url": url, "params": params, "headers": headers or {}, "timeout": timeout})
+    def get(self, url, params=None, headers=None, timeout=None, stream=False):
+        self.calls.append({"url": url, "params": params, "headers": headers or {}, "timeout": timeout,
+                           "stream": stream})
         out = self.handler(url, params, headers or {})
         if isinstance(out, Exception):
             raise out
@@ -55,8 +86,9 @@ class FakeSession:
 def make_http(handler, source="test", **kw):
     sleeps: list[float] = []
     sess = FakeSession(handler)
-    client = HttpClient(source, {"timeout_sec": 7, "max_retries": 3, "backoff_base_sec": 1.0,
-                                 "cache_ttl_hours": 0}, session=sess, sleep=sleeps.append, **kw)
+    client = HttpClient(source, {"connect_timeout_sec": 5, "read_timeout_sec": 20, "max_retries": 3,
+                                 "backoff_base_sec": 1.0, "max_total_wait_sec": 60, "cache_ttl_hours": 0},
+                        session=sess, sleep=sleeps.append, **kw)
     return client, sess, sleeps
 
 
@@ -133,14 +165,71 @@ def test_retry_exponential_backoff_then_success():
     r = client.get("https://h/x", params={"a": 1})
     assert r.json() == {"ok": 1}
     assert sleeps == [1.0, 2.0]                       # 지수 백오프
-    assert all(c["timeout"] == 7 for c in sess.calls)  # 타임아웃 전달
+    assert all(c["timeout"] == (5, 20) and c["stream"] for c in sess.calls)  # (연결, 응답) 타임아웃
 
 
 def test_retry_gives_up_after_three_retries():
     client, sess, sleeps = make_http(lambda *a: FakeResp(500))
-    with pytest.raises(FetchError, match="3회 재시도"):
+    with pytest.raises(FetchError, match="재시도 후 실패") as ei:
         client.get("https://h/x?api_key=SHOULDMASK")
     assert len(sess.calls) == 4 and sleeps == [1.0, 2.0, 4.0]
+
+
+    assert not isinstance(ei.value, RequestTimeout)      # 5xx는 타임아웃이 아님
+
+
+def test_config_http_timeouts_are_5_and_20():
+    h = base.load_config()["data_fetch"]["http"]
+    assert (h["connect_timeout_sec"], h["read_timeout_sec"]) == (5, 20)
+    assert h["max_retries"] == 3 and h["max_total_wait_sec"] == 60
+    client = base.make_client("t", base.load_config(), {}, session=FakeSession(lambda *a: FakeResp()))
+    assert (client.connect_timeout, client.read_timeout, client.max_total_wait) == (5.0, 20.0, 60.0)
+
+
+def test_slow_trickle_body_hits_wall_clock_deadline_and_total_cap():
+    """서버가 조금씩 보내 소켓 read timeout이 안 걸리는 상황(이번 DART 무한대기) 재현."""
+    clk = FakeClock()
+
+    def tick():
+        clk.now += 8.0                                     # 청크마다 8초 → 3청크 = 24초 > 20초
+
+    sess = FakeSession(lambda *a: FakeResp(200, chunks=[b"{", b'"a"', b":1}"], on_chunk=tick))
+    client = HttpClient("dart", {"connect_timeout_sec": 5, "read_timeout_sec": 20, "max_retries": 3,
+                                 "backoff_base_sec": 1.0, "max_total_wait_sec": 60, "cache_ttl_hours": 0},
+                        session=sess, sleep=clk.sleep, clock=clk)
+    with pytest.raises(RequestTimeout, match="타임아웃") as ei:
+        client.get("https://opendart.fss.or.kr/api/list.json", params={"crtfc_key": "SECRET_KEY_1"})
+    assert "SECRET_KEY_1" not in str(ei.value)
+    assert len(sess.calls) == 3                            # 4번째 시도 전에 총 60초 상한 도달
+    assert sess.calls[0]["timeout"] == (5, 20)
+    assert sess.calls[2]["timeout"] == (5, pytest.approx(9.0))   # 남은 예산만큼만 대기
+    assert clk.now < 60 + 20                               # 무한대기 없음
+
+
+def test_requests_timeout_is_retried_then_request_timeout():
+    clk = FakeClock()
+    sess = FakeSession(lambda *a: requests.ReadTimeout("Read timed out. (read timeout=20)"))
+    client = HttpClient("t", {"max_retries": 3, "backoff_base_sec": 1.0, "max_total_wait_sec": 60,
+                              "cache_ttl_hours": 0}, session=sess, sleep=clk.sleep, clock=clk)
+    with pytest.raises(RequestTimeout):
+        client.get("https://h/x")
+    assert len(sess.calls) == 4 and clk.sleeps == [1.0, 2.0, 4.0]
+
+
+def test_progress_log_line_format(caplog):
+    clk = FakeClock()
+    prog = base.Progress("dart", "재무제표", 12, clock=clk)
+    prog.i = 2
+    with caplog.at_level(logging.INFO, logger="data_fetch.progress"):
+        with prog.step("HD현대일렉트릭 FY2025") as st:
+            clk.now += 1.234
+            st["note"] = "(CFS)"
+        with pytest.raises(RequestTimeout):
+            with prog.step("LS ELECTRIC FY2025"):
+                raise RequestTimeout("timed out")
+    lines = [r.getMessage() for r in caplog.records]
+    assert lines[0] == "[dart] 재무제표 3/12 HD현대일렉트릭 FY2025 ... 완료(1.2초) (CFS)"
+    assert lines[1].startswith("[dart] 재무제표 4/12 LS ELECTRIC FY2025 ... 타임아웃→건너뜀(0.0초)")
 
 
 def test_http_4xx_raises_masked_without_retry():
@@ -261,28 +350,57 @@ def test_dart_api_error_raises(cfg, monkeypatch):
         c.fetch_financials("00000001", 2025)
 
 
-def test_date_windows_max_90_days():
-    w = dart.date_windows(date(2025, 1, 1), date(2025, 12, 31), 90)
-    assert w[0] == (date(2025, 1, 1), date(2025, 3, 31))
-    assert w[-1][1] == date(2025, 12, 31)
-    assert all((e - s).days < 90 for s, e in w)
+def test_month_windows_three_months():
+    w = dart.month_windows(date(2025, 1, 1), date(2026, 10, 20), 3)
+    assert w[:2] == [(date(2025, 1, 1), date(2025, 3, 31)), (date(2025, 4, 1), date(2025, 6, 30))]
+    assert w[-1] == (date(2026, 10, 1), date(2026, 10, 20))
+    assert len(w) == 8
+    assert dart.month_windows(date(2025, 11, 30), date(2026, 3, 31), 3)[0] == (date(2025, 11, 30), date(2026, 2, 27))
 
 
-def test_dart_search_filings_pagination_and_filter(cfg, monkeypatch):
-    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
-
+def _filings_handler(total_page=2, timeout_bgn=None):
     def handler(url, params, headers):
-        assert params["pblntf_ty"] == "C"
+        assert params["pblntf_ty"] == "C" and params["page_count"] == 100
+        if params["bgn_de"] == timeout_bgn:
+            return requests.ReadTimeout("Read timed out.")
         page = params["page_no"]
         rows = [{"rcept_no": f"{params['bgn_de']}-{page}", "report_nm": "증권신고서(지분증권)", "corp_name": "A"},
                 {"rcept_no": f"{params['bgn_de']}-{page}x", "report_nm": "투자설명서", "corp_name": "B"}]
-        return FakeResp(200, {"status": "000", "total_page": 2, "page_no": page, "list": rows})
+        return FakeResp(200, {"status": "000", "total_page": total_page, "page_no": page, "list": rows})
+    return handler
 
-    http, sess, _ = make_http(handler)
+
+def test_dart_search_filings_splits_3_months_and_caps_pages(cfg, monkeypatch):
+    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
+    cfg["data_fetch"]["dart"]["filings"]["max_pages"] = 2
+    http, sess, _ = make_http(_filings_handler(total_page=10))
     c = dart.DartClient(cfg, "2026-10-20", http=http)
-    df = c.search_filings("20250101", "20250331")             # 90일 → 1구간, 2페이지
-    assert len(sess.calls) == 2
-    assert list(df["report_nm"].unique()) == ["증권신고서(지분증권)"] and len(df) == 2
+    df, notes = c.search_filings("20250101", "20250630")     # corp_code 없음 → 3개월 × 2구간
+    assert {(x["params"]["bgn_de"], x["params"]["end_de"]) for x in sess.calls} == {
+        ("20250101", "20250331"), ("20250401", "20250630")}
+    assert all("corp_code" not in x["params"] for x in sess.calls)
+    assert len(sess.calls) == 4                                 # 구간당 max_pages=2
+    assert sum("max_pages=2에서 중단" in n for n in notes) == 2
+    assert list(df["report_nm"].unique()) == ["증권신고서(지분증권)"] and len(df) == 4
+
+
+def test_dart_search_filings_timeout_skips_window_and_continues(cfg, monkeypatch):
+    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
+    http, sess, _ = make_http(_filings_handler(total_page=1, timeout_bgn="20250101"))
+    c = dart.DartClient(cfg, "2026-10-20", http=http)
+    df, notes = c.search_filings("20250101", "20250630")
+    assert len(notes) == 1 and "20250101~20250331" in notes[0] and "건너뜀" in notes[0]
+    assert "DKEY_0001" not in notes[0]
+    assert list(df["rcept_no"]) == ["20250401-1"]               # 다음 구간은 정상 수집
+
+
+def test_dart_search_filings_with_corp_code_single_window(cfg, monkeypatch):
+    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
+    http, sess, _ = make_http(_filings_handler(total_page=1))
+    c = dart.DartClient(cfg, "2026-10-20", http=http)
+    c.search_filings("20250101", "20261020", corp_code="00000001")
+    assert len(sess.calls) == 1 and sess.calls[0]["params"]["corp_code"] == "00000001"
+    assert (sess.calls[0]["params"]["bgn_de"], sess.calls[0]["params"]["end_de"]) == ("20250101", "20261020")
 
 
 def test_dart_document_zip_and_error(cfg, monkeypatch):
@@ -297,27 +415,54 @@ def test_dart_document_zip_and_error(cfg, monkeypatch):
         c.download_document("2")
 
 
-def test_dart_run_end_to_end(cfg, monkeypatch):
-    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
-    cfg["peers"]["domestic"] = cfg["peers"]["domestic"][:1]
-    cfg["data_fetch"]["fiscal_years"] = [2025]
-    cfg["data_fetch"]["dart"]["ipo_search"]["bgn_de"] = "20261001"
-
+def _dart_run_handler(calls):
     def handler(url, params, headers):
+        calls.append(url.rsplit("/", 1)[-1])
         if url.endswith("corpCode.xml"):
             return FakeResp(200, _corp_zip())
         if url.endswith("fnlttSinglAcntAll.json"):
+            if params["bsns_year"] == "2024":
+                return requests.ReadTimeout("Read timed out.")   # 이 연도만 타임아웃
             return FakeResp(200, {"status": "000", "list": _fn_rows()})
         if url.endswith("list.json"):
             return FakeResp(200, {"status": "013", "message": "no data"})
         raise AssertionError(url)
+    return handler
 
-    http, _, _ = make_http(handler)
-    res = dart.run(cfg, "2026-10-20", client=dart.DartClient(cfg, "2026-10-20", http=http))
-    assert res.status == base.STATUS_SUCCESS and res.n_items == 1
+
+def test_dart_run_filings_off_by_default_and_timeout_skips_year(cfg, monkeypatch, caplog):
+    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
+    assert base.load_config()["data_fetch"]["dart"]["filings"]["enabled"] is False   # 기본값 OFF
+    cfg["peers"]["domestic"] = cfg["peers"]["domestic"][:1]
+    cfg["data_fetch"]["fiscal_years"] = [2024, 2025]
+    calls: list[str] = []
+    http, _, _ = make_http(_dart_run_handler(calls))
+    with caplog.at_level(logging.INFO, logger="data_fetch.progress"):
+        res = dart.run(cfg, "2026-10-20", client=dart.DartClient(cfg, "2026-10-20", http=http))
+    assert "list.json" not in calls                                # 공시 검색 안 함
+    assert res.status == base.STATUS_PARTIAL and res.n_items == 1  # 2024 타임아웃 → 건너뛰고 2025 수집
+    assert "FY2024" in res.message and "타임아웃" in res.message
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith("[dart] 재무제표 1/2 HD현대일렉트릭 FY2024 ... 타임아웃→건너뜀") for m in msgs)
+    assert any(m.startswith("[dart] 재무제표 2/2 HD현대일렉트릭 FY2025 ... 완료(") for m in msgs)
     df = pd.read_csv(Path(cfg["paths"]["processed"]) / "dart_financials.csv", dtype={"ticker": str})
     assert df.loc[0, "ticker"] == "267260" and df.loc[0, "fiscal_year"] == "FY2025A"
     assert df.loc[0, "unit"] == "억원" and df.loc[0, "revenue"] == pytest.approx(30000.0)
+
+
+def test_dart_run_filings_peers_mode(cfg, monkeypatch):
+    monkeypatch.setenv("DART_API_KEY", "DKEY_0001")
+    cfg["peers"]["domestic"] = cfg["peers"]["domestic"][:1]
+    cfg["data_fetch"]["fiscal_years"] = [2025]
+    f = cfg["data_fetch"]["dart"]["filings"]
+    f.update(enabled=True, mode="peers", bgn_de="20250101")
+    calls: list[str] = []
+    http, sess, _ = make_http(_dart_run_handler(calls))
+    res = dart.run(cfg, "2026-10-20", client=dart.DartClient(cfg, "2026-10-20", http=http))
+    list_calls = [x for x in sess.calls if x["url"].endswith("list.json")]
+    assert len(list_calls) == 1 and list_calls[0]["params"]["corp_code"] == "00000001"
+    assert res.status == base.STATUS_SUCCESS
+    assert any("filings_peers_20250101_20261020.csv" in o for o in res.outputs)
 
 
 # ---------------------------------------------------------------------------
@@ -595,12 +740,13 @@ class FakeTicker:
         self.fast_info = {"shares": 100_000_000, "currency": "EUR" if symbol == "SU.PA" else "USD",
                           "market_cap": 1.3e9}
 
-    def history(self, start, end, auto_adjust=False):
+    def history(self, start, end, auto_adjust=False, timeout=None):
+        assert timeout == 20
         return self._hist
 
 
 def test_fetch_quote_uses_close_on_or_before_asof():
-    q = market_global.fetch_quote("VRT", "2026-10-20", 10, FakeTicker)
+    q = market_global.fetch_quote("VRT", "2026-10-20", 10, FakeTicker, timeout=20)
     assert q["close"] == 12.0 and q["price_date"] == "2026-10-20"
     assert q["market_cap_asof"] == pytest.approx(1.2e9)
 
@@ -672,7 +818,9 @@ def test_consolidate_normalizes_units_and_fx():
                             "currency": "EUR", "unit": "mn", "revenue": None, "operating_income": None,
                             "net_income": None, "total_debt": None, "cash": None, "source": "URD"}])
     fx = pd.DataFrame([{"fiscal_year": "FY2025", "usdkrw_avg": 1400.0, "usdkrw_year_end": 1450.0}])
-    out = consolidate.consolidate(dart_df, sec_df, manual, fx)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)   # pandas 2.x concat 경고 재발 방지
+        out = consolidate.consolidate(dart_df, sec_df, manual, fx)
     assert list(out.columns) == consolidate.COLUMNS
     df = out.set_index("ticker")
     assert df.loc["267260", "revenue_usd_mn"] == pytest.approx(1000.0)        # 14,000억원 / 1,400
@@ -689,6 +837,11 @@ def test_consolidate_normalizes_units_and_fx():
 def test_parse_args_multiple_sources():
     a = fetch_all.parse_args(["--source", "dart", "sec", "--asof", "2026-10-20"])
     assert a.source == ["dart", "sec"] and a.asof == "2026-10-20"
+    assert fetch_all.parse_args(["--source", "krx,ecos,sec"]).source == ["krx", "ecos", "sec"]
+    assert fetch_all.parse_args(["--source", "krx,", "ECOS", "sec"]).source == ["krx", "ecos", "sec"]
+    assert fetch_all.parse_args([]).source == ["all"]
+    with pytest.raises(SystemExit):
+        fetch_all.parse_args(["--source", "krx,bloomberg"])
     with pytest.raises(SystemExit):
         fetch_all.parse_args(["--source", "bloomberg"])
     with pytest.raises(ValueError):
@@ -709,6 +862,27 @@ def test_fetch_all_skips_missing_keys_and_continues(cfg, monkeypatch, capsys):
     assert rc == 1   # validate/consolidate는 입력 파일이 없어 FAILED → 종료코드 1
 
 
+def test_fetch_all_comma_sources_and_skip_filings(cfg, monkeypatch, capsys):
+    cfg["data_fetch"]["dart"]["filings"]["enabled"] = True
+    monkeypatch.setattr(fetch_all, "load_config", lambda path=None: cfg)
+    seen = {}
+
+    def fake(name):
+        def run(c, a, **kw):
+            seen[name] = c["data_fetch"]["dart"]["filings"]["enabled"]
+            return base.FetchResult(name, "SUCCESS", 1)
+        return run
+
+    for n in ("krx", "ecos", "sec", "dart"):
+        monkeypatch.setitem(fetch_all.SOURCES, n, fake(n))
+    fetch_all.main(["--source", "krx,ecos,sec", "--no-post"])
+    assert list(seen) == ["krx", "ecos", "sec"]
+    seen.clear()
+    fetch_all.main(["--source", "dart", "--skip-filings", "--no-post"])
+    assert seen == {"dart": False}
+    assert cfg["data_fetch"]["dart"]["filings"]["enabled"] is True     # 원본 config는 변경하지 않음
+
+
 def test_run_one_masks_exception_message(monkeypatch):
     monkeypatch.setenv("FRED_API_KEY", "LEAKYKEY_42")
     base.get_secret("FRED_API_KEY")
@@ -723,3 +897,65 @@ def test_run_one_masks_exception_message(monkeypatch):
 def test_modules_do_not_import_optional_libs_at_import_time():
     for mod in ("FinanceDataReader", "pykrx", "yfinance"):
         assert mod not in sys.modules or isinstance(sys.modules[mod], types.ModuleType)
+
+
+def test_consolidate_excludes_empty_frames_without_warning():
+    empty = pd.DataFrame(columns=["company", "ticker", "fiscal_year", "currency", "unit", "revenue"])
+    manual = pd.DataFrame([{"company": "S", "ticker": "SU.PA", "region": "EU", "basis": "IFRS",
+                            "fiscal_year": "FY2025A", "currency": "EUR", "unit": "mn", "revenue": None,
+                            "operating_income": None, "net_income": None, "total_debt": None, "cash": None,
+                            "source": None, "notes": None}])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        out = consolidate.consolidate(empty, None, manual, None)
+    assert len(out) == 1 and out.loc[0, "revenue"] != out.loc[0, "revenue"]   # NaN 유지
+    assert "TODO(data)" in out.loc[0, "flags"] and out["revenue"].dtype.kind == "f"
+
+
+# ---------------------------------------------------------------------------
+# 실제 소켓 회귀 테스트 (127.0.0.1 로컬 서버만 사용, 외부 네트워크 없음)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def local_server():
+    import threading
+    import time as _time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            if self.path.startswith("/trickle"):
+                try:  # 0.3초마다 1바이트: 소켓 recv timeout은 영원히 안 걸리는 응답 (DART 무한대기 재현)
+                    for _ in range(100):
+                        self.wfile.write(b" ")
+                        self.wfile.flush()
+                        _time.sleep(0.3)
+                except OSError:
+                    pass
+            else:
+                self.wfile.write(b'{"status": "000"}')
+
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_port}"
+    srv.shutdown()
+
+
+def test_real_socket_trickle_is_cut_by_wall_clock(local_server):
+    import threading
+    import time as _time
+
+    client = HttpClient("dart", {"connect_timeout_sec": 1, "read_timeout_sec": 1, "max_retries": 3,
+                                 "backoff_base_sec": 0.5, "max_total_wait_sec": 2, "cache_ttl_hours": 0})
+    t0 = _time.monotonic()
+    with pytest.raises(RequestTimeout):
+        client.get(local_server + "/trickle", params={"crtfc_key": "REALKEY_123"})
+    assert _time.monotonic() - t0 < 6                     # 수정 전에는 여기서 무한대기
+    assert client.get(local_server + "/ok").json() == {"status": "000"}   # 정상 응답 경로
+    _time.sleep(0.5)
+    assert not [t for t in threading.enumerate() if t.name.startswith("http-") and t.is_alive()]

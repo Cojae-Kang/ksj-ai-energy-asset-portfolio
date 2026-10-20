@@ -72,11 +72,19 @@ def consolidate(dart: pd.DataFrame | None, sec: pd.DataFrame | None, manual: pd.
         parts.append(_from_sec(sec))
     if manual is not None and not manual.empty:
         parts.append(_from_manual(manual))
+    # pandas FutureWarning 방지: 빈 DataFrame은 제외하고, 전부 NA인 열(예: 미입력 수기 템플릿의 금액 열)은
+    # concat 전에 떨어뜨린 뒤 아래에서 숫자형 NaN으로 다시 만든다 (dtype 추론에 NA 열이 끼지 않게).
+    parts = [p.dropna(axis=1, how="all") for p in parts]
+    parts = [p for p in parts if not p.empty and p.shape[1] > 0]
     if not parts:
         return pd.DataFrame(columns=COLUMNS)
     df = pd.concat(parts, ignore_index=True)
     for m in ["revenue", "operating_income", "net_income", "total_debt", "cash"]:
-        df[m] = pd.to_numeric(df[m], errors="coerce")
+        df[m] = pd.to_numeric(df[m], errors="coerce") if m in df else np.nan
+    for col in ["fiscal_year_end", "basis", "flags", "currency", "unit"]:
+        if col not in df:
+            df[col] = np.nan
+    df["flags"] = df["flags"].fillna("").astype(str)
     df["net_debt"] = df["total_debt"] - df["cash"]
 
     fx = {} if fx_annual is None or fx_annual.empty else fx_annual.set_index("fiscal_year")[

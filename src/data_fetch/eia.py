@@ -10,7 +10,7 @@ from typing import Mapping
 
 import pandas as pd
 
-from .base import (FetchError, FetchResult, STATUS_FAILED, STATUS_SUCCESS, build_url, get_secret,
+from .base import (FetchError, FetchResult, Progress, STATUS_FAILED, STATUS_SUCCESS, build_url, get_secret,
                    make_client, resolve_path, save_processed, save_raw, to_number)
 
 logger = logging.getLogger("data_fetch.eia")
@@ -63,12 +63,17 @@ class EiaClient:
     def fetch_retail_sales(self) -> tuple[list[dict], str]:
         url = build_url(self.ecfg["base_url"], self.ecfg["endpoints"]["retail_sales"])
         rows, offset, fetched_at, pages = [], 0, None, []
+        prog = Progress(SOURCE, "retail-sales 페이지")
         while True:
             params = build_params(self.ecfg, offset)
-            resp = self.http.get(url, params=[("api_key", self.key)] + params)
-            fetched_at = resp.fetched_at
-            payload = resp.json()
-            chunk, total = parse_response(payload)
+            with prog.step(f"offset {offset}") as st:
+                resp = self.http.get(url, params=[("api_key", self.key)] + params)
+                fetched_at = resp.fetched_at
+                payload = resp.json()
+                chunk, total = parse_response(payload)
+                page_len = int(self.ecfg["page_length"])
+                prog.total = max(1, -(-total // page_len))  # 첫 응답 후 전체 페이지 수 확정
+                st["note"] = f"({len(chunk)}/{total}건)"
             rows += chunk
             pages.append({k: v for k, v in payload.get("response", {}).items() if k != "data"})
             offset += len(chunk)

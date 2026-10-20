@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from .base import (FetchError, FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS,
+from .base import (FetchError, FetchResult, Progress, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS,
                    build_url, get_secret, make_client, mask_secrets, resolve_path, save_processed,
                    save_raw)
 
@@ -205,10 +205,13 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: SecClient |
     scfg = cfg["data_fetch"]["sec"]
     years = cfg["data_fetch"]["fiscal_years"]
     skip = set(scfg.get("not_sec_registrants", []))
-    tick = c.fetch_tickers()
+    with Progress(SOURCE, "CIK 매핑", 1).step("company_tickers.json"):
+        tick = c.fetch_tickers()
     outputs = [str(c.raw_dir / "company_tickers.json")]
     notes, fin_rows, debt_rows, share_rows = [], [], [], []
 
+    prog = Progress(SOURCE, "companyfacts", len([p for p in cfg["peers"]["overseas"]
+                                                 if p["ticker"].upper() not in skip]))
     for peer in cfg["peers"]["overseas"]:
         t = peer["ticker"].upper()
         if t in skip:
@@ -220,8 +223,9 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: SecClient |
             continue
         cik = int(hit.iloc[0]["cik"])
         try:
-            facts = c.fetch_companyfacts(cik)
-        except FetchError as e:
+            with prog.step(f"{peer['name']} CIK{cik10(cik)}"):
+                facts = c.fetch_companyfacts(cik)
+        except FetchError as e:  # 타임아웃 포함: 해당 회사만 건너뜀
             notes.append(mask_secrets(f"{peer['name']} companyfacts 실패: {e}"))
             continue
         rows, detail = extract_company_financials(facts, scfg, years)

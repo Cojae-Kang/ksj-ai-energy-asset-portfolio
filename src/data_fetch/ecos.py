@@ -10,7 +10,7 @@ from typing import Mapping
 
 import pandas as pd
 
-from .base import (FetchError, FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS,
+from .base import (FetchError, FetchResult, Progress, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS,
                    get_secret, make_client, mask_secrets, resolve_path, save_processed, save_raw,
                    to_number)
 
@@ -112,10 +112,13 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: EcosClient 
     series: dict[str, pd.Series] = {}
     notes, outputs = [], []
 
+    prog = Progress(SOURCE, "시계열", len(ecfg["series"]))
     for spec in ecfg["series"]:
         try:
-            rows, _ = c.fetch_series(spec, start, end)
-        except FetchError as e:
+            with prog.step(f"{spec['id']} {spec['stat_code']}/{spec['item_code']}") as st:
+                rows, _ = c.fetch_series(spec, start, end)
+                st["note"] = f"({len(rows)}건)"
+        except FetchError as e:  # 타임아웃 포함: 해당 시리즈만 건너뜀
             notes.append(mask_secrets(f"{spec['id']} 실패: {e}"))
             continue
         warn = verify_item_name(rows, spec.get("expect_item_name"))

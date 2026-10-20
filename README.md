@@ -119,20 +119,46 @@ pytest -q                   # 네트워크 없이 도는 단위테스트 (응답
 # 전체 수집 (+ peers 식별자 검증 + 재무 통합)
 python -m src.data_fetch.fetch_all --source all --asof 2026-10-20
 
-# 개별 소스 (여러 개 가능): dart / krx / ecos / sec / fred / eia / global
-python -m src.data_fetch.fetch_all --source dart sec ecos --asof 2026-10-20
+# 개별 소스 (쉼표 또는 공백으로 여러 개): dart / krx / ecos / sec / fred / eia / global
+python -m src.data_fetch.fetch_all --source krx,ecos,sec --asof 2026-10-20
 
-# 옵션: --no-cache (캐시 무시), --no-post (검증·통합 생략), -v (디버그 로그)
+# DART 발행공시 검색 생략 (기본값도 OFF: config dart.filings.enabled=false)
+python -m src.data_fetch.fetch_all --source dart --skip-filings --asof 2026-10-20
+
+# 옵션: --no-cache (캐시 무시), --no-post (검증·통합 생략), --skip-filings, -v (디버그 로그)
 python -m src.data_fetch.validate_peers      # 식별자 검증만 다시
 ```
 
+요청마다 진행 로그가 한 줄씩 출력됩니다.
+
+```text
+[dart] 재무제표 3/12 LS ELECTRIC FY2025 ... 완료(0.8초) (CFS, 212행)
+[dart] 재무제표 4/12 LS ELECTRIC FY2023 ... 타임아웃→건너뜀(25.0초): ...
+```
+
 실행이 끝나면 소스별 **SUCCESS / PARTIAL / FAILED / SKIPPED** 요약표가 출력되고 `reports/data_fetch_summary.md`에 저장됩니다.
+
+**타임아웃·재시도** (`config.yaml` → `data_fetch.http`)
+
+| 항목 | 기본값 | 설명 |
+|---|---|---|
+| `connect_timeout_sec` | 5 | 연결 타임아웃 |
+| `read_timeout_sec` | 20 | 응답 헤더+본문 수신 상한. 서버가 바이트를 조금씩 흘려보내도 벽시계 기준으로 끊음 |
+| `max_retries` | 3 | 지수 백오프(1→2→4초) 재시도 |
+| `max_total_wait_sec` | 60 | 한 요청의 재시도·대기 포함 총 소요 상한 |
+
+타임아웃이 끝내 해소되지 않으면 그 요청(회사·연도, 시계열, 검색 구간)만 건너뛰고 요약표 message에 기록한 뒤 다음 요청을 계속합니다.
+
+**DART 발행공시 검색** (`config.yaml` → `data_fetch.dart.filings`, 기본 `enabled: false`)
+- `mode: market`: corp_code 없이 `window_months`(3개월) 단위로 나눠 반복 검색 (DART 검색기간 제한 대응)
+- `mode: peers`: config peers의 corp_code별로 검색
+- `max_pages`: 구간(회사)당 페이지 상한. 넘으면 기록 후 생략
 
 ### 3) 소스별 수집 내용
 
 | 모듈 | 수집 내용 | 주요 산출물 |
 |---|---|---|
-| `dart.py` | corpCode.xml(종목코드↔corp_code), fnlttSinglAcntAll(사업보고서 11011, CFS 우선→OFS, FY2023~2025), list.json 발행공시(C), document.xml 원문 | `data/raw/dart/`, `data/processed/dart_financials.csv` |
+| `dart.py` | corpCode.xml(종목코드↔corp_code), fnlttSinglAcntAll(사업보고서 11011, CFS 우선→OFS, FY2023~2025), list.json 발행공시(C, 기본 OFF), document.xml 원문 | `data/raw/dart/`, `data/processed/dart_financials.csv` |
 | `krx.py` | KRX Open API 종가·시가총액·상장주식수 (휴장일이면 직전 거래일). 실패 시 FinanceDataReader → pykrx | `data/processed/krx_peers_market.csv`, `reports/crosscheck_krx.md` |
 | `ecos.py` | 원/달러 일별 → 연평균·연말, 국고채 3년·10년 | `data/processed/ecos_fx_annual.csv`, `ecos_ktb_daily.csv` |
 | `sec.py` | company_tickers.json(CIK) → companyfacts: Revenue, OperatingIncome, NetIncome, 총차입금, 현금 | `data/processed/sec_financials.csv` |

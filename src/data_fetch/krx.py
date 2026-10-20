@@ -14,7 +14,7 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from .base import (FetchError, FetchResult, SkipSource, STATUS_FAILED, STATUS_PARTIAL,
+from .base import (FetchError, FetchResult, Progress, SkipSource, STATUS_FAILED, STATUS_PARTIAL,
                    STATUS_SUCCESS, build_url, get_secret, make_client, markdown_table, mask_secrets,
                    resolve_path, save_processed, save_raw, to_number, utc_now_iso)
 
@@ -124,11 +124,17 @@ class KrxOpenApiClient:
     def fetch_latest(self, max_lookback: int) -> tuple[str, list[dict], list[dict]]:
         """기준일부터 거꾸로 거래일을 찾는다 (휴장일이면 빈 OutBlock)."""
         d = _asof_date(self.as_of)
+        prog = Progress(SOURCE, "일별매매정보", max_lookback + 1)
         for i in range(max_lookback + 1):
             bas_dd = (d - timedelta(days=i)).strftime("%Y%m%d")
-            trade = self.fetch("daily_trade", bas_dd)
+            with prog.step(bas_dd) as st:
+                trade = self.fetch("daily_trade", bas_dd)
+                st["note"] = f"({len(trade)}종목)" if trade else ""
+                if not trade:
+                    st["status"] = "데이터 없음(휴장일?)"
             if trade:
-                base = self.fetch("base_info", bas_dd)
+                with Progress(SOURCE, "종목기본정보", 1).step(bas_dd):
+                    base = self.fetch("base_info", bas_dd)
                 if i:
                     logger.info("KRX 기준일 %s 데이터 없음 → 직전 거래일 %s 사용", self.as_of, bas_dd)
                 return bas_dd, trade, base
@@ -210,7 +216,9 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: KrxOpenApiC
         if not todo:
             break
         try:
-            vals = providers[name](todo, as_of, lookback)
+            with Progress(SOURCE, f"대체수집({PROVIDER_LABELS.get(name, name)})", 1).step(f"{len(todo)}종목") as st:
+                vals = providers[name](todo, as_of, lookback)
+                st["note"] = f"({len(vals)}종목 수신)"
         except Exception as e:  # ImportError, 로그인 필요, 네트워크 등
             notes.append(mask_secrets(f"{PROVIDER_LABELS.get(name, name)} 실패: {type(e).__name__}: {e}"))
             continue

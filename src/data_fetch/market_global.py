@@ -12,7 +12,7 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from .base import (FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS, markdown_table,
+from .base import (FetchResult, Progress, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS, markdown_table,
                    mask_secrets, resolve_path, save_processed, save_raw, utc_now_iso)
 
 logger = logging.getLogger("data_fetch.global")
@@ -35,11 +35,12 @@ def _get(obj: Any, key: str):
 
 
 def fetch_quote(symbol: str, as_of: str, lookback_days: int,
-                ticker_factory: Callable[[str], Any] = _default_ticker_factory) -> dict:
+                ticker_factory: Callable[[str], Any] = _default_ticker_factory, timeout: float = 20) -> dict:
     t = ticker_factory(symbol)
     end = datetime.strptime(as_of, "%Y-%m-%d") + timedelta(days=1)  # yfinance end는 미포함
     start = end - timedelta(days=lookback_days + 1)
-    hist = t.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), auto_adjust=False)
+    hist = t.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), auto_adjust=False,
+                     timeout=timeout)
     if hist is None or hist.empty:
         raise ValueError(f"{symbol}: {as_of} 이전 {lookback_days}일 가격 없음")
     idx = pd.to_datetime(hist.index)
@@ -84,9 +85,12 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True,
         ticker_factory: Callable[[str], Any] = _default_ticker_factory) -> FetchResult:
     gcfg = cfg["data_fetch"]["global_market"]
     rows, notes = [], []
+    timeout = float(cfg["data_fetch"]["http"].get("read_timeout_sec", 20))
+    prog = Progress(SOURCE, "yfinance", len(cfg["peers"]["overseas"]))
     for p in cfg["peers"]["overseas"]:
         try:
-            q = fetch_quote(p["ticker"], as_of, int(gcfg["lookback_days"]), ticker_factory)
+            with prog.step(f"{p['name']} {p['ticker']}"):
+                q = fetch_quote(p["ticker"], as_of, int(gcfg["lookback_days"]), ticker_factory, timeout)
         except ImportError as e:
             return FetchResult(SOURCE, STATUS_FAILED, message=f"yfinance 미설치: {e}")
         except Exception as e:
