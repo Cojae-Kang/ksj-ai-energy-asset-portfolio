@@ -22,7 +22,8 @@ def build_params(ecfg: Mapping, offset: int = 0) -> list[tuple[str, str]]:
     """EIA v2 파라미터 (data[]/facets[] 반복 키 때문에 튜플 리스트)."""
     p: list[tuple[str, str]] = [("frequency", ecfg["frequency"])]
     p += [(f"data[{i}]", f) for i, f in enumerate(ecfg["data_fields"])]
-    p.append(("facets[stateid][]", ecfg["state"]))
+    states = ecfg["state"] if isinstance(ecfg["state"], (list, tuple)) else [ecfg["state"]]
+    p += [("facets[stateid][]", st) for st in states]
     p += [("facets[sectorid][]", s) for s in ecfg["sectors"]]
     if ecfg.get("start"):
         p.append(("start", str(ecfg["start"])))
@@ -49,7 +50,8 @@ def tidy(rows: list[dict], fields: list[str], source_label: str) -> pd.DataFrame
         if f in df:
             df[f] = df[f].map(to_number)
     df["source"] = source_label
-    return df.sort_values(["period", "sectorid"]).reset_index(drop=True)
+    keys = [k for k in ("period", "stateid", "sectorid") if k in df]
+    return df.sort_values(keys).reset_index(drop=True)
 
 
 class EiaClient:
@@ -60,7 +62,7 @@ class EiaClient:
         self.http = http or make_client(SOURCE, cfg, self.ecfg, use_cache=use_cache)
         self.raw_dir = resolve_path(cfg["paths"]["raw"]) / "eia"
 
-    def fetch_retail_sales(self) -> tuple[list[dict], str]:
+    def fetch_retail_sales(self, raw_name: str = "retail_sales_annual.json") -> tuple[list[dict], str]:
         url = build_url(self.ecfg["base_url"], self.ecfg["endpoints"]["retail_sales"])
         rows, offset, fetched_at, pages = [], 0, None, []
         prog = Progress(SOURCE, "retail-sales 페이지")
@@ -79,7 +81,7 @@ class EiaClient:
             offset += len(chunk)
             if not chunk or offset >= total:
                 break
-        save_raw(self.raw_dir / "retail_sales_annual.json", {"data": rows, "pages": pages},
+        save_raw(self.raw_dir / raw_name, {"data": rows, "pages": pages},
                  source=self.ecfg["source_label"], endpoint=url, params=build_params(self.ecfg),
                  as_of=self.as_of, license_note=self.ecfg["license_note"], fetched_at=fetched_at)
         return rows, fetched_at

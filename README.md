@@ -1,6 +1,45 @@
-# AI 데이터센터 전력 밸류체인 — 가상 비상장 전력기기 기업 IPO 밸류에이션 (ECM 관점)
+# 강신재 AI 에너지 자산 포트폴리오 | KSJ AI Energy Asset Portfolio
 
-> 기준일: 2026-10-20 · 상태: 🚧 프로젝트 뼈대 (분석 코드 작성 전)
+> AI 데이터센터 전력 수요 → 전력 인프라 밸류체인 → 가상 비상장 전력기기 기업(Target Co.)의 IPO 희망공모가 밴드.
+> 공식 출처 데이터를 자동 수집·검증하고, 그 데이터로 리서치 노트를 만듭니다.
+>
+> 기준일: 2026-10-20 · 저자: Shinjae Kang · 교육·연구 목적, 투자 권유 아님
+
+## Research Notes
+
+| Vol | 제목 | 날짜 | 국문 | English |
+|---|---|---|---|---|
+| 1 | AI 전력 수요는 진짜인가, 그리고 시장은 이미 알고 있나? <br>_Is AI Power Demand Real — and Has the Market Already Priced It In?_ | 2026-10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) |
+
+LinkedIn 캐러셀: [research/vol01/linkedin_carousel.pdf](research/vol01/linkedin_carousel.pdf) · Exhibits: [research/vol01/exhibits/](research/vol01/exhibits/)
+
+> PDF는 로컬에서 `python -m research.vol01.build`로 생성해 커밋합니다 (아래 재현 방법).
+
+## 데이터 소스 상태 (기준일 2026-10-20)
+
+| 소스 | 제공기관 | 용도 | 상태 |
+|---|---|---|---|
+| DART | 금융감독원 | 국내 peers 재무제표 | ✅ 수집 완료 |
+| KRX Open API | 한국거래소 | 주가·시가총액·상장주식수 | ✅ 수집 완료 |
+| ECOS | 한국은행 | 원/달러 환율, 국고채 금리 | ✅ 수집 완료 |
+| FRED | St. Louis Fed | 미 국채 10년, 원/달러 | ✅ 수집 완료 |
+| EIA | U.S. Energy Information Administration | 미국 전력 소매판매 | ✅ 수집 완료 |
+| SEC EDGAR | 미국 SEC | 해외 peers 재무제표 | ⏳ 준비 중 (접속 일시 차단) |
+| IEA 보고서 | International Energy Agency | 데이터센터 전력 전망 | ✍️ 수기 입력 (`data/manual/iea_energy_ai.csv`, 원문 대조) |
+
+## 재현 방법 (Vol.1)
+
+```powershell
+pip install -r requirements.txt                              # matplotlib + ReportLab, 추가 설치 없음
+python -m src.data_fetch.fetch_all --source all --asof 2026-10-20   # 1단계 데이터 (키 없는 소스는 SKIPPED)
+python -m research.vol01.fetch_extra --asof 2026-10-20       # Vol.1 추가: EIA VA/US 상업용, KRX 두 시점 시가총액
+python -m research.vol01.build                               # Exhibits + 국문/영문 PDF + 캐러셀
+pytest -q                                                    # 네트워크 없는 테스트
+```
+
+- 그래프·문장 속 숫자는 모두 `data/` 파일에서 계산합니다. 데이터가 없거나 값이 `TODO`면 그 Exhibit만 빼고 "데이터 확인 중"으로 표기합니다.
+- 한글 폰트는 저장소의 Noto Sans KR(OFL, `assets/fonts/`)을 쓰고, 없으면 Windows 맑은 고딕으로 대체합니다.
+- 빌드 결과 요약(포함/제외 Exhibit, 쪽수, 폰트)은 `research/vol01/build_summary.md`에 남습니다.
 
 ## 프로젝트 소개
 
@@ -51,6 +90,9 @@ AI 데이터센터가 늘면서 전력 수요가 커지고 있습니다. 이 프
 ├── src/
 │   ├── analysis/        # 단계별 분석 함수
 │   └── data_fetch/      # 데이터 수집 스크립트 (로컬 실행)
+├── research/
+│   └── vol01/           # Research Note Vol.1 (fetch_extra.py, build.py, exhibits/, PDF)
+├── assets/fonts/        # Noto Sans KR (SIL OFL 1.1)
 ├── data/
 │   ├── raw/             # 원본 데이터 + .meta.json
 │   ├── processed/       # 가공 데이터

@@ -11,3 +11,4 @@ finance-datareader
 yfinance
 pytest
 tqdm
+reportlab

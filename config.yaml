@@ -52,18 +52,22 @@ peers:
   # 티커는 KRX / SEC EDGAR / 각 거래소에서 재확인할 것
   domestic:
     - name: "HD현대일렉트릭"
+      name_en: "HD Hyundai Electric"
       ticker: "267260"
       market: "KOSPI"
       segment: "변압기·전력기기"
     - name: "LS ELECTRIC"
+      name_en: "LS ELECTRIC"
       ticker: "010120"
       market: "KOSPI"
       segment: "전력기기·배전"
     - name: "효성중공업"
+      name_en: "Hyosung Heavy Industries"
       ticker: "298040"
       market: "KOSPI"
       segment: "변압기·중공업"
     - name: "두산에너빌리티"
+      name_en: "Doosan Enerbility"
       ticker: "034020"
       market: "KOSPI"
       segment: "발전설비"
@@ -319,3 +323,61 @@ data_fetch:
     crosscheck_tolerance_pct: 2.0       # yfinance 발행주식수 vs SEC dei 발행주식수 허용 오차
 
   manual_overseas_financials: "data/manual/overseas_financials_manual.csv"   # Schneider 등 SEC 비대상 기업
+
+# =====================================================================
+# research — KSJ Research Notes (research/volNN/). 수치는 모두 데이터 파일에서 계산, 문구 템플릿만 코드에 둔다.
+# =====================================================================
+research:
+  brand: "KSJ Research | AI Energy Asset Portfolio"
+  author: "Shinjae Kang"
+  repo_url: "github.com/Cojae-Kang/ai-dc-power-ecm"
+  fonts:
+    dir: "assets/fonts"
+    regular: "NotoSansKR-Regular.ttf"
+    bold: "NotoSansKR-Bold.ttf"
+    fallbacks:                          # Noto Sans KR이 없을 때 순서대로 시도 (regular, bold)
+      - ["C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/malgunbd.ttf"]          # Windows 맑은 고딕
+      - ["/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"]
+  colors:                               # 흰 배경 · 진한 네이비 본문 · 포인트 딥 틸 하나
+    navy: "#0B1F3A"
+    teal: "#00757A"
+    teal_tint: "#E5F1F1"                # 포인트 색의 옅은 톤 (Key Takeaways 배경)
+    grey: "#6B7785"
+    light_grey: "#D5DBE3"
+
+  vol01:
+    output_dir: "research/vol01"
+    title_kr: "AI 전력 수요는 진짜인가, 그리고 시장은 이미 알고 있나?"
+    title_en: "Is AI Power Demand Real — and Has the Market Already Priced It In?"
+    date_kr: "2026년 10월"
+    date_en: "October 2026"
+    inputs:
+      iea: "data/manual/iea_energy_ai.csv"
+      eia_state: "data/processed/vol01_eia_state.csv"
+      krx_points: "data/processed/vol01_krx_mcap_points.csv"
+      dart: "data/processed/dart_financials.csv"
+    iea_metrics:                        # data/manual/iea_energy_ai.csv의 metric·period
+      exhibit1:
+        - {metric: "dc_electricity_consumption", period: "2024", label: "2024"}
+        - {metric: "dc_electricity_consumption_base", period: "2030", label: "2030E"}
+        - {metric: "dc_electricity_consumption_base", period: "2035", label: "2035E"}
+      exhibit2:
+        - {metric: "dc_demand_growth_yoy", period: "2025", key: "dc"}
+        - {metric: "ai_dc_demand_growth_yoy", period: "2025", key: "ai_dc"}
+        - {metric: "global_electricity_demand_growth_yoy", period: "2025", key: "global"}
+    # A. fetch_extra.py 수집 범위
+    eia_state:
+      states: ["VA", "US"]
+      sector: "COM"                     # commercial
+      start: "2015"
+      base_year: 2015                   # 지수 기준연도 (=100)
+      # 제목 서술 규칙: 최근연도 지수 차이(VA − US)가 ±이 값(포인트) 이상이면 '앞섬/뒤처짐', 아니면 '비슷'
+      divergence_pts: 5
+    krx_points:
+      start_from: "2023-01-01"          # 이 날부터 앞으로 찾은 첫 거래일 = 2023년 첫 거래일
+      max_forward_days: 10
+      max_lookback_days: 10             # 기준일 직전 거래일 탐색 범위 (기준일 당일 제외)
+    text_rules:
+      big_move_multiple: 1.5            # 4사 시가총액 합계 배수가 이 이상이면 "시장은 이미 크게 움직였다"로 서술
+    source_status_override:
+      sec: "준비 중"                     # SEC 일시 차단 → 수집 재개 전까지 표기

@@ -1,0 +1,9 @@
+{
+  "source": "International Energy Agency (IEA) — Energy and AI (2025-04), Key Questions on Energy and AI (2026-04)",
+  "endpoint": "https://www.iea.org/reports/energy-and-ai/executive-summary ; https://www.iea.org/reports/key-questions-on-energy-and-ai",
+  "params": {},
+  "fetched_at": null,
+  "as_of": "2026-10-20",
+  "license_note": "IEA 공개 보고서 요약 수치 인용. 출처 표기 필수, 보고서 원문(PDF)은 커밋하지 않음. IEA 이용약관 확인.",
+  "note": "수기 입력 파일. 행별 출처·URL·발표월은 CSV의 source/url/published 열 참조. 값 변경 시 원문 대조 후 이 파일의 as_of 갱신. TODO(data): 원문 페이지와 수치 재대조(쪽/문단 위치 기록)."
+}
