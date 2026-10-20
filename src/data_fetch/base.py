@@ -45,6 +45,27 @@ class FetchError(Exception):
     """API 응답 오류 (HTTP 오류, API status 오류 등)."""
 
 
+class HttpStatusError(FetchError):
+    """4xx 등 재시도 대상이 아닌 HTTP 오류. 호출부가 상태코드별로 요약 메시지를 만들 수 있게 정보 보관."""
+
+    def __init__(self, message: str, *, status_code: int, url: str, body: bytes = b"", content_type: str = ""):
+        super().__init__(message)
+        self.status_code = status_code
+        self.url = url
+        self.body = body[:65536]          # 진단용 (메시지에는 넣지 않음)
+        self.content_type = content_type
+
+
+def summarize_body(body: bytes, content_type: str = "", limit: int = 200) -> str:
+    """오류 응답 본문 한 줄 요약. HTML이면 원문 대신 <title>/<h1>과 크기만."""
+    text = body.decode("utf-8", errors="replace")
+    if "html" in (content_type or "").lower() or text.lstrip()[:1] == "<":
+        m = re.search(r"<title[^>]*>(.*?)</title>|<h1[^>]*>(.*?)</h1>", text, re.S | re.I)
+        title = re.sub(r"\s+", " ", next((g for g in (m.groups() if m else ()) if g), "")).strip()
+        return f"HTML 응답 {len(body):,} bytes" + (f" (title: {title[:80]})" if title else "")
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
 class RequestTimeout(FetchError):
     """연결/응답 타임아웃이 재시도 후에도 해소되지 않음 → 호출부는 해당 요청만 건너뛰고 기록."""
 
@@ -389,8 +410,10 @@ class HttpClient:
                 last_err = f"HTTP {r.status_code}"
                 continue
             if r.status_code >= 400:
-                text = body.decode("utf-8", errors="replace")[:300]
-                raise FetchError(f"[{self.source}] HTTP {r.status_code} {masked_url}: {mask_secrets(text)}")
+                ctype = dict(r.headers).get("Content-Type", "") if getattr(r, "headers", None) else ""
+                raise HttpStatusError(
+                    f"[{self.source}] HTTP {r.status_code} {masked_url}: {mask_secrets(summarize_body(body, ctype))}",
+                    status_code=r.status_code, url=masked_url, body=body, content_type=ctype)
             resp = HttpResponse(url=mask_secrets(getattr(r, "url", url)), status_code=r.status_code,
                                 content=body, headers=dict(r.headers), fetched_at=utc_now_iso())
             self._cache_write(key, resp)

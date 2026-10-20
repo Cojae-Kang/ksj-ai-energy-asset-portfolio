@@ -248,7 +248,16 @@ data_fetch:
     base_url: "https://data.sec.gov"
     endpoints:
       companyfacts: "api/xbrl/companyfacts/CIK{cik10}.json"
-    request_delay_sec: 0.2              # SEC fair access: 초당 10건 이하
+    request_delay_sec: 0.2              # 요청 간 최소 간격(초)
+    # SEC fair access (https://www.sec.gov/os/accessing-edgar-data): 초당 10건 이하, User-Agent(이름+이메일),
+    # Accept-Encoding: gzip, deflate. 실제 간격 = max(request_delay_sec, 1 / max_requests_per_sec)
+    max_requests_per_sec: 8             # 10 미만으로 유지
+    session_headers:                    # www.sec.gov · data.sec.gov 모든 요청의 세션 기본 헤더 (User-Agent는 .env)
+      Accept-Encoding: "gzip, deflate"
+    # 403 차단 페이지 판별 문구 → 한 줄 요약에 사용. ASSUMPTION(verify): SEC 차단 페이지 문구는 바뀔 수 있음
+    block_page_markers:
+      "Undeclared Automated Tool": "User-Agent 미선언·형식 문제로 차단"
+      "Request Rate Threshold Exceeded": "요청 속도 초과로 일시 차단 (약 10분 후 재시도)"
     license_note: "미국 SEC EDGAR 공개 공시. SEC fair access 정책 준수."
     forms: ["10-K", "10-K/A"]
     # ASSUMPTION: 회계연도 라벨 = 회계연도 종료일의 연도 (종료월이 1~5월이면 전년도). 대상 peers는 모두 12월 결산.

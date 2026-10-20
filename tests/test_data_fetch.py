@@ -75,9 +75,10 @@ class FakeSession:
         self.headers: dict = {}
 
     def get(self, url, params=None, headers=None, timeout=None, stream=False):
-        self.calls.append({"url": url, "params": params, "headers": headers or {}, "timeout": timeout,
+        merged = {**self.headers, **(headers or {})}   # requests처럼 세션 기본 헤더 + 요청 헤더
+        self.calls.append({"url": url, "params": params, "headers": merged, "timeout": timeout,
                            "stream": stream})
-        out = self.handler(url, params, headers or {})
+        out = self.handler(url, params, merged)
         if isinstance(out, Exception):
             raise out
         return out
@@ -685,6 +686,135 @@ def test_sec_run_sends_user_agent_and_skips_schneider(cfg, monkeypatch):
     assert not any("SU.PA" in c["url"] for c in sess.calls)
 
 
+SEC_403_HTML = (b"<html><head><title>SEC.gov | Request Rate Threshold Exceeded</title></head><body>"
+                + b"<h1>Request Rate Threshold Exceeded</h1>" + b"x" * 5000 + b"</body></html>")
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ('"Shinjae Kang a.b+c@example.com"', "Shinjae Kang a.b+c@example.com"),
+    ("'Shinjae Kang a@example.com'", "Shinjae Kang a@example.com"),
+    ("\ufeff  \u201cShinjae   Kang\ta@example.com\u201d \n", "Shinjae Kang a@example.com"),
+    ('Shinjae "Kang" a@example.com', "Shinjae Kang a@example.com"),
+])
+def test_normalize_user_agent(raw, expected):
+    assert sec.normalize_user_agent(raw) == expected
+    assert sec.user_agent_problems(expected) == []
+
+
+def test_user_agent_problems_and_masking():
+    assert any("이메일" in p for p in sec.user_agent_problems("Shinjae Kang"))
+    assert any("헤더에 쓸 수 없는" in p for p in sec.user_agent_problems("강신재 a@example.com"))
+    assert sec.mask_user_agent("Shinjae Kang abc+x@users.noreply.github.com") == "S*** K*** ab***@users.noreply.github.com"
+
+
+def test_sec_client_quoted_env_and_invalid_env(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", '  "Test User   test@example.com"  ')
+    http, _, _ = make_http(lambda *a: FakeResp(200, {}))
+    c = sec.SecClient(cfg, "2026-10-20", http=http)
+    assert c.user_agent == "Test User test@example.com"
+    monkeypatch.setenv("SEC_USER_AGENT", "no-email-here")
+    with pytest.raises(SkipSource, match="형식 오류"):
+        sec.SecClient(cfg, "2026-10-20", http=http)
+
+
+def test_sec_session_headers_on_both_hosts_and_rate_limit(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    cfg["data_fetch"]["sec"]["request_delay_sec"] = 0          # config가 0이어도 초당 10건 미만 보장
+    clk = FakeClock()
+    sess = FakeSession(lambda *a: FakeResp(200, {"facts": {}}))
+    http = HttpClient("sec", {"cache_ttl_hours": 0}, session=sess, sleep=clk.sleep, clock=clk)
+    c = sec.SecClient(cfg, "2026-10-20", http=http)
+    assert sess.headers["User-Agent"] == "Test User test@example.com"         # 세션 기본 헤더
+    assert sess.headers["Accept-Encoding"] == "gzip, deflate"
+    for cik in (1, 2, 3):
+        c.fetch_companyfacts(cik)
+    c.http.get(cfg["data_fetch"]["sec"]["tickers_url"])                        # 요청 헤더 없이 호출해도
+    hosts = {x["url"].split("/")[2] for x in sess.calls}
+    assert hosts == {"data.sec.gov", "www.sec.gov"}
+    assert all(x["headers"]["User-Agent"] == "Test User test@example.com" and
+               x["headers"]["Accept-Encoding"] == "gzip, deflate" for x in sess.calls)
+    assert c.http.request_delay == pytest.approx(1 / 8)
+    assert (len(sess.calls) - 1) / clk.now == pytest.approx(8.0)              # 요청 간격 기준 8건/초 (< 10)
+
+
+def test_sec_403_one_line_summary_and_stop(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    http, sess, _ = make_http(lambda *a: FakeResp(403, SEC_403_HTML))
+    c = sec.SecClient(cfg, "2026-10-20", http=http)
+    res = sec.run(cfg, "2026-10-20", client=c)
+    assert res.status == base.STATUS_FAILED
+    assert res.message.startswith("SEC 403: User-Agent 확인 필요 (https://www.sec.gov/files/company_tickers.json)")
+    assert "<" not in res.message and "\n" not in res.message and len(res.message) < 250
+    assert "요청 속도 초과" in res.message                                         # 차단 페이지 판별
+    assert len(sess.calls) == 1                                                # 403은 재시도 안 함
+
+
+def test_sec_companyfacts_403_stops_remaining_requests(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    tickers = {str(i): {"cik_str": 1000 + i, "ticker": p["ticker"], "title": p["name"]}
+               for i, p in enumerate(cfg["peers"]["overseas"]) if p["ticker"] != "SU.PA"}
+    http, sess, _ = make_http(lambda u, p, h: FakeResp(200, tickers) if u.endswith("company_tickers.json")
+                              else FakeResp(403, b"<html><body>Undeclared Automated Tool</body></html>"))
+    res = sec.run(cfg, "2026-10-20", client=sec.SecClient(cfg, "2026-10-20", http=http))
+    assert res.status == base.STATUS_FAILED
+    assert len([x for x in sess.calls if "companyfacts" in x["url"]]) == 1    # 첫 403 후 중단
+    assert "User-Agent 미선언" in res.message and "이후 companyfacts 요청 중단" in res.message
+
+
+def test_http_status_error_summarizes_html():
+    client, _, _ = make_http(lambda *a: FakeResp(404, b"<html><title>Not Found</title>" + b"y" * 9000))
+    with pytest.raises(base.HttpStatusError) as ei:
+        client.get("https://h/x")
+    assert ei.value.status_code == 404 and "HTML 응답" in str(ei.value) and "yyyy" not in str(ei.value)
+
+
+def test_fetch_all_records_sec_403_as_one_line(cfg, monkeypatch, capsys):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    monkeypatch.setattr(fetch_all, "load_config", lambda path=None: cfg)
+    http, _, _ = make_http(lambda *a: FakeResp(403, SEC_403_HTML))
+    monkeypatch.setitem(fetch_all.SOURCES, "sec",
+                        lambda c, a, **kw: sec.run(c, a, client=sec.SecClient(c, a, http=http)))
+    fetch_all.main(["--source", "sec"])
+    out = capsys.readouterr().out
+    assert "SEC 403: User-Agent 확인 필요" in out and "<html" not in out.lower()
+    assert "SKIPPED(sec unavailable) 5" in out                                 # validate는 FAIL이 아님
+
+
+def test_sec_diagnose_masks_and_shows_effective_headers(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", '"Shinjae Kang abc+x@users.noreply.github.com"')
+    lines: list[str] = []
+    rc = sec.diagnose(cfg, out=lines.append, session=FakeSession(lambda *a: FakeResp(200, {})))
+    text = "\n".join(lines)
+    assert rc == 0
+    assert "S*** K*** ab***@users.noreply.github.com" in text and "abc+x@" not in text
+    assert "정리한 항목: 따옴표" in text
+    assert "Host: www.sec.gov" in text and "Host: data.sec.gov" in text
+    assert "Accept-Encoding: gzip, deflate" in text and "User-Agent: S*** K***" in text
+    assert "noreply" in text and "실제 요청은 하지 않음" in text
+
+
+def test_sec_diagnose_probe_403(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    lines: list[str] = []
+    sess = FakeSession(lambda *a: FakeResp(403, SEC_403_HTML))
+    rc = sec.diagnose(cfg, probe=True, out=lines.append, session=sess)
+    text = "\n".join(lines)
+    assert rc == 1 and len(sess.calls) == 1
+    assert "SEC 403: User-Agent 확인 필요" in text and "VPN" in text
+    assert sess.calls[0]["headers"]["User-Agent"] == "Test User test@example.com"
+
+
+def test_sec_diagnose_missing_env(cfg):
+    lines: list[str] = []
+    assert sec.diagnose(cfg, out=lines.append) == 1
+    assert any("미설정" in x for x in lines)
+
+
+def test_sec_cli_requires_diagnose_flag(capsys):
+    assert sec.main([]) == 0
+    assert "fetch_all --source sec" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------------------
 # FRED / EIA
 # ---------------------------------------------------------------------------
@@ -773,6 +903,21 @@ def test_names_match():
     assert validate_peers.names_match("GE Vernova", "GE Vernova Inc.")
     assert validate_peers.names_match("HD현대일렉트릭", "(주)HD현대일렉트릭")
     assert not validate_peers.names_match("Eaton", "Vistra Corp.")
+
+
+def test_validate_peers_sec_unavailable_is_not_fail(cfg):
+    raw = Path(cfg["paths"]["raw"])
+    (raw / "dart").mkdir(parents=True)
+    pd.DataFrame([{"corp_code": f"0000000{i}", "corp_name": p["name"], "corp_eng_name": "",
+                   "stock_code": p["ticker"], "modify_date": "1"} for i, p in enumerate(cfg["peers"]["domestic"])]
+                 ).to_csv(raw / "dart" / "corp_codes_listed.csv", index=False)     # SEC 파일은 없음
+    res = validate_peers.run(cfg, "2026-10-20")
+    text = Path(res.outputs[0]).read_text(encoding="utf-8")
+    assert res.status == base.STATUS_PARTIAL
+    assert res.message == "FAIL 0, WARN 0, SKIPPED(sec unavailable) 5"
+    assert text.count("| SKIPPED(sec unavailable) |") == 5 and "| FAIL |" not in text
+    assert "N/A (SEC 비대상)" in text                                                # Schneider는 그대로
+    assert "5개 검증 보류" in text
 
 
 def test_validate_peers_report(cfg):

@@ -154,6 +154,21 @@ python -m src.data_fetch.validate_peers      # 식별자 검증만 다시
 - `mode: peers`: config peers의 corp_code별로 검색
 - `max_pages`: 구간(회사)당 페이지 상한. 넘으면 기록 후 생략
 
+**SEC 403 진단**
+
+SEC는 User-Agent(영문 이름 + 연락 가능한 이메일)가 없거나 요청이 초당 10건 이상이면 403 차단 페이지를 돌려줍니다
+([SEC: Accessing EDGAR Data](https://www.sec.gov/os/accessing-edgar-data)). 수집 코드는 www.sec.gov·data.sec.gov
+모든 요청에 `User-Agent`와 `Accept-Encoding: gzip, deflate`를 세션 기본 헤더로 붙이고, 초당 8건 이하로 제한합니다.
+`.env` 값의 따옴표·공백은 자동으로 정리합니다.
+
+```powershell
+python -m src.data_fetch.sec --diagnose           # 실제 전송 헤더(이메일 부분 마스킹)·프록시·속도 확인. 네트워크 호출 없음
+python -m src.data_fetch.sec --diagnose --probe   # company_tickers.json 1회 실제 요청 → 차단 유형 한 줄 요약
+```
+
+403이면 요약표에 `SEC 403: User-Agent 확인 필요 (URL) — 차단 유형` 한 줄만 기록되고, 나머지 SEC 요청은 중단됩니다.
+이때 validate는 해외 peers를 FAIL이 아니라 `SKIPPED(sec unavailable)`로 표기합니다(티커 오류와 구분).
+
 ### 3) 소스별 수집 내용
 
 | 모듈 | 수집 내용 | 주요 산출물 |

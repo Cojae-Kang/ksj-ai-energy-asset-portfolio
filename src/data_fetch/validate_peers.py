@@ -15,13 +15,14 @@ from typing import Mapping
 
 import pandas as pd
 
-from .base import (FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SUCCESS, load_config,
+from .base import (FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SKIPPED, STATUS_SUCCESS, load_config,
                    markdown_table, resolve_path, utc_now_iso)
 from .sec import cik10, parse_company_tickers
 
 logger = logging.getLogger("data_fetch.validate")
 
 OK, WARN, FAIL, NA = "OK", "WARN", "FAIL", "N/A (SEC 비대상)"
+SEC_UNAVAILABLE = "SKIPPED(sec unavailable)"   # SEC 매핑 수집 실패 → 검증 보류 (티커 오류와 구분)
 
 _CORP_SUFFIXES = r"(주식회사|주|㈜|inc\.?|corp\.?|corporation|co\.?|company|plc|holdings?|ltd\.?|limited|s\.?a\.?|se)$"
 
@@ -72,8 +73,9 @@ def validate_overseas(peers: list[Mapping], sec_df: pd.DataFrame | None, not_sec
                                  "data/manual 수기 입력. TODO(data)"})
             continue
         if sec_df is None:
-            rows.append({**base, "식별자": None, "공시상 회사명": None, "결과": FAIL,
-                         "비고": "SEC company_tickers 파일 없음 → --source sec 먼저 실행"})
+            rows.append({**base, "식별자": None, "공시상 회사명": None, "결과": SEC_UNAVAILABLE,
+                         "비고": "SEC company_tickers.json 수집 실패/없음 → 티커 검증 보류. "
+                                 "python -m src.data_fetch.sec --diagnose 후 --source sec 재실행"})
             continue
         hit = sec_df[sec_df["ticker"] == t]
         if hit.empty:
@@ -102,11 +104,14 @@ def render_report(rows: list[dict], as_of: str) -> str:
         "# Peers 식별자 검증 (DART corp_code / SEC CIK)", "",
         f"- 기준일: {as_of} · 생성: {utc_now_iso()}",
         "- 출처: Open DART corpCode.xml(금융감독원), SEC EDGAR company_tickers.json",
-        "- 판정: OK = 티커·회사명 일치 / WARN = 티커는 있으나 회사명 불일치 / FAIL = 티커 없음 / N/A = SEC 비대상", "",
+        "- 판정: OK = 티커·회사명 일치 / WARN = 티커는 있으나 회사명 불일치 / FAIL = 티커 없음 / N/A = SEC 비대상 / "
+        f"{SEC_UNAVAILABLE} = SEC 매핑 수집 실패로 검증 보류(티커 오류 아님)", "",
         "## 핵심 결론", "",
         f"1. 검증 {len(rows)}개 중 " + ", ".join(f"{k} {v}개" for k, v in counts.items()),
         f"2. 불일치(WARN/FAIL): {len(issues)}개" + (" — 아래 표의 비고 확인" if issues else " — config 티커 그대로 사용 가능"),
-        "3. Schneider Electric(SU.PA)은 SEC 비대상 → 재무 수치는 회사 연차보고서로 수기 입력(data/manual)", "",
+        "3. Schneider Electric(SU.PA)은 SEC 비대상 → 재무 수치는 회사 연차보고서로 수기 입력(data/manual)"
+        + (f" · SEC 매핑 미수집으로 {sum(r['결과'] == SEC_UNAVAILABLE for r in rows)}개 검증 보류"
+           if any(r["결과"] == SEC_UNAVAILABLE for r in rows) else ""), "",
         "## 상세", "", markdown_table(rows, ["구분", "회사(config)", "ticker", "시장", "식별자", "공시상 회사명", "결과", "비고"]),
         "## 한계", "",
         "- 회사명 비교는 공백·법인격 표기를 제거한 부분일치 기준이라, 동명이사(同名異社)는 수동 확인 필요",
@@ -124,10 +129,18 @@ def run(cfg: Mapping, as_of: str, **_) -> FetchResult:
     path.write_text(render_report(rows, as_of), encoding="utf-8")
     n_fail = sum(r["결과"] == FAIL for r in rows)
     n_warn = sum(r["결과"] == WARN for r in rows)
-    n_checkable = sum(r["결과"] != NA for r in rows)
-    status = STATUS_SUCCESS if not (n_fail or n_warn) else (STATUS_FAILED if n_fail == n_checkable else STATUS_PARTIAL)
-    return FetchResult("validate", status, n_items=len(rows), outputs=[str(path)],
-                       message=f"FAIL {n_fail}, WARN {n_warn}")
+    n_skip = sum(r["결과"] == SEC_UNAVAILABLE for r in rows)
+    n_checkable = sum(r["결과"] not in (NA, SEC_UNAVAILABLE) for r in rows)
+    if n_checkable == 0:
+        status = STATUS_SKIPPED
+    elif n_fail == n_checkable:
+        status = STATUS_FAILED
+    elif n_fail or n_warn or n_skip:
+        status = STATUS_PARTIAL
+    else:
+        status = STATUS_SUCCESS
+    msg = f"FAIL {n_fail}, WARN {n_warn}" + (f", {SEC_UNAVAILABLE} {n_skip}" if n_skip else "")
+    return FetchResult("validate", status, n_items=len(rows), outputs=[str(path)], message=msg)
 
 
 if __name__ == "__main__":  # pragma: no cover
