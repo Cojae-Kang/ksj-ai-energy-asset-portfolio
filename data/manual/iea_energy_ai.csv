@@ -10,3 +10,5 @@ dc_regional_share_Europe,2024,15,%,IEA Energy and AI,https://www.iea.org/reports
 dc_demand_growth_yoy,2025,17,%,IEA Key Questions on Energy and AI,https://www.iea.org/reports/key-questions-on-energy-and-ai,2026-04
 ai_dc_demand_growth_yoy,2025,50,%,IEA Key Questions on Energy and AI,https://www.iea.org/reports/key-questions-on-energy-and-ai,2026-04
 global_electricity_demand_growth_yoy,2025,3,%,IEA Key Questions on Energy and AI,https://www.iea.org/reports/key-questions-on-energy-and-ai,2026-04
+dc_electricity_consumption_range_low,2035,700,TWh,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04
+dc_electricity_consumption_range_high,2035,1700,TWh,IEA Energy and AI,https://www.iea.org/reports/energy-and-ai/executive-summary,2025-04

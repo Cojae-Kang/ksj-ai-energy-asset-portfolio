@@ -328,9 +328,10 @@ data_fetch:
 # research — KSJ Research Notes (research/volNN/). 수치는 모두 데이터 파일에서 계산, 문구 템플릿만 코드에 둔다.
 # =====================================================================
 research:
-  brand: "KSJ Research | AI Energy Asset Portfolio"
+  brand: "KSJ Research"
+  tagline: "AI Energy Asset Portfolio"
   author: "Shinjae Kang"
-  repo_url: "github.com/Cojae-Kang/ai-dc-power-ecm"
+  repo_url: "https://github.com/Cojae-Kang/ksj-ai-energy-asset-portfolio"   # PDF·README는 이 값만 사용
   fonts:
     dir: "assets/fonts"
     regular: "NotoSansKR-Regular.ttf"
@@ -338,46 +339,80 @@ research:
     fallbacks:                          # Noto Sans KR이 없을 때 순서대로 시도 (regular, bold)
       - ["C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/malgunbd.ttf"]          # Windows 맑은 고딕
       - ["/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"]
-  colors:                               # 흰 배경 · 진한 네이비 본문 · 포인트 딥 틸 하나
-    navy: "#0B1F3A"
-    teal: "#00757A"
-    teal_tint: "#E5F1F1"                # 포인트 색의 옅은 톤 (Key Takeaways 배경)
-    grey: "#6B7785"
-    light_grey: "#D5DBE3"
+  colors:                               # 고급 리서치 톤: 골드·브라운·블랙·웜그레이
+    charcoal: "#1C1B19"                 # 헤더 바·표 헤더 (흰 글씨)
+    gold: "#B08D57"                     # 포인트: 헤더 아래 선, 핵심 숫자, 표지 선, 강조 막대
+    brown_dark: "#6B4F3A"               # 보조 시리즈
+    brown_mid: "#9A7B5F"
+    warm_grey: "#8C857B"                # 비교 시리즈
+    warm_grey_light: "#C9C2B8"
+    brick: "#9C4A3A"                    # 음수·리스크 강조
+    panel: "#F5F2ED"                    # 박스·음영 패널
+    text: "#2B2926"                     # 본문
+    note: "#7A746C"                     # 각주
+    white: "#FFFFFF"
 
   vol01:
     output_dir: "research/vol01"
-    title_kr: "AI 전력 수요는 진짜인가, 그리고 시장은 이미 알고 있나?"
-    title_en: "Is AI Power Demand Real — and Has the Market Already Priced It In?"
-    date_kr: "2026년 10월"
-    date_en: "October 2026"
+    build_dir: "research/vol01/_build"  # 차트 PNG 등 중간 산출물 (.gitignore)
+    page_pt: [960, 720]                 # 가로형 4:3 (1280×960 비율)
+    title_kr: "AI 전력 수요는 진짜인가, 시장은 이미 알고 있나"
+    title_en: "Is AI Power Demand Real, and Does the Market Already Know?"
+    subtitle_kr: "공식 데이터로 본 수요·현장·실적·시장 — 그리고 IPO 공모가에 주는 함의"
+    subtitle_en: "Demand, ground truth, earnings and market pricing from official data — and what it means for IPO pricing"
+    date_label: "2026.10"
     inputs:
       iea: "data/manual/iea_energy_ai.csv"
       eia_state: "data/processed/vol01_eia_state.csv"
+      eia_sectors: ["data/processed/vol01_eia_us_sectors.csv", "data/processed/eia_retail_sales_annual.csv"]  # 앞에서부터 사용
       krx_points: "data/processed/vol01_krx_mcap_points.csv"
-      dart: "data/processed/dart_financials.csv"
+      dart: ["data/processed/dart_financials.csv", "data/processed/vol01_dart_extra.csv"]                    # 합쳐서 사용
+      corporate_actions: "data/manual/krx_corporate_actions.csv"
+      ktb: "data/processed/ecos_ktb_daily.csv"
+      fred: "data/processed/fred_series.csv"
+    fiscal_years: [2022, 2023, 2024, 2025]
+    decomposition:                      # Δln(시총) = Δln(지배순이익) + Δln(PER)
+      fy_start: "FY2022A"               # 2023년 첫 거래일 시총 ↔ 직전 연간 실적(FY2022A)
+      fy_end: "FY2025A"                 # 최근 시총 ↔ 최근 연간 실적(FY2025A)
     iea_metrics:                        # data/manual/iea_energy_ai.csv의 metric·period
-      exhibit1:
-        - {metric: "dc_electricity_consumption", period: "2024", label: "2024"}
-        - {metric: "dc_electricity_consumption_base", period: "2030", label: "2030E"}
-        - {metric: "dc_electricity_consumption_base", period: "2035", label: "2035E"}
-      exhibit2:
-        - {metric: "dc_demand_growth_yoy", period: "2025", key: "dc"}
-        - {metric: "ai_dc_demand_growth_yoy", period: "2025", key: "ai_dc"}
-        - {metric: "global_electricity_demand_growth_yoy", period: "2025", key: "global"}
-    # A. fetch_extra.py 수집 범위
+      dc_2024: {metric: "dc_electricity_consumption", period: "2024"}
+      dc_2030: {metric: "dc_electricity_consumption_base", period: "2030"}
+      dc_2035: {metric: "dc_electricity_consumption_base", period: "2035"}
+      dc_2035_low: {metric: "dc_electricity_consumption_range_low", period: "2035"}
+      dc_2035_high: {metric: "dc_electricity_consumption_range_high", period: "2035"}
+      share_2024: {metric: "dc_share_of_global_electricity", period: "2024"}
+      cagr_17_24: {metric: "dc_consumption_growth_rate", period: "2017-2024"}
+      region_us: {metric: "dc_regional_share_US", period: "2024"}
+      region_cn: {metric: "dc_regional_share_China", period: "2024"}
+      region_eu: {metric: "dc_regional_share_Europe", period: "2024"}
+      growth_dc: {metric: "dc_demand_growth_yoy", period: "2025"}
+      growth_ai: {metric: "ai_dc_demand_growth_yoy", period: "2025"}
+      growth_global: {metric: "global_electricity_demand_growth_yoy", period: "2025"}
+    # A. fetch_extra.py 수집 범위 (로컬 실행)
     eia_state:
       states: ["VA", "US"]
       sector: "COM"                     # commercial
       start: "2015"
       base_year: 2015                   # 지수 기준연도 (=100)
-      # 제목 서술 규칙: 최근연도 지수 차이(VA − US)가 ±이 값(포인트) 이상이면 '앞섬/뒤처짐', 아니면 '비슷'
-      divergence_pts: 5
+      divergence_pts: 5                 # 최근연도 지수 차이(VA − US)가 ±이 값 이상이면 '앞섬/뒤처짐', 아니면 '비슷'
+    eia_sectors:
+      state: "US"
+      sectors: ["RES", "COM", "IND"]    # 주거·상업·산업
+      data_fields: ["sales", "price"]
+      start: "2015"
+    dart_extra_years: [2022]            # 기존 dart_financials(FY2023~2025)에 더할 연도
     krx_points:
       start_from: "2023-01-01"          # 이 날부터 앞으로 찾은 첫 거래일 = 2023년 첫 거래일
       max_forward_days: 10
       max_lookback_days: 10             # 기준일 직전 거래일 탐색 범위 (기준일 당일 제외)
+    # ASSUMPTION: 리스크 매트릭스 위치(가능성·영향, 1~5)는 저자의 정성 판단. 근거 데이터는 보고서 각주에 숫자로 표기.
+    risk_matrix:
+      - {key: "outlook", likelihood: 3, impact: 4}       # 전망 불확실성 (IEA 2035 범위)
+      - {key: "cycle_peak", likelihood: 4, impact: 4}    # 사이클 고점 (현재 PER 수준)
+      - {key: "rates", likelihood: 3, impact: 3}         # 금리 (국고채·미 국채 10년)
+      - {key: "supply_chain", likelihood: 2, impact: 3}  # 공급망 (정성)
     text_rules:
-      big_move_multiple: 1.5            # 4사 시가총액 합계 배수가 이 이상이면 "시장은 이미 크게 움직였다"로 서술
+      big_move_multiple: 1.5            # 시총 합계 배수가 이 이상이면 "크게 움직였다"
+      multiple_led_share: 0.5           # 멀티플 기여 비중이 이 값 초과면 "멀티플이 이익보다 앞서 달렸다"
     source_status_override:
       sec: "준비 중"                     # SEC 일시 차단 → 수집 재개 전까지 표기

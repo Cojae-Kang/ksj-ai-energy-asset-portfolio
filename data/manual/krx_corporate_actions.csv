@@ -1,0 +1,2 @@
+ticker,company,event_date,action,ratio,shares_before,shares_after,source,verified_on,notes
+010120,LS ELECTRIC,2026-04-13,stock_split,5,30000000,150000000,회사 공시(주식분할) — 저자 검산,2026-10-21,5대 1 액면분할. 시총은 각 시점 상장주식수 기준이라 조정 불필요. 주가 비교 시 분할 조정(×5)

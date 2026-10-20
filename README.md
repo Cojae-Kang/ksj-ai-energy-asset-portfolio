@@ -9,37 +9,40 @@
 
 | Vol | 제목 | 날짜 | 국문 | English |
 |---|---|---|---|---|
-| 1 | AI 전력 수요는 진짜인가, 그리고 시장은 이미 알고 있나? <br>_Is AI Power Demand Real — and Has the Market Already Priced It In?_ | 2026-10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) |
+| 1 | AI 전력 수요는 진짜인가, 시장은 이미 알고 있나 <br>_Is AI Power Demand Real, and Does the Market Already Know?_ | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) |
 
-LinkedIn 캐러셀: [research/vol01/linkedin_carousel.pdf](research/vol01/linkedin_carousel.pdf) · Exhibits: [research/vol01/exhibits/](research/vol01/exhibits/)
-
-> PDF는 로컬에서 `python -m research.vol01.build`로 생성해 커밋합니다 (아래 재현 방법).
+- 가로형 4:3(960×720pt) 13쪽: 표지 · Executive Summary · 목차 · I 수요 · II 현장 · III 실적 · IV 시장 · V 시사점 · A1 질의응답 · A2 데이터 노트 · A3 What I built · A4 용어 · Disclosures
+- 메시지 축: 수요는 진짜 → 현장에서 보인다 → 시장은 이미 알고 있다 → Vol.2: 멀티플이 높아진 섹터의 IPO 공모가 (제목·결론은 모두 데이터에서 계산)
+- 저장소: <https://github.com/Cojae-Kang/ksj-ai-energy-asset-portfolio>
 
 ## 데이터 소스 상태 (기준일 2026-10-20)
 
 | 소스 | 제공기관 | 용도 | 상태 |
 |---|---|---|---|
-| DART | 금융감독원 | 국내 peers 재무제표 | ✅ 수집 완료 |
-| KRX Open API | 한국거래소 | 주가·시가총액·상장주식수 | ✅ 수집 완료 |
+| DART | 금융감독원 | 국내 peers 재무제표 (FY2023~2025, FY2022 추가 수집 대상) | ✅ 수집 완료 |
+| KRX Open API | 한국거래소 | 종가·시가총액·상장주식수 (2023-01-02, 2026-10-19) | ✅ 수집 완료 |
 | ECOS | 한국은행 | 원/달러 환율, 국고채 금리 | ✅ 수집 완료 |
 | FRED | St. Louis Fed | 미 국채 10년, 원/달러 | ✅ 수집 완료 |
-| EIA | U.S. Energy Information Administration | 미국 전력 소매판매 | ✅ 수집 완료 |
+| EIA | U.S. Energy Information Administration | 미국 주별·부문별 전력 판매량·가격 | ✅ 수집 완료 |
 | SEC EDGAR | 미국 SEC | 해외 peers 재무제표 | ⏳ 준비 중 (접속 일시 차단) |
-| IEA 보고서 | International Energy Agency | 데이터센터 전력 전망 | ✍️ 수기 입력 (`data/manual/iea_energy_ai.csv`, 원문 대조) |
+| IEA 보고서 | International Energy Agency | 데이터센터 전력 전망·증가율 | ✅ 원문 대조 완료 (2026-10-21, `data/manual/iea_energy_ai.csv`) |
+
+기업행위: LS ELECTRIC 2026-04-13 5:1 액면분할 — 시총은 각 시점 상장주식수 기준이라 조정 불필요, 주가 비교는 분할 조정 (`data/manual/krx_corporate_actions.csv`).
 
 ## 재현 방법 (Vol.1)
 
 ```powershell
-pip install -r requirements.txt                              # matplotlib + ReportLab, 추가 설치 없음
+pip install -r requirements.txt                                    # matplotlib + ReportLab, 추가 설치 없음
 python -m src.data_fetch.fetch_all --source all --asof 2026-10-20   # 1단계 데이터 (키 없는 소스는 SKIPPED)
-python -m research.vol01.fetch_extra --asof 2026-10-20       # Vol.1 추가: EIA VA/US 상업용, KRX 두 시점 시가총액
-python -m research.vol01.build                               # Exhibits + 국문/영문 PDF + 캐러셀
-pytest -q                                                    # 네트워크 없는 테스트
+python -m research.vol01.fetch_extra --asof 2026-10-20              # Vol.1 추가: EIA 주별·부문별, KRX 두 시점, DART FY2022
+python -m research.vol01.build                                      # 국문/영문 PDF + build_summary.md
+pytest -q                                                           # 네트워크 없는 테스트
 ```
 
-- 그래프·문장 속 숫자는 모두 `data/` 파일에서 계산합니다. 데이터가 없거나 값이 `TODO`면 그 Exhibit만 빼고 "데이터 확인 중"으로 표기합니다.
+- 보고서의 모든 숫자·제목·결론은 `data/` 파일에서 계산합니다. 데이터가 없으면 그 Exhibit만 회색 박스("데이터 수집 후 생성" + 실행 명령)로 남깁니다.
+- 시총 변화 분해: Δln(시총) = Δln(지배순이익) + Δln(PER). 2023년 초 시총 ↔ FY2022A, 최근 시총 ↔ FY2025A 지배순이익.
+- 커밋 대상: `data/processed/`, `data/manual/`, `research/vol01/*.pdf`, `build_summary.md`. 원자료 `data/raw/`와 차트 중간 산출물 `research/vol01/_build/`는 커밋하지 않습니다(.gitignore).
 - 한글 폰트는 저장소의 Noto Sans KR(OFL, `assets/fonts/`)을 쓰고, 없으면 Windows 맑은 고딕으로 대체합니다.
-- 빌드 결과 요약(포함/제외 Exhibit, 쪽수, 폰트)은 `research/vol01/build_summary.md`에 남습니다.
 
 ## 프로젝트 소개
 
@@ -91,7 +94,7 @@ AI 데이터센터가 늘면서 전력 수요가 커지고 있습니다. 이 프
 │   ├── analysis/        # 단계별 분석 함수
 │   └── data_fetch/      # 데이터 수집 스크립트 (로컬 실행)
 ├── research/
-│   └── vol01/           # Research Note Vol.1 (fetch_extra.py, build.py, exhibits/, PDF)
+│   └── vol01/           # Research Note Vol.1 (fetch_extra.py, data.py, story.py, layout.py, charts.py, build.py, PDF)
 ├── assets/fonts/        # Noto Sans KR (SIL OFL 1.1)
 ├── data/
 │   ├── raw/             # 원본 데이터 + .meta.json
@@ -131,7 +134,7 @@ pytest
 
 ## 데이터 수집 실행 방법
 
-> 데이터 수집은 **로컬에서만** 실행합니다. 클라우드 세션은 커밋된 `data/raw/`, `data/manual/` 파일만 사용합니다.
+> 데이터 수집은 **로컬에서만** 실행합니다. 원자료 `data/raw/`는 커밋하지 않으며, 클라우드 세션은 커밋된 `data/processed/`, `data/manual/` 파일만 사용합니다.
 
 ### 1) 준비
 
@@ -229,7 +232,7 @@ python -m src.data_fetch.sec --diagnose --probe   # company_tickers.json 1회 �
 
 - 모든 raw 파일은 같은 이름의 `.meta.json`(source, endpoint, params(키 제외), fetched_at, as_of, license_note)을 동반합니다.
 - base URL·endpoint·시리즈 코드·계정 매핑은 모두 `config.yaml`의 `data_fetch`에서 관리합니다. `ASSUMPTION(verify)` 항목은 공식 문서로 확인한 뒤 태그를 지웁니다.
-- 대용량 원본(DART 원문 zip, SEC companyfacts)은 `data/raw/large/`, 응답 캐시는 `data/raw/_cache/`에 저장되며 git에서 제외됩니다.
+- 원자료(`data/raw/` 전체: API 응답, DART 원문 zip, SEC companyfacts, 응답 캐시)는 git에서 제외됩니다. 가공본 `data/processed/`만 커밋합니다.
 - 환산: 손익은 연평균 환율, 재무상태(차입금·현금)는 연말 환율(ECOS 매매기준율)을 씁니다.
 - Schneider Electric 재무는 `data/manual/overseas_financials_manual.csv`에 연차보고서 기준으로 직접 입력합니다(`TODO(data)`).
 

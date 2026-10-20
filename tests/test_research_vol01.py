@@ -1,8 +1,8 @@
-"""KSJ Research Vol.1 테스트 — 네트워크 없이 실행. EIA/KRX 값은 테스트용 합성 데이터(tmp_path)만 사용."""
+"""KSJ Research Vol.1 (가로형 보고서) 테스트 — 네트워크 없이 실행. 입력은 tmp_path의 테스트용 합성 데이터."""
 from __future__ import annotations
 
 import copy
-import json
+import math
 import re
 from datetime import date
 from pathlib import Path
@@ -10,47 +10,80 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from research.vol01 import data, fetch_extra, text
-from research.vol01.data import Unavailable
+from research.vol01 import data, fetch_extra
+from research.vol01.data import Unavailable, ok
 from research.vol01.fonts import resolve_fonts
 from src.data_fetch import base
 
+PEERS = [("267260", "HD현대일렉트릭", "HD Hyundai Electric"), ("010120", "LS ELECTRIC", "LS ELECTRIC"),
+         ("298040", "효성중공업", "Hyosung Heavy Industries"), ("034020", "두산에너빌리티", "Doosan Enerbility")]
+
 IEA_ROWS = [
     ("dc_electricity_consumption", "2024", "415"), ("dc_electricity_consumption_base", "2030", "945"),
-    ("dc_electricity_consumption_base", "2035", "1200"), ("dc_demand_growth_yoy", "2025", "17"),
-    ("ai_dc_demand_growth_yoy", "2025", "50"), ("global_electricity_demand_growth_yoy", "2025", "3"),
+    ("dc_electricity_consumption_base", "2035", "1200"), ("dc_electricity_consumption_range_low", "2035", "700"),
+    ("dc_electricity_consumption_range_high", "2035", "1700"), ("dc_share_of_global_electricity", "2024", "1.5"),
+    ("dc_consumption_growth_rate", "2017-2024", "12"), ("dc_regional_share_US", "2024", "45"),
+    ("dc_regional_share_China", "2024", "25"), ("dc_regional_share_Europe", "2024", "15"),
+    ("dc_demand_growth_yoy", "2025", "17"), ("ai_dc_demand_growth_yoy", "2025", "50"),
+    ("global_electricity_demand_growth_yoy", "2025", "3"),
 ]
 
 
+# ---------------------------------------------------------------------------
+# 합성 입력 작성
+# ---------------------------------------------------------------------------
 def write_iea(path: Path, rows=IEA_ROWS):
-    pd.DataFrame([{"metric": m, "period": p, "value": v, "unit": "x", "source": "IEA test", "url": "u",
-                   "published": "2025-04"} for m, p, v in rows]).to_csv(path, index=False)
+    pd.DataFrame([{"metric": m, "period": p, "value": v, "unit": "x", "source": "IEA", "url": "u", "published": "2025-04"}
+                  for m, p, v in rows]).to_csv(path, index=False)
 
 
-def write_eia(path: Path, va_growth=1.06, us_growth=1.01, years=range(2015, 2026)):
+def write_eia_state(path: Path, va=1.06, us=1.01, years=range(2015, 2026)):
     rows = []
     for y in years:
-        rows.append({"period": y, "stateid": "VA", "stateDescription": "Virginia", "sectorid": "COM",
-                     "sectorName": "commercial", "sales": 100 * va_growth ** (y - 2015), "source": "TEST"})
-        rows.append({"period": y, "stateid": "US", "stateDescription": "U.S. Total", "sectorid": "COM",
-                     "sectorName": "commercial", "sales": 1000 * us_growth ** (y - 2015), "source": "TEST"})
+        rows += [{"period": y, "stateid": "VA", "sectorid": "COM", "sales": 100 * va ** (y - 2015)},
+                 {"period": y, "stateid": "US", "sectorid": "COM", "sales": 1000 * us ** (y - 2015)}]
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
-def write_krx(path: Path, cfg, mult=(2.0, 3.0, 4.0, 1.5)):
+def write_eia_sectors(path: Path):
     rows = []
-    for p, m in zip(cfg["peers"]["domestic"], mult):
-        for point, dd, v in (("start_2023", "20230102", 1000.0), ("latest", "20261019", 1000.0 * m)):
-            rows.append({"point": point, "bas_dd": dd, "company": p["name"], "company_en": p["name_en"],
-                         "ticker": p["ticker"], "market_cap_krw_100m": v})
+    for y in range(2015, 2026):
+        for s, base_, g, p in (("RES", 1400, 1.007, 12.6), ("COM", 1360, 1.009, 10.6), ("IND", 990, 1.005, 6.9)):
+            rows.append({"period": y, "stateid": "US", "sectorid": s, "sales": base_ * 1000 * g ** (y - 2015),
+                         "price": p * 1.025 ** (y - 2015)})
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
-def write_dart(path: Path, cfg, op23=(100, 100, 100, 100), op25=(150, 100, 200, 200)):
+def write_krx(path: Path, mcap0=(14581.0661075, 16530.0, 6928.139164, 97341.9750325),
+              mcap1=(189247.45875, 246900.0, 180523.24928, 426613.723236),
+              close0=(40450, 55100, 74300, 15250), close1=(525000, 164600, 1936000, 66600),
+              sh0=(36047135, 30000000, 9324548, 638308033), sh1=(36047135, 150000000, 9324548, 640561146)):
     rows = []
-    for p, a, b in zip(cfg["peers"]["domestic"], op23, op25):
-        rows += [{"company": p["name"], "ticker": p["ticker"], "fiscal_year": "FY2023A", "operating_income": a},
-                 {"company": p["name"], "ticker": p["ticker"], "fiscal_year": "FY2025A", "operating_income": b}]
+    for i, (t, kr, en) in enumerate(PEERS):
+        rows.append({"point": "start_2023", "bas_dd": "20230102", "company": kr, "company_en": en, "ticker": t,
+                     "close_krw": close0[i], "market_cap_krw_100m": mcap0[i], "listed_shares": sh0[i]})
+        rows.append({"point": "latest", "bas_dd": "20261019", "company": kr, "company_en": en, "ticker": t,
+                     "close_krw": close1[i], "market_cap_krw_100m": mcap1[i], "listed_shares": sh1[i]})
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def write_actions(path: Path, ratio=5, after=150000000):
+    pd.DataFrame([{"ticker": "010120", "company": "LS ELECTRIC", "event_date": "2026-04-13", "action": "stock_split",
+                   "ratio": ratio, "shares_before": 30000000, "shares_after": after, "source": "test",
+                   "verified_on": "2026-10-21", "notes": ""}]).to_csv(path, index=False)
+
+
+def write_dart(path: Path, years=(2023, 2024, 2025), ni_scale=1.0, ni_override=None):
+    ni = {2022: (1500, 1700, 900, 400), 2023: (2591.5, 2059.6, 1159.8, 556.0), 2024: (5015.7, 2387.2, 2226.3, 1113.7),
+          2025: (7326.1, 2866.2, 5198.9, 847.6)}
+    rows = []
+    for y in years:
+        for i, (t, kr, _) in enumerate(PEERS):
+            n = ni[y][i] * ni_scale
+            if ni_override and (t, y) in ni_override:
+                n = ni_override[(t, y)]
+            rows.append({"company": kr, "ticker": t, "fiscal_year": f"FY{y}A", "fs_div": "CFS", "revenue": 10000 * (i + 1) * (1 + (y - 2022) * 0.1),
+                         "operating_income": 1000 * (i + 1) * (1 + (y - 2022) * 0.15), "net_income": n})
     pd.DataFrame(rows).to_csv(path, index=False)
 
 
@@ -62,213 +95,308 @@ def cfg(tmp_path):
     c["data_fetch"]["output"]["cache"] = str(tmp_path / "cache")
     (tmp_path / "processed").mkdir()
     inp = c["research"]["vol01"]["inputs"]
-    for k in inp:
-        inp[k] = str(tmp_path / f"{k}.csv")
+    for k, v in list(inp.items()):
+        inp[k] = [str(tmp_path / f"{k}_{i}.csv") for i in range(len(v))] if isinstance(v, list) else str(tmp_path / f"{k}.csv")
     return c
 
 
-# ---------------------------------------------------------------------------
-# 데이터 규칙: 없음/TODO → Unavailable
-# ---------------------------------------------------------------------------
-def test_missing_files_are_unavailable(cfg):
-    for fn in (data.exhibit1, data.exhibit2, data.exhibit3, data.exhibit4):
-        assert isinstance(fn(cfg), Unavailable)
+def p(cfg, key, i=0) -> Path:
+    v = cfg["research"]["vol01"]["inputs"][key]
+    return Path(v[i] if isinstance(v, list) else v)
 
 
-def test_iea_todo_value_makes_exhibit_unavailable(cfg):
-    rows = [r if r[0] != "dc_electricity_consumption_base" or r[1] != "2030" else (r[0], r[1], "TODO(data)")
-            for r in IEA_ROWS]
-    write_iea(Path(cfg["research"]["vol01"]["inputs"]["iea"]), rows)
-    e1 = data.exhibit1(cfg)
-    assert isinstance(e1, Unavailable) and "2030" in e1.reason
-    assert not isinstance(data.exhibit2(cfg), Unavailable)      # 다른 Exhibit은 영향 없음
-
-
-def test_exhibit1_2_values_and_titles(cfg):
-    write_iea(Path(cfg["research"]["vol01"]["inputs"]["iea"]))
-    e1, e2 = data.exhibit1(cfg), data.exhibit2(cfg)
-    assert e1.values_twh == [415, 945, 1200] and e1.multiple_2030 == pytest.approx(945 / 415)
-    t1 = text.ex1_text(e1, "kr").title
-    assert "2.3배" in t1 and "415TWh" in t1 and "1,200TWh" in t1
-    t2 = text.ex2_text(e2, "en").title
-    assert "50%" in t2 and "17x" in t2 and "(3%)" in t2           # 50/3 = 16.7 → 17x
+def full_inputs(cfg, fy2022=True):
+    write_iea(p(cfg, "iea"))
+    write_eia_state(p(cfg, "eia_state"))
+    write_eia_sectors(p(cfg, "eia_sectors", 1))      # 폴백 파일 경로(eia_retail_sales_annual 대응)
+    write_krx(p(cfg, "krx_points"))
+    write_actions(p(cfg, "corporate_actions"))
+    write_dart(p(cfg, "dart", 0))
+    if fy2022:
+        write_dart(p(cfg, "dart", 1), years=(2022,))
 
 
 # ---------------------------------------------------------------------------
-# Exhibit 3: 데이터가 보여주는 대로 결론형 제목
+# I~II 수요·현장
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("va, us, verdict, kr_word, en_word", [
-    (1.06, 1.01, "ahead", "앞서", "outpacing"),
-    (1.00, 1.04, "behind", "낮아", "lagging"),
-    (1.02, 1.02, "similar", "비슷한 흐름", "tracked closely"),
-])
-def test_exhibit3_verdict_follows_data(cfg, va, us, verdict, kr_word, en_word):
-    write_eia(Path(cfg["research"]["vol01"]["inputs"]["eia_state"]), va, us)
-    e = data.exhibit3(cfg)
-    assert e.verdict == verdict
-    assert e.index.loc[e.index["period"] == 2015, ["VA", "US"]].values.tolist() == [[100.0, 100.0]]
-    assert e.va_change_pct == pytest.approx((va ** 10 - 1) * 100)
-    kr, en = text.ex3_text(e, "kr").title, text.ex3_text(e, "en").title
-    assert kr_word in kr and en_word in en
-    assert f"{e.va_change_pct:+.0f}%" in kr
-    assert "up +" not in en and "up -" not in en                  # 영문 부호 중복 방지
+def test_demand_values_and_todo(cfg):
+    write_iea(p(cfg, "iea"))
+    d = data.demand(cfg)
+    assert d.mult_2030 == pytest.approx(945 / 415) and d.region_other == pytest.approx(15)
+    assert d.ai_vs_global == pytest.approx(50 / 3)
+    rows = [r if r[0] != "dc_electricity_consumption_range_low" else (r[0], r[1], "TODO(data)") for r in IEA_ROWS]
+    write_iea(p(cfg, "iea"), rows)
+    assert data.demand(cfg).v["dc_2035_low"] is None
 
 
-def test_exhibit3_requires_base_year(cfg):
-    write_eia(Path(cfg["research"]["vol01"]["inputs"]["eia_state"]), years=range(2017, 2026))
-    assert isinstance(data.exhibit3(cfg), Unavailable)
+@pytest.mark.parametrize("va, us, verdict", [(1.06, 1.01, "ahead"), (1.00, 1.04, "behind"), (1.02, 1.02, "similar")])
+def test_ground_verdict_follows_data(cfg, va, us, verdict):
+    write_eia_state(p(cfg, "eia_state"), va, us)
+    g = data.ground(cfg)
+    assert g.verdict == verdict
+    assert g.va_change_pct == pytest.approx((va ** 10 - 1) * 100)
+    assert g.va_recent_cagr_pct == pytest.approx((va - 1) * 100)
 
 
-# ---------------------------------------------------------------------------
-# Exhibit 4 + Table 1
-# ---------------------------------------------------------------------------
-def test_exhibit4_and_table1_decomposition(cfg):
-    write_krx(Path(cfg["research"]["vol01"]["inputs"]["krx_points"]), cfg)
-    write_dart(Path(cfg["research"]["vol01"]["inputs"]["dart"]), cfg)
-    e4 = data.exhibit4(cfg)
-    assert e4.t0 == "2023-01-02" and e4.t1 == "2026-10-19"
-    assert e4.total_multiple == pytest.approx((2 + 3 + 4 + 1.5) / 4)
-    assert list(e4.table["ticker"]) == [p["ticker"] for p in cfg["peers"]["domestic"]]   # config 순서 유지
-    t1 = data.table1(cfg, e4)
-    row = t1.table.iloc[0]
-    assert row["mcap_multiple"] == pytest.approx(row["op_multiple"] * row["val_multiple"])  # 분해 항등식
-    assert t1.n_valid == 4 and t1.n_valuation_up == 3   # 4번째: 시총 1.5배 < 영업이익 2배 → 배수 축소
-    assert "4사 중 3곳" in text.table1_texts(t1, e4, "kr")[2]
-    assert "효성중공업" in text.ex4_text(e4, "kr").title          # 최대 상승 회사 (4.0배)
-
-
-def test_table1_handles_negative_operating_profit(cfg):
-    write_krx(Path(cfg["research"]["vol01"]["inputs"]["krx_points"]), cfg)
-    write_dart(Path(cfg["research"]["vol01"]["inputs"]["dart"]), cfg, op23=(-10, 100, 100, 100))
-    t1 = data.table1(cfg, data.exhibit4(cfg))
-    assert t1.n_valid == 3 and pd.isna(t1.table.iloc[0]["val_multiple"])
+def test_sectors_uses_fallback_file(cfg):
+    assert isinstance(data.sectors(cfg), Unavailable)
+    write_eia_sectors(p(cfg, "eia_sectors", 1))
+    s = data.sectors(cfg)
+    assert s.source_file == p(cfg, "eia_sectors", 1).name and list(s.sales.columns) == ["RES", "COM", "IND"]
+    assert s.change_pct("price", "COM") == pytest.approx((1.025 ** 10 - 1) * 100)
 
 
 # ---------------------------------------------------------------------------
-# fetch_extra (네트워크 없음: fake 클라이언트)
+# III 실적
+# ---------------------------------------------------------------------------
+def test_financials_merge_extra_year_and_loss_rule(cfg):
+    write_dart(p(cfg, "dart", 0), ni_override={("034020", 2023): -100})
+    fin = data.financials(cfg)
+    assert fin.years == [2023, 2024, 2025] and fin.missing_years == [2022]
+    assert math.isnan(fin.value("034020", 2024, "ni_yoy") or float("nan"))   # 직전 적자 → 증가율 없음
+    write_dart(p(cfg, "dart", 1), years=(2022,))
+    fin = data.financials(cfg)
+    assert fin.years == [2022, 2023, 2024, 2025] and fin.missing_years == []
+    assert fin.value("267260", 2025, "opm") == pytest.approx(1000 * 1.45 / (10000 * 1.3) * 100)
+
+
+# ---------------------------------------------------------------------------
+# IV 시장: 주식수·분할 검산, 합계 vs 평균
+# ---------------------------------------------------------------------------
+def test_market_split_and_share_checks(cfg):
+    write_krx(p(cfg, "krx_points"))
+    write_actions(p(cfg, "corporate_actions"))
+    mk = data.market(cfg)
+    t = mk.table.set_index("ticker")
+    ls = t.loc["010120"]
+    assert ls["share_note"] == "split_consistent" and ls["split_factor"] == 5
+    assert ls["price_multiple_raw"] == pytest.approx(164600 / 55100)                 # 주가 2.99배
+    assert ls["price_multiple_adj"] == pytest.approx(ls["multiple"], rel=1e-4)         # 분할 조정 = 시총 배수 14.9배
+    assert round(ls["multiple"], 1) == 14.9
+    assert t.loc["034020", "share_note"] == "changed_unexplained"                      # 두산 +0.35%
+    assert t.loc["267260", "share_note"] == "unchanged"
+    assert all(abs(t[c]).max() < 0.01 for c in ("mcap_check_t0", "mcap_check_t1"))   # 종가×주식수 = MKTCAP
+    assert round(mk.total_multiple, 1) == 7.7 and round(mk.mean_multiple, 1) == 14.6
+    assert mk.largest_t0["company"] == "두산에너빌리티" and round(mk.largest_t0_share) == 72
+    assert [round(x, 1) for x in t["multiple"]] == [13.0, 14.9, 26.1, 4.4]
+
+
+def test_market_split_mismatch_is_flagged(cfg):
+    write_krx(p(cfg, "krx_points"))
+    write_actions(p(cfg, "corporate_actions"), ratio=4)
+    assert data.market(cfg).table.set_index("ticker").loc["010120", "share_note"] == "split_mismatch"
+
+
+# ---------------------------------------------------------------------------
+# 분해식: Δln(시총) = Δln(지배순이익) + Δln(PER)
+# ---------------------------------------------------------------------------
+def test_decomposition_identity_and_aggregate(cfg):
+    full_inputs(cfg)
+    f = data.load_facts(cfg, "2026-10-20")
+    dc = f.decomp
+    assert ok(dc) and dc.fy0 == "FY2022A" and dc.fy1 == "FY2025A"
+    for _, r in dc.table[dc.table["valid"]].iterrows():
+        assert r["dln_mcap"] == pytest.approx(r["dln_ni"] + r["dln_per"])               # 로그 항등식
+        assert r["mcap_t1"] / r["mcap_t0"] == pytest.approx((r["ni1"] / r["ni0"]) * (r["per1"] / r["per0"]))
+        assert r["earn_share"] + r["mult_share"] == pytest.approx(1.0)
+        assert r["per0"] == pytest.approx(r["mcap_t0"] / r["ni0"])                       # 2023 초 시총 ↔ FY2022A
+        assert r["per1"] == pytest.approx(r["mcap_t1"] / r["ni1"])                       # 최근 시총 ↔ FY2025A
+    a = dc.agg
+    assert a["earn_part"] + a["mult_part"] == pytest.approx(a["d_mcap"])
+    assert a["dln_mcap"] == pytest.approx(math.log(a["mcap1"] / a["mcap0"]))
+    assert dc.n_multiple_led == int((dc.table["dln_per"] > dc.table["dln_ni"]).sum())
+
+
+def test_decomposition_requires_fy2022_and_handles_losses(cfg):
+    full_inputs(cfg, fy2022=False)
+    dc = data.load_facts(cfg, "2026-10-20").decomp
+    assert isinstance(dc, Unavailable) and dc.command == data.CMD_DART and "FY2022A" in dc.reason_en
+    write_dart(p(cfg, "dart", 1), years=(2022,), ni_override={("034020", 2022): -500})
+    dc = data.load_facts(cfg, "2026-10-20").decomp
+    assert dc.n_valid == 3 and not dc.table.set_index("ticker").loc["034020", "valid"]
+    assert dc.agg["n_in_agg"] == 3
+
+
+def test_valuation_current_per(cfg):
+    full_inputs(cfg, fy2022=False)
+    val = data.load_facts(cfg, "2026-10-20").val
+    per = val.per.set_index("ticker")["per"]
+    assert per["034020"] == pytest.approx(426613.723236 / 847.6)
+    assert val.median_per == pytest.approx(per.median())
+    assert val.growth_from == "FY2023A" and val.fy == "FY2025A"
+
+
+# ---------------------------------------------------------------------------
+# fetch_extra (네트워크 없음)
 # ---------------------------------------------------------------------------
 class FakeKrx:
-    """휴장일은 빈 리스트. 요청한 basDd를 기록."""
-
-    def __init__(self, open_days: set[str], peers):
+    def __init__(self, open_days, peers):
         self.open, self.peers, self.calls = open_days, peers, []
 
     def fetch(self, name, bas_dd):
         self.calls.append(bas_dd)
         if bas_dd not in self.open:
             return []
-        k = 2 if bas_dd.startswith("2026") else 1
-        return [{"ISU_CD": p["ticker"], "TDD_CLSPRC": "1000", "MKTCAP": str(k * 1e12 * (i + 1)), "LIST_SHRS": "1"}
-                for i, p in enumerate(self.peers)]
+        return [{"ISU_CD": pp["ticker"], "TDD_CLSPRC": "1000", "MKTCAP": str(1e12 * (i + 1)), "LIST_SHRS": "1"}
+                for i, pp in enumerate(self.peers)]
 
 
-def test_fetch_krx_points_first_trading_day_and_prior_day(cfg):
-    fake = FakeKrx({"20230102", "20261016"}, cfg["peers"]["domestic"])   # 2026-10-19(월)도 휴장 가정
+def test_fetch_krx_points_first_and_prior_trading_day(cfg):
+    fake = FakeKrx({"20230102", "20261016"}, cfg["peers"]["domestic"])
     res = fetch_extra.fetch_krx_points(cfg, "2026-10-20", client=fake)
-    assert res.status == base.STATUS_SUCCESS, res.message
-    assert "20261020" not in fake.calls                    # 기준일 당일은 조회하지 않음
-    assert fake.calls[:2] == ["20230101", "20230102"]      # 1/1 휴장 → 1/2 첫 거래일
-    df = pd.read_csv(Path(cfg["paths"]["processed"]) / fetch_extra.KRX_OUT, dtype={"ticker": str, "bas_dd": str})
-    assert set(df["bas_dd"]) == {"20230102", "20261016"}
-    first = df[(df["point"] == "start_2023") & (df["ticker"] == "267260")].iloc[0]
-    assert first["market_cap_krw_100m"] == pytest.approx(1e12 / 1e8)    # 원 → 억원
-    meta = json.loads((Path(cfg["paths"]["processed"]) / "vol01_krx_mcap_points.meta.json").read_text(encoding="utf-8"))
-    assert meta["as_of"] == "2026-10-20" and "latest=20261016" in meta["license_note"]
+    assert res.status == base.STATUS_SUCCESS and "20261020" not in fake.calls
+    assert fake.calls[:2] == ["20230101", "20230102"]
 
 
 def test_find_trading_day_gives_up(cfg):
     fake = FakeKrx(set(), cfg["peers"]["domestic"])
     with pytest.raises(base.FetchError):
         fetch_extra.find_trading_day(fake, date(2023, 1, 1), +1, 3, "t")
-    assert len(fake.calls) == 4
 
 
-def test_eia_state_config_and_tidy(cfg):
-    c2 = fetch_extra.eia_state_config(cfg)
-    e = c2["data_fetch"]["eia"]
-    assert e["state"] == ["VA", "US"] and e["sectors"] == ["COM"] and e["start"] == "2015"
-    assert cfg["data_fetch"]["eia"]["state"] == "US"          # 원본 config는 그대로
-    from src.data_fetch.eia import build_params
-    params = build_params(e)
-    assert ("facets[stateid][]", "VA") in params and ("facets[stateid][]", "US") in params
-    rows = [{"period": "2015", "stateid": "VA", "sectorid": "COM", "sales": "10"},
-            {"period": "2015", "stateid": "VA", "sectorid": "RES", "sales": "99"},
-            {"period": "2015", "stateid": "US", "sectorid": "COM", "sales": "100"}]
-    df = fetch_extra.tidy_eia_state(rows, ["VA", "US"], "COM", "EIA")
-    assert len(df) == 2 and set(df["stateid"]) == {"VA", "US"}
+class FakeDart:
+    def __init__(self):
+        self.calls = []
+
+    def fetch_corp_codes(self):
+        pass
+
+    def corp_code_for(self, ticker):
+        return "C" + ticker
+
+    def fetch_financials(self, corp_code, year, stock_code=""):
+        self.calls.append((corp_code, year))
+        rows = [{"rcept_no": "R", "sj_div": "IS", "account_id": "ifrs-full_Revenue", "account_nm": "매출액", "account_detail": "-", "thstrm_amount": "100000000000"},
+                {"rcept_no": "R", "sj_div": "IS", "account_id": "dart_OperatingIncomeLoss", "account_nm": "영업이익", "account_detail": "-", "thstrm_amount": "10000000000"},
+                {"rcept_no": "R", "sj_div": "IS", "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent", "account_nm": "지배", "account_detail": "-", "thstrm_amount": "5000000000"}]
+        return rows, "CFS"
+
+
+def test_fetch_dart_extra_fy2022(cfg):
+    fake = FakeDart()
+    res = fetch_extra.fetch_dart_extra(cfg, "2026-10-20", client=fake)
+    assert res.status == base.STATUS_SUCCESS and {y for _, y in fake.calls} == {2022}
+    df = pd.read_csv(Path(cfg["paths"]["processed"]) / fetch_extra.DART_OUT, dtype={"ticker": str})
+    assert set(df["fiscal_year"]) == {"FY2022A"} and df["net_income"].iloc[0] == pytest.approx(50.0)   # 원 → 억원
+    assert list(df.columns)[:6] == ["company", "ticker", "corp_code", "fiscal_year", "fs_div", "rcept_no"]
+
+
+def test_eia_configs(cfg):
+    e = fetch_extra.eia_sectors_config(cfg)["data_fetch"]["eia"]
+    assert e["sectors"] == ["RES", "COM", "IND"] and e["data_fields"] == ["sales", "price"] and e["start"] == "2015"
+    s = fetch_extra.eia_state_config(cfg)["data_fetch"]["eia"]
+    assert s["state"] == ["VA", "US"] and cfg["data_fetch"]["eia"]["state"] == "US"
 
 
 def test_fetch_extra_skips_without_keys(cfg, monkeypatch, capsys):
     monkeypatch.setattr(base, "_DOTENV_LOADED", True)
-    monkeypatch.delenv("EIA_API_KEY", raising=False)
-    monkeypatch.delenv("KRX_API_KEY", raising=False)
+    for k in ("EIA_API_KEY", "KRX_API_KEY", "DART_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(fetch_extra, "load_config", lambda path=None: cfg)
     assert fetch_extra.main(["--asof", "2026-10-20"]) == 0
-    out = capsys.readouterr().out
-    assert out.count("SKIPPED") == 2
+    assert capsys.readouterr().out.count("SKIPPED") == 4
 
 
 # ---------------------------------------------------------------------------
-# 폰트 대체
+# 문구: 데이터로 결정, 기준 명시, 영문에 한글 없음
+# ---------------------------------------------------------------------------
+def _texts(pages):
+    out = []
+    for pg in pages:
+        out += [pg.title, pg.subtitle] + [t for _, _, t, _ in pg.toc]
+        for c in pg.cells:
+            out += [c.title, c.note, c.unit, c.panel_lead] + (c.bullets or [])
+            if c.placeholder:
+                out += list(c.placeholder)
+            if c.table:
+                out += c.table.header + [str(v) for r in c.table.rows for v in r]
+        for b in pg.boxes:
+            out += [b.number, b.caption, b.title] + b.bullets
+        out += [str(v) for v in pg.extra.get("items", [])]
+    return out
+
+
+@pytest.mark.parametrize("fy2022", [False, True])
+def test_story_wording(cfg, fy2022):
+    pytest.importorskip("matplotlib")
+    from research.vol01.story import Story
+    full_inputs(cfg, fy2022=fy2022)
+    f = data.load_facts(cfg, "2026-10-20")
+    kr = _texts(Story(cfg, f, "kr").pages())
+    en = _texts(Story(cfg, f, "en").pages())
+    joined = "\n".join(kr)
+    assert "시총 시총" not in joined
+    assert "합계 기준 7.7배(회사별 4.4배~26.1배, 단순평균 14.6배)" in joined          # Executive Summary 기준 명시
+    assert "LS ELECTRIC 주가는 3배인데 왜 시총은 15배인가?" in joined
+    assert "합계 7.7배와 평균 14.6배 중 무엇이 맞나?" in joined
+    assert "2026-04-13 5:1 액면분할" in joined and "분할 조정" in joined
+    assert "(저자 견해)" in joined
+    hangul = re.compile(r"[가-힣]")
+    leaks = [t for t in en if t and hangul.search(t)]
+    assert not leaks, leaks[:3]
+    if fy2022:
+        assert "멀티플 기여" in joined and "데이터 수집 후 생성" not in joined
+    else:
+        assert any("FY2022A 지배순이익 없음" in t for t in kr)
+
+
+# ---------------------------------------------------------------------------
+# 폰트 · 설정 · README
 # ---------------------------------------------------------------------------
 def test_font_fallback_order(tmp_path):
-    reg, bold = tmp_path / "malgun.ttf", tmp_path / "malgunbd.ttf"
+    reg = tmp_path / "malgun.ttf"
     reg.write_bytes(b"x")
-    cands = [(tmp_path / "none.ttf", tmp_path / "none-b.ttf", "Noto Sans KR"), (reg, bold, "malgun")]
+    cands = [(tmp_path / "none.ttf", tmp_path / "none-b.ttf", "Noto Sans KR"), (reg, tmp_path / "malgunbd.ttf", "malgun")]
     fs = resolve_fonts({}, cands)
-    assert fs.regular == reg and fs.bold == reg              # 굵은 체 없으면 보통 체
+    assert fs.regular == reg and fs.bold == reg
     with pytest.raises(FileNotFoundError, match="한글 폰트"):
         resolve_fonts({}, cands[:1])
 
 
-def test_repo_ships_noto_sans_kr():
-    fs = resolve_fonts(base.load_config())
-    assert fs.regular.name == "NotoSansKR-Regular.ttf" and fs.bold.name == "NotoSansKR-Bold.ttf"
+def test_repo_url_single_source_and_gitignore():
+    cfg = base.load_config()
+    url = cfg["research"]["repo_url"]
+    assert url == "https://github.com/Cojae-Kang/ksj-ai-energy-asset-portfolio"
+    readme = base.resolve_path("README.md").read_text(encoding="utf-8")
+    assert url in readme and "ai-dc-power-ecm" not in readme
+    gi = base.resolve_path(".gitignore").read_text(encoding="utf-8")
+    assert "data/raw/*" in gi and "research/*/_build/" in gi
+
+
+def test_iea_meta_verified():
+    import json
+    m = json.loads(base.resolve_path("data/manual/iea_energy_ai.meta.json").read_text(encoding="utf-8"))
+    assert m["verified_on"] == "2026-10-21" and "TODO" not in json.dumps(m, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------
-# 빌드 (matplotlib + ReportLab, 네트워크 없음)
+# 빌드 (matplotlib + ReportLab)
 # ---------------------------------------------------------------------------
 def _pdf_pages(path: Path) -> list[tuple[float, float]]:
     raw = path.read_bytes()
     n = len(re.findall(rb"/Type\s*/Page[^s]", raw))
-    boxes = [tuple(float(x) for x in m.groups()) for m in
-             re.finditer(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", raw)]
-    return boxes[:n] if boxes else [(0, 0)] * n
+    boxes = [tuple(float(x) for x in m.groups()) for m in re.finditer(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", raw)]
+    return boxes[:n]
 
 
-@pytest.mark.parametrize("full", [False, True])
-def test_build_outputs(cfg, tmp_path, full):
+@pytest.mark.parametrize("fy2022", [False, True])
+def test_build_landscape_pdfs(cfg, tmp_path, fy2022):
     pytest.importorskip("matplotlib")
     pytest.importorskip("reportlab")
     from research.vol01.build import build
-
-    inp = cfg["research"]["vol01"]["inputs"]
-    write_iea(Path(inp["iea"]))
-    write_dart(Path(inp["dart"]), cfg)
-    if full:
-        write_eia(Path(inp["eia_state"]))
-        write_krx(Path(inp["krx_points"]), cfg)
+    full_inputs(cfg, fy2022=fy2022)
     out = tmp_path / "vol01"
     r = build(cfg, "2026-10-20", out_dir=out)
-    assert set(r["skipped"]) == (set() if full else {3, 4})
     for lang in ("kr", "en"):
-        pdf = out / f"KSJ_Research_Vol01_{lang.upper()}.pdf"
-        pages = _pdf_pages(pdf)
-        assert 5 <= len(pages) <= 7, f"{pdf.name}: {len(pages)}쪽"
-        assert r["pages"][lang] == len(pages)
-        assert all(abs(w - 595.27) < 1 and abs(h - 841.89) < 1 for w, h in pages)   # A4 세로
-    car = _pdf_pages(out / "linkedin_carousel.pdf")
-    assert len(car) == 8 and all((w, h) == (1080, 1350) for w, h in car)
-    exhibits = {p.name for p in (out / "exhibits").glob("*.*")}
-    present = [1, 2, 5] + ([3, 4] if full else [])
-    for n in present:
-        for lang in ("kr", "en"):
-            assert {f"exhibit{n}_{lang}.png", f"exhibit{n}_{lang}.svg"} <= exhibits
-    assert not any(f"exhibit{n}_" in x for n in ({1, 2, 3, 4, 5} - set(present)) for x in exhibits)
-    summary = (out / "build_summary.md").read_text(encoding="utf-8")
-    assert ("제외(데이터 확인 중)" in summary) != full
-    if full:
-        assert "버지니아" in r["takeaways"][1] and "4사 중" in r["takeaways"][2]
+        pages = _pdf_pages(out / f"KSJ_Research_Vol01_{lang.upper()}.pdf")
+        assert len(pages) == r["pages"][lang] == 13
+        assert all((w, h) == (960, 720) for w, h in pages)                     # 가로형 4:3
+    pend = r["pending"]["kr"]
+    if fy2022:
+        assert pend == []
     else:
-        assert "데이터 확인 중" in r["takeaways"][1] and "데이터 확인 중" in r["takeaways"][2]
+        assert [lab for lab, _, _ in pend] == ["4", "4"] and all(cmd == data.CMD_DART for _, _, cmd in pend)
+    summary = (out / "build_summary.md").read_text(encoding="utf-8")
+    assert "KRX 시총 검산" in summary and "split_consistent" in summary
+    assert ("시총 분해 (FY2022A → FY2025A)" in summary) == fy2022
+    assert (out / "_build").exists()

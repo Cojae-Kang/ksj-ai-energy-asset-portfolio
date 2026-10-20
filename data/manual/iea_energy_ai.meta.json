@@ -3,7 +3,8 @@
   "endpoint": "https://www.iea.org/reports/energy-and-ai/executive-summary ; https://www.iea.org/reports/key-questions-on-energy-and-ai",
   "params": {},
   "fetched_at": null,
-  "as_of": "2026-10-20",
+  "as_of": "2026-10-21",
   "license_note": "IEA 공개 보고서 요약 수치 인용. 출처 표기 필수, 보고서 원문(PDF)은 커밋하지 않음. IEA 이용약관 확인.",
-  "note": "수기 입력 파일. 행별 출처·URL·발표월은 CSV의 source/url/published 열 참조. 값 변경 시 원문 대조 후 이 파일의 as_of 갱신. TODO(data): 원문 페이지와 수치 재대조(쪽/문단 위치 기록)."
+  "note": "수기 입력 파일. 행별 출처·URL·발표월은 CSV의 source/url/published 열 참조. 2026-10-21 원문 대조 완료: Energy and AI 요약(2025.4) — 2024 415TWh, 2030 945TWh, 2035 1,200TWh, 2035 범위 700~1,700TWh, 비중 1.5%, 2017~2024 연 12%, 지역 US 45/CN 25/EU 15%; Key Questions on Energy and AI(2026.4) — 2025 증가율 데이터센터 17%, AI 데이터센터 50%, 전 세계 전력 3%.",
+  "verified_on": "2026-10-21"
 }

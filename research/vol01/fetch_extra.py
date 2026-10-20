@@ -3,13 +3,18 @@
     python -m research.vol01.fetch_extra --asof 2026-10-20
     python -m research.vol01.fetch_extra --only eia
     python -m research.vol01.fetch_extra --only krx --no-cache
+    python -m research.vol01.fetch_extra --only dart eia_sectors
 
 A-1) EIA: 상업용(COM) 전력 소매판매량, 연간, 2015~최신, 버지니아(VA)·미국 전체(US)
      → data/processed/vol01_eia_state.csv (+ .meta.json), raw: data/raw/eia/vol01_retail_sales_com_states.json
 A-2) KRX Open API: 국내 peers 4사 시가총액 두 시점
      ① 2023년 첫 거래일 (config start_from부터 앞으로 탐색) ② 기준일 직전 거래일 (기준일 당일 제외, 뒤로 탐색)
      → data/processed/vol01_krx_mcap_points.csv (+ .meta.json), raw: data/raw/krx/daily_trade_YYYYMMDD.json
-키가 없으면 해당 항목만 SKIPPED로 건너뛴다.
+A-3) DART: 국내 peers FY2022 사업보고서 재무(매출·영업이익·지배순이익) — 2023년 초 시총과 짝을 맞출 이익
+     → data/processed/vol01_dart_extra.csv (+ .meta.json), 스키마는 dart_financials.csv와 동일
+A-4) EIA: 미국 부문별(주거·상업·산업) 전력 판매량·평균 가격, 연간 2015~최신
+     → data/processed/vol01_eia_us_sectors.csv (+ .meta.json)
+키가 없으면 해당 항목만 SKIPPED로 건너뛴다. 원자료(data/raw)는 커밋하지 않는다.
 """
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ from typing import Mapping
 
 import pandas as pd
 
-from src.data_fetch import eia, krx
+from src.data_fetch import dart, eia, krx
 from src.data_fetch.base import (FetchError, FetchResult, Progress, SkipSource, STATUS_FAILED,
                                  STATUS_PARTIAL, STATUS_SKIPPED, STATUS_SUCCESS, load_config, mask_secrets,
                                  resolve_path, save_processed, setup_logging)
@@ -33,6 +38,9 @@ logger = logging.getLogger("research.vol01.fetch_extra")
 EIA_RAW_NAME = "vol01_retail_sales_com_states.json"
 EIA_OUT = "vol01_eia_state.csv"
 KRX_OUT = "vol01_krx_mcap_points.csv"
+DART_OUT = "vol01_dart_extra.csv"
+EIA_SECTORS_RAW = "vol01_retail_sales_us_sectors.json"
+EIA_SECTORS_OUT = "vol01_eia_us_sectors.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +142,86 @@ def fetch_krx_points(cfg: Mapping, as_of: str, *, use_cache: bool = True, client
 
 
 # ---------------------------------------------------------------------------
+# A-3) DART 추가 연도 (FY2022)
+# ---------------------------------------------------------------------------
+def dart_rows_for_year(client, peer: Mapping, corp_code: str, year: int, dcfg: Mapping) -> dict | None:
+    rows, fs_div = client.fetch_financials(corp_code, year, str(peer["ticker"]).zfill(6))
+    if not rows:
+        return None
+    metrics, _debt, flags = dart.extract_dart_metrics(rows, dcfg)
+    return {"company": peer["name"], "ticker": str(peer["ticker"]).zfill(6), "corp_code": corp_code,
+            "fiscal_year": f"FY{year}A", "fs_div": fs_div, "rcept_no": rows[0].get("rcept_no"),
+            "currency": "KRW", "unit": "억원", **metrics, "flags": ";".join(flags)}
+
+
+def fetch_dart_extra(cfg: Mapping, as_of: str, *, use_cache: bool = True, client=None) -> FetchResult:
+    years = [int(y) for y in cfg["research"]["vol01"]["dart_extra_years"]]
+    dcfg = cfg["data_fetch"]["dart"]
+    client = client or dart.DartClient(cfg, as_of, use_cache=use_cache)   # 키 없으면 SkipSource
+    with Progress("dart", "고유번호", 1).step("corpCode.xml"):
+        client.fetch_corp_codes()
+    peers = cfg["peers"]["domestic"]
+    prog = Progress("dart", "추가 연도 재무제표", len(peers) * len(years))
+    out_rows, notes = [], []
+    for peer in peers:
+        corp_code = client.corp_code_for(str(peer["ticker"]).zfill(6))
+        for year in years:
+            try:
+                with prog.step(f"{peer['name']} FY{year}") as st:
+                    row = dart_rows_for_year(client, peer, corp_code, year, dcfg) if corp_code else None
+                    if row is None:
+                        st["status"] = "데이터 없음"
+                    else:
+                        st["note"] = f"({row['fs_div']})"
+            except FetchError as e:
+                notes.append(mask_secrets(f"{peer['name']} FY{year}: {e}"))
+                continue
+            if row is None:
+                notes.append(f"{peer['name']} FY{year}: 재무제표 없음")
+            else:
+                out_rows.append(row)
+    if not out_rows:
+        return FetchResult("dart_extra", STATUS_FAILED, message="; ".join(notes) or "수집 결과 없음")
+    out = resolve_path(cfg["paths"]["processed"]) / DART_OUT
+    save_processed(out, pd.DataFrame(out_rows), sources=["Open DART fnlttSinglAcntAll"], as_of=as_of,
+                   note=f"FY{years} 사업보고서(11011) 당기 금액, KRW 억원. 지배순이익 우선(net_income). "
+                        "스키마는 dart_financials.csv와 동일")
+    status = STATUS_PARTIAL if notes else STATUS_SUCCESS
+    return FetchResult("dart_extra", status, n_items=len(out_rows), outputs=[str(out)], message="; ".join(notes))
+
+
+# ---------------------------------------------------------------------------
+# A-4) EIA 미국 부문별 판매량·가격
+# ---------------------------------------------------------------------------
+def eia_sectors_config(cfg: Mapping) -> dict:
+    v = cfg["research"]["vol01"]["eia_sectors"]
+    c = copy.deepcopy(dict(cfg))
+    c["data_fetch"]["eia"].update(state=v["state"], sectors=list(v["sectors"]), data_fields=list(v["data_fields"]),
+                                  start=str(v["start"]), end=None)
+    return c
+
+
+def fetch_eia_sectors(cfg: Mapping, as_of: str, *, use_cache: bool = True, client=None) -> FetchResult:
+    c2 = eia_sectors_config(cfg)
+    v = cfg["research"]["vol01"]["eia_sectors"]
+    client = client or eia.EiaClient(c2, as_of, use_cache=use_cache)
+    rows, _ = client.fetch_retail_sales(raw_name=EIA_SECTORS_RAW)
+    df = eia.tidy(rows, list(v["data_fields"]), c2["data_fetch"]["eia"]["source_label"])
+    if df.empty:
+        return FetchResult("eia_sectors", STATUS_FAILED, message="EIA 부문별 데이터 없음")
+    df = df[df["sectorid"].isin(v["sectors"])].copy()
+    df["period"] = df["period"].astype(int)
+    out = resolve_path(cfg["paths"]["processed"]) / EIA_SECTORS_OUT
+    save_processed(out, df, sources=[c2["data_fetch"]["eia"]["source_label"]], as_of=as_of,
+                   note="electricity/retail-sales, US, RES/COM/IND, annual. sales: million kWh, price: cents/kWh")
+    return FetchResult("eia_sectors", STATUS_SUCCESS, n_items=len(df), outputs=[str(out)],
+                       message=f"{df['period'].min()}~{df['period'].max()}, {sorted(set(df['sectorid']))}")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-TASKS = {"eia": fetch_eia_state, "krx": fetch_krx_points}
+TASKS = {"eia": fetch_eia_state, "krx": fetch_krx_points, "dart": fetch_dart_extra, "eia_sectors": fetch_eia_sectors}
 
 
 def run_task(name: str, cfg: Mapping, as_of: str, use_cache: bool) -> FetchResult:

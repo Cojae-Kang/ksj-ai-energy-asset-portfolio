@@ -1,14 +1,13 @@
-"""KSJ Research Note Vol.1 생성 (로컬 실행). 커밋된 data/ 파일만 읽고 외부 API는 호출하지 않는다.
+"""KSJ Research Note Vol.1 생성 (가로형 4:3). 커밋된 data/ 파일만 읽고 외부 API는 호출하지 않는다.
 
     python -m research.vol01.build
-    python -m research.vol01.build --asof 2026-10-20 --lang kr
+    python -m research.vol01.build --lang kr
 
 산출물 (research/vol01/):
-  exhibits/exhibit{1..5}_{kr|en}.png (200dpi) + .svg
-  KSJ_Research_Vol01_KR.pdf, KSJ_Research_Vol01_EN.pdf (A4 세로)
-  linkedin_carousel.pdf (1080×1350, 8장)
-  build_summary.md (포함/제외 Exhibit, 쪽수, 폰트)
-데이터 파일이 없거나 값이 TODO인 Exhibit은 빼고 '데이터 확인 중'으로 표기한다.
+  KSJ_Research_Vol01_KR.pdf, KSJ_Research_Vol01_EN.pdf (960×720pt, 4:3, 같은 레이아웃)
+  build_summary.md (Exhibit 상태, 핵심 계산표, 폰트)
+중간 산출물(차트 PNG)은 research/vol01/_build/ (git 제외).
+데이터가 없으면 해당 Exhibit만 회색 박스 "데이터 수집 후 생성 + 실행 명령"으로 둔다.
 """
 from __future__ import annotations
 
@@ -21,85 +20,74 @@ from typing import Mapping
 from src.data_fetch.base import load_config, markdown_table, resolve_path, setup_logging, utc_now_iso
 
 from . import data
-from .data import Unavailable
 from .fonts import register_matplotlib, register_reportlab, resolve_fonts
-from .text import build_copy
 
 logger = logging.getLogger("research.vol01.build")
 
-PAGE_RANGE = (5, 7)
-
 
 def build(cfg: Mapping, as_of: str, langs: tuple[str, ...] = ("kr", "en"), out_dir: Path | None = None) -> dict:
-    from . import carousel, charts, note_pdf   # matplotlib/ReportLab은 실행 시점에만 로드
+    from . import charts, layout, story   # matplotlib/ReportLab은 실행 시점에만 로드
 
     v = cfg["research"]["vol01"]
     out_dir = out_dir or resolve_path(v["output_dir"])
-    ex_dir = out_dir / "exhibits"
+    build_dir = out_dir / "_build" if out_dir != resolve_path(v["output_dir"]) else resolve_path(v["build_dir"])
     fonts = resolve_fonts(cfg)
     register_matplotlib(fonts)
     register_reportlab(fonts)
-    colors = cfg["research"]["colors"]
+    facts = data.load_facts(cfg, as_of)
+    w, h = (float(x) for x in v["page_pt"])
+    cover_bg = charts.cover_background(build_dir / "cover_bg.png", w, h, cfg["research"]["colors"])
 
-    ex1, ex2, ex3, ex4 = data.exhibit1(cfg), data.exhibit2(cfg), data.exhibit3(cfg), data.exhibit4(cfg)
-    t1 = data.table1(cfg, ex4)
-    sources = data.source_status(cfg)
-    n_tests = data.count_tests()
-
-    result = {"pdfs": {}, "pages": {}, "exhibits": {}, "skipped": {}, "fonts": fonts.label, "carousel": None}
-    copies = {}
-    for lang in ("kr", "en"):  # 캐러셀은 국문+영문 부제가 필요하므로 두 언어 문구는 항상 생성
-        copies[lang] = build_copy(lang, cfg, ex1, ex2, ex3, ex4, t1, sources, n_tests, as_of)
-
-    makers = {1: (ex1, charts.exhibit1), 2: (ex2, charts.exhibit2), 3: (ex3, charts.exhibit3), 4: (ex4, charts.exhibit4)}
-    imgs: dict[str, dict[int, Path | None]] = {"kr": {}, "en": {}}
-    for lang in ("kr", "en"):
-        cp = copies[lang]
-        for n, (e, fn) in makers.items():
-            if isinstance(e, Unavailable):
-                imgs[lang][n] = None
-                result["skipped"][n] = e.reason
-                continue
-            png, _svg = fn(e, cp.exhibits[n], colors, lang, ex_dir)
-            imgs[lang][n] = png
-        png, _svg = charts.exhibit5(cp.exhibits[5], sources, n_tests, colors, lang, ex_dir)
-        imgs[lang][5] = png
-    result["exhibits"] = {n: n not in result["skipped"] for n in range(1, 6)}
-    car_imgs: dict[int, Path | None] = {}       # 캐러셀용(국문, 글자 크게)
-    for n, (e, fn) in makers.items():
-        car_imgs[n] = None if isinstance(e, Unavailable) else fn(e, copies["kr"].exhibits[n], colors, "kr", ex_dir,
-                                                                 variant="carousel")[0]
-    car_imgs[5] = charts.exhibit5(copies["kr"].exhibits[5], sources, n_tests, colors, "kr", ex_dir, variant="carousel")[0]
-
+    result = {"pdfs": {}, "pages": {}, "fonts": fonts.label, "facts": facts, "pending": {}}
     for lang in langs:
+        st = story.Story(cfg, facts, lang)
+        pages = st.pages()
+        ctx = layout.Ctx(cfg["research"]["colors"], w, h, lang, cfg["research"]["brand"], st.sources(), st.labels(),
+                         build_dir, st.footer())
         path = out_dir / f"KSJ_Research_Vol01_{lang.upper()}.pdf"
-        pages = note_pdf.build_note(path, copies[lang], imgs[lang], t1, sources, cfg)
-        result["pdfs"][lang], result["pages"][lang] = path, pages
-        if not PAGE_RANGE[0] <= pages <= PAGE_RANGE[1]:
-            logger.warning("%s: %d쪽 — 목표 %d~%d쪽 벗어남", path.name, pages, *PAGE_RANGE)
-
-    car = out_dir / "linkedin_carousel.pdf"
-    n_slides = carousel.build_carousel(car, cfg, copies["kr"], copies["en"], car_imgs)
-    result["carousel"], result["slides"] = car, n_slides
-    result["takeaways"] = copies["kr"].takeaways
-    write_summary(out_dir / "build_summary.md", result, as_of, copies["kr"])
+        n = layout.render(path, ctx, pages, cover_bg, {
+            "title": v["title_kr"] if lang == "kr" else v["title_en"], "author": cfg["research"]["author"],
+            "subject": f"{cfg['research']['brand']} Research Note Vol.1"})
+        result["pdfs"][lang], result["pages"][lang] = path, n
+        result["pending"][lang] = [(pg.label, cell.title, cell.placeholder[1]) for pg in pages for cell in pg.cells
+                                   if cell.placeholder]
+        if lang == "kr":
+            result["page_titles"] = [(pg.label, pg.title) for pg in pages if pg.kind not in ("cover", "back")]
+    write_summary(out_dir / "build_summary.md", result, as_of)
     return result
 
 
-def write_summary(path: Path, r: dict, as_of: str, kr) -> None:
-    rows = [{"Exhibit": f"Exhibit {n}", "상태": "포함" if ok else "제외(데이터 확인 중)",
-             "제목/사유": kr.exhibits[n].title if ok else r["skipped"].get(n, "")} for n, ok in r["exhibits"].items()]
-    files = [f"- `{p.name}` — {r['pages'][lang]}쪽" for lang, p in r["pdfs"].items()]
-    files.append(f"- `linkedin_carousel.pdf` — {r['slides']}장 (1080×1350)")
-    path.write_text(
-        f"# Vol.1 빌드 요약\n\n- 기준일: {as_of} · 빌드(UTC): {utc_now_iso()}\n- 폰트: {r['fonts']}\n\n"
-        "## 산출물\n\n" + "\n".join(files) + "\n\n## Exhibits\n\n" + markdown_table(rows)
-        + "\n## Key Takeaways (국문)\n\n" + "\n".join(f"{i}. {k}" for i, k in enumerate(r["takeaways"], 1)) + "\n",
-        encoding="utf-8")
+def write_summary(path: Path, r: dict, as_of: str) -> None:
+    f = r["facts"]
+    lines = ["# Vol.1 빌드 요약\n", f"- 기준일: {as_of} · 빌드(UTC): {utc_now_iso()}", f"- 폰트: {r['fonts']}", ""]
+    lines += ["## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
+    lines += ["", "## 페이지 제목 (국문)", ""] + [f"- **{lab}** {t}" for lab, t in r.get("page_titles", [])]
+    pend = r["pending"].get("kr") or next(iter(r["pending"].values()), [])
+    lines += ["", "## 데이터 수집 후 생성 (회색 박스)", ""]
+    lines += [f"- p{lab}: {t} → `{cmd}`" for lab, t, cmd in pend] or ["- 없음"]
+    if data.ok(f.market):
+        t = f.market.table
+        rows = [{"회사": r_["company"], "시총 배수": f"{r_['multiple']:.2f}", "주가 배수(원)": f"{r_['price_multiple_raw']:.2f}",
+                 "분할 비율": f"{r_['split_factor']:.0f}", "분할 조정 주가 배수": f"{r_['price_multiple_adj']:.2f}",
+                 "주식수 비율": f"{r_['share_ratio']:.4f}", "검산 오차(%)": f"{max(abs(r_['mcap_check_t0']), abs(r_['mcap_check_t1'])):.4f}",
+                 "판정": r_["share_note"]} for _, r_ in t.iterrows()]
+        lines += ["", f"## KRX 시총 검산 ({f.market.t0} → {f.market.t1})", "", markdown_table(rows),
+                  f"- 합계 기준 {f.market.total_multiple:.2f}배 · 단순평균 {f.market.mean_multiple:.2f}배 · "
+                  f"시작 시총 최대 비중 {f.market.largest_t0['company']} {f.market.largest_t0_share:.1f}%"]
+    if data.ok(f.decomp):
+        rows = [{"회사": r_["company"], "Δln 시총": f"{r_.get('dln_mcap', float('nan')):.4f}", "Δln 이익": f"{r_.get('dln_ni', float('nan')):.4f}",
+                 "Δln PER": f"{r_.get('dln_per', float('nan')):.4f}", "이익 기여": f"{r_.get('earn_share', float('nan')):.1%}",
+                 "멀티플 기여": f"{r_.get('mult_share', float('nan')):.1%}"} for _, r_ in f.decomp.table.iterrows()]
+        a = f.decomp.agg
+        lines += ["", f"## 시총 분해 ({f.decomp.fy0} → {f.decomp.fy1})", "", markdown_table(rows),
+                  f"- 합산: 이익 기여 {a['earn_share']:.1%} · 멀티플 기여 {a['mult_share']:.1%} · PER {a['per0']:.1f} → {a['per1']:.1f}배"]
+    else:
+        lines += ["", "## 시총 분해", "", f"- 생성 보류: {f.decomp.reason} → `{f.decomp.command}`"]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="KSJ Research Note Vol.1 생성")
+    p = argparse.ArgumentParser(description="KSJ Research Note Vol.1 생성 (가로형 4:3)")
     p.add_argument("--asof", default=None, help="기준일 (기본: config data_fetch.as_of_default)")
     p.add_argument("--lang", choices=["kr", "en", "both"], default="both")
     p.add_argument("--config", default=None)
@@ -111,11 +99,11 @@ def main(argv: list[str] | None = None) -> int:
     r = build(cfg, as_of, langs)
     print("\n=== KSJ Research Vol.1 빌드 결과 ===")
     print(f"폰트: {r['fonts']}")
-    for n, ok in r["exhibits"].items():
-        print(f"Exhibit {n}: {'포함' if ok else '제외 — 데이터 확인 중: ' + r['skipped'][n]}")
     for lang, path in r["pdfs"].items():
         print(f"{path}  ({r['pages'][lang]}쪽)")
-    print(f"{r['carousel']}  ({r['slides']}장)")
+    pend = next(iter(r["pending"].values()), [])
+    for lab, t, cmd in pend:
+        print(f"  p{lab} 회색 박스: {t}  →  {cmd}")
     return 0
 
 

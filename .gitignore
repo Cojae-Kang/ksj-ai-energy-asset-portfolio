@@ -39,8 +39,10 @@ desktop.ini
 ~$*
 
 # ---- Data ----
-data/raw/large/
+# 원자료(API 응답·대용량 원문)는 커밋하지 않음. 가공본(data/processed)과 수기 입력(data/manual)만 커밋
+data/raw/*
+!data/raw/.gitkeep
 data/manual/*.pdf
 
-# ---- Data fetch cache ----
-data/raw/_cache/
+# ---- Research build intermediates ----
+research/*/_build/
