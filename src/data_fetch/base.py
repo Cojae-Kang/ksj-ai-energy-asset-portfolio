@@ -500,7 +500,15 @@ def save_raw(path: str | Path, data: bytes | str | dict | list | pd.DataFrame, *
         path.write_text(data, encoding="utf-8")
     else:
         path.write_bytes(data)
+    write_meta(path, source=source, endpoint=endpoint, params=params, as_of=as_of, license_note=license_note,
+               fetched_at=fetched_at, extra=extra, secret_names=secret_names)
+    return path
 
+
+def write_meta(path: str | Path, *, source: str, endpoint: str, params: Any = None, as_of: str | None,
+               license_note: str, fetched_at: str | None = None, extra: Mapping | None = None,
+               secret_names: Iterable[str] = DEFAULT_SECRET_PARAM_NAMES) -> Path:
+    """data 파일은 그대로 두고 같은 이름의 .meta.json만 쓴다 (수기·브라우저 다운로드 파일용)."""
     meta = {
         "source": source,
         "endpoint": mask_secrets(endpoint),
@@ -512,8 +520,10 @@ def save_raw(path: str | Path, data: bytes | str | dict | list | pd.DataFrame, *
     }
     if extra:
         meta.update(json.loads(mask_secrets(json.dumps(dict(extra), ensure_ascii=False, default=str))))
-    meta_path_for(path).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
+    mp = meta_path_for(path)
+    mp.parent.mkdir(parents=True, exist_ok=True)
+    mp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return mp
 
 
 def save_processed(path: str | Path, df: pd.DataFrame, *, sources: list[str], as_of: str | None,
@@ -555,3 +565,27 @@ def markdown_table(rows: list[Mapping], columns: list[str] | None = None) -> str
     lines = ["| " + " | ".join(columns) + " |", "|" + "|".join("---" for _ in columns) + "|"]
     lines += ["| " + " | ".join(cell(r.get(c)) for c in columns) + " |" for r in rows]
     return "\n".join(lines) + "\n"
+
+
+_CORP_SUFFIXES = (r"(주식회사|주|㈜|inc\.?|corp\.?|corporation|co\.?|company|plc|holdings?|ltd\.?|limited|s\.?a\.?|se"
+                  r"|llc|lp)$")
+
+
+def normalize_name(name: str) -> str:
+    """회사명 비교용: 소문자, 구두점·공백 제거, 법인격 표기(Inc., Corp., 주식회사, LLC 등) 제거."""
+    s = str(name or "").lower().strip()
+    s = re.sub(r"[\s,.\-&'()]", " ", s)
+    tokens = [t for t in s.split() if not re.fullmatch(_CORP_SUFFIXES, t)]
+    return "".join(tokens)
+
+
+def names_match(expected: str, actual: str) -> bool:
+    """부분일치 (티커 검증용, 표기 차이에 관대)."""
+    a, b = normalize_name(expected), normalize_name(actual)
+    return bool(a) and bool(b) and (a in b or b in a)
+
+
+def names_equal(a: str, b: str) -> bool:
+    """완전일치 (법인 주체 검사용): 'Vistra Corp.' vs 'Vistra Operations Co LLC'는 다른 법인으로 본다."""
+    x, y = normalize_name(a), normalize_name(b)
+    return bool(x) and x == y

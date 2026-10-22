@@ -3,6 +3,7 @@
     python -m src.data_fetch.fetch_all --source all --asof 2026-10-20
     python -m src.data_fetch.fetch_all --source krx,ecos,sec --asof 2026-10-20
     python -m src.data_fetch.fetch_all --source dart --skip-filings --no-cache
+    python -m src.data_fetch.fetch_all --source sec --sec-offline     # SEC 403 시 브라우저 다운로드 파일 사용
 
 키가 없는 소스는 SKIPPED로 건너뛰고 나머지는 계속 진행한다.
 수집 후 peers 식별자 검증(validate)과 재무 통합(consolidate)을 자동 실행한다.
@@ -50,6 +51,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--no-post", action="store_true", help="validate/consolidate 후처리 생략")
     p.add_argument("--skip-filings", action="store_true",
                    help="DART 발행공시 검색·원문 다운로드 생략 (config dart.filings.enabled보다 우선)")
+    p.add_argument("--sec-offline", action="store_true",
+                   help="SEC를 data/raw/sec_manual/의 브라우저 다운로드 파일로 처리 (403 차단 환경)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     args.source = split_sources(args.source, p)
@@ -121,6 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.skip_filings:
         cfg = copy.deepcopy(cfg)
         cfg["data_fetch"]["dart"].setdefault("filings", {})["enabled"] = False
+    if args.sec_offline:
+        cfg = copy.deepcopy(cfg)
+        cfg["data_fetch"]["sec"].setdefault("offline", {})["enabled"] = True
     as_of = args.asof or cfg["data_fetch"]["as_of_default"]
     selected = list(SOURCES) if "all" in args.source else [s for s in SOURCES if s in args.source]
     filings_on = cfg["data_fetch"]["dart"].get("filings", {}).get("enabled", False)

@@ -825,7 +825,9 @@ class Story:
             q_en = "how to price an IPO in a sector whose multiples have " + ("re-rated" if led else "followed earnings")
             sub = self.T("세 렌즈(ECM 공모가 · 데이터센터 PF · 증설 옵션)와 네 가지 리스크로 본 시사점",
                          "Implications through three lenses (ECM pricing · data-centre PF · capacity options) and four risks")
-        title = self.T("그래서 Vol.2 — " + q_kr, "Hence Vol.2 — " + q_en) + self.view()
+        # 제목: 섹터 진단(질문 앞부분) + 다음 노트 로드맵. 질문 전체는 다음 노트 패널에 둔다
+        title = self.T(q_kr.split(":")[0] + f" — 그래서 {self.ROADMAP_KR}",
+                       q_en.split(":")[0][:1].upper() + q_en.split(":")[0][1:] + f" — hence {self.ROADMAP_EN}") + self.view()
         ecm_data = (f"{self.per_rep()}; " + self.T(f"시총 {self.market_basis()}", f"cap {self.market_basis()}")
                     if self.per_rep() and ok(mk) else self.T("데이터 확인 중", "pending"))
         pf_data = (self.T(f"버지니아 상업용 판매 연 {g.va_cagr_pct:.1f}%" + (f", 미국 상업용 요금 {self.pct(s.change_pct('price', 'COM'))} ({s.first_year}→{s.last_year})" if ok(s) else ""),
@@ -881,13 +883,14 @@ class Story:
             note=self.T("근거: " + " · ".join(anchors) + ". 위치는 저자의 정성 판단",
                         "Anchors: " + " · ".join(anchors) + ". Positions reflect the author's qualitative judgement")))
         cells.append(Cell(
-            title=self.T("Vol.2 예고: 가상 비상장 전력기기 기업의 희망공모가 밴드", "Next in Vol.2: price range for a hypothetical unlisted power-equipment IPO"),
+            title=self.T(f"다음 노트: {self.ROADMAP_KR}", f"Next: {self.ROADMAP_EN}"),
             panel_lead=self.T(q_kr, q_en[:1].upper() + q_en[1:]),
-            bullets=[self.T("가상 기업 Target Co. 설정 — 사업·재무 가정과 근거를 함께 공개", "Set up a hypothetical Target Co. — assumptions disclosed with their rationale"),
-                     self.T("국내 피어 PER·EV/EBITDA 산출 (해외 피어 비교는 Vol.3에서 다룸)", "Korean peer P/E and EV/EBITDA (overseas peer comparison in Vol.3)"),
-                     self.T("적정 시총 → 공모 할인 → 희망공모가 밴드", "Fair value → IPO discount → indicative price range"),
-                     self.T("몬테카를로로 밴드 민감도 점검", "Monte Carlo sensitivity of the range")],
-            note=self.T("Vol.2 일정·방법은 변경될 수 있음", "Timing and method of Vol.2 may change")))
+            bullets=[self.T("Vol.2 데이터센터 PF — 한국 40MW(원화)·미국 100MW(달러) 가상 케이스, 대주의 눈으로 본 대출 한도·DSCR·증설 옵션",
+                            "Vol.2 data-centre PF — hypothetical Korea 40 MW (KRW) and U.S. 100 MW (USD): debt capacity, DSCR and expansion option from a lender's view"),
+                     self.T("Vol.3 IPO 공모가 — 가상 기업 Target Co., 사업·재무 가정과 근거를 함께 공개", "Vol.3 IPO pricing — hypothetical Target Co., assumptions disclosed with their rationale"),
+                     self.T("Vol.3 해외 피어 — 국내 피어 PER·EV/EBITDA와 해외 피어(SEC EDGAR) 비교", "Vol.3 overseas peers — Korean peer P/E and EV/EBITDA vs overseas peers (SEC EDGAR)"),
+                     self.T("적정 시총 → 공모 할인 → 희망공모가 밴드, 몬테카를로 민감도", "Fair value → IPO discount → indicative price range, Monte Carlo sensitivity")],
+            note=self.T("Vol.2·Vol.3 일정·방법은 변경될 수 있음", "Timing and method of Vol.2 and Vol.3 may change")))
         cells.append(Cell(
             title=self.T("이 노트의 한계", "Limitations of this note"),
             bullets=[self.T("현장 데이터는 상업용 판매만 봤다. 데이터센터 부하는 주에 따라 산업용으로 분류될 수 있다", "Ground data covers commercial sales only; data-centre load may be classified as industrial"),
@@ -1005,6 +1008,10 @@ class Story:
                 ans = self.T(f"{self.per_rep()}. {hi['company']} {self.x(hi['per'], 0)}는 지배순이익 {self.num(hi['ni'])}억원으로 분모가 작아 생긴 왜곡이다. 거품 여부는 이익 지속성에 달렸다{self.view()}",
                              f"{self.per_rep()}. {hi['company_en']}'s {self.x(hi['per'], 0)} reflects thin NI ({self.num(hi['ni'])}, KRW 100mn). It depends on earnings durability{self.view()}")
             qa.append([self.T("PER이 높은데 거품인가?", "P/Es are high — is it a bubble?"), ans, "4, 5"])
+        qa.append([self.T("다음 노트는?", "What comes next?"),
+                   self.T(f"{self.ROADMAP_KR}. Vol.2는 AI 데이터센터 PF의 대출 한도를 대주의 눈으로, Vol.3는 이 노트의 PER 수준을 반영한 IPO 희망공모가 밴드와 해외 피어 비교를 다룬다",
+                          f"{self.ROADMAP_EN}. Vol.2 sizes AI data-centre PF debt from a lender's view; Vol.3 sets an IPO price range reflecting this note's P/E levels and compares overseas peers"),
+                   "5"])
         qa.append([self.T("이 분석을 어떻게 재현하나?", "How can this be reproduced?"),
                    self.T(f"전체 코드와 데이터 출처는 GitHub에 공개: {self.cfg['research']['repo_url']}",
                           f"Full code and data sources are public on GitHub: {self.cfg['research']['repo_url']}"), "A3"])
@@ -1024,6 +1031,8 @@ class Story:
         "fred": ("10-Year Treasury Constant Maturity (DGS10), KRW/USD (DEXKOUS)", "10-Year Treasury Constant Maturity (DGS10), KRW/USD (DEXKOUS)"),
         "iea": ("Energy and AI (2025.4), Key Questions on Energy and AI (2026.4)", "Energy and AI (Apr 2025), Key Questions on Energy and AI (Apr 2026)"),
     }
+    ROADMAP_KR = "Vol.2 데이터센터 PF(한국 40MW·미국 100MW), Vol.3 IPO 공모가·해외 피어"
+    ROADMAP_EN = "Vol.2 data-centre PF (Korea 40 MW, U.S. 100 MW), Vol.3 IPO pricing and overseas peers"
     BUILT_WITH_KR = "구현: AI 코딩 도구(Claude Code)로 데이터 수집·계산·보고서 생성 코드를 작성. 질문 설계, 분석 범위 결정, 숫자 검증은 저자."
     BUILT_WITH_EN = "Built with an AI coding tool (Claude Code); question design, scope decisions and number verification by the author."
     PUBLIC_SOURCES = ("dart", "krx", "eia", "ecos", "fred", "iea")   # 해외 피어(SEC)는 Vol.3

@@ -1,0 +1,250 @@
+"""PF 모델 엔진·실물옵션 테스트 — 네트워크 없이 실행. 입력은 테스트용 합성 값(보고서에 쓰지 않음)."""
+from __future__ import annotations
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from src.analysis import pf_model as pf
+from src.analysis import real_option as ro
+
+# 테스트용 합성 입력 (사실 주장 아님)
+BASE_INP = pf.PFInputs(
+    mw=20, capex_per_mw=150, construction_quarters=8, rent_per_kw_month=250_000, money_scale=1e8,
+    rent_escalation=0.025, prelease=0.6, stabilized_occupancy=0.9, ramp_growth=0.10, ramp_elasticity=1.0,
+    opex_per_kw_year=300_000, opex_escalation=0.02, tax_rate=0.24, dep_years=20, operating_years=20,
+    base_rate_construction=0.0384, base_rate_term=0.0418, margin=0.02, target_dscr=1.3, max_gearing=0.8,
+    tenor_years=15, grace_years=0, dsra_months=6, discount_rate=0.09)
+
+VARIANTS = {
+    "dscr_bound": replace(BASE_INP, prelease=0.3, max_gearing=0.9),
+    "gearing_bound": replace(BASE_INP, max_gearing=0.5),
+    "grace_paid": replace(BASE_INP, grace_years=2),
+    "grace_capitalized": replace(BASE_INP, prelease=0.2, grace_years=2, grace_interest="capitalized"),
+    "power_partial": replace(BASE_INP, power_price=170, pue=1.3, it_load_factor=0.7, power_passthrough=0.9),
+    "exit_value": replace(BASE_INP, exit_cap_rate=0.07),
+}
+
+
+# ---------------------------------------------------------------------------
+# 구성 요소
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("n", [1, 4, 8, 11])
+def test_drawdown_weights_sum_and_shape(n):
+    w = pf.drawdown_weights(n)
+    assert w.sum() == pytest.approx(1.0) and (w > 0).all()
+    assert np.allclose(w, w[::-1])                                   # S-curve 대칭
+    assert pf.drawdown_weights(n, "linear").sum() == pytest.approx(1.0)
+    with pytest.raises(ValueError):
+        pf.drawdown_weights(n, "bogus")
+
+
+def test_occupancy_path_ramp_and_cap():
+    p = pf.occupancy_path(0.2, 0.9, 0.10, 1.0, 30)
+    assert p[0] == pytest.approx(0.2) and p[1] == pytest.approx(0.22)
+    assert p.max() == pytest.approx(0.9) and (np.diff(p) >= -1e-12).all()
+    assert pf.occupancy_path(0.2, 0.9, 0.10, 1.0, 5, occ_mult=10).max() == 1.0   # 물리 상한
+    yrs = pf.growth_to_stabilize(0.2, 0.9, 0.10, 1.0)
+    assert yrs == pytest.approx(np.log(4.5) / np.log(1.1))
+    assert pf.growth_to_stabilize(0.2, 0.9, 0.0, 1.0) == np.inf
+
+
+def test_tax_schedule_loss_carryforward():
+    tax = pf.tax_schedule(np.array([-100.0, 60.0, 60.0, 60.0]), np.zeros(4), 0.25)
+    assert list(tax) == pytest.approx([0.0, 0.0, 5.0, 15.0])        # 결손 100을 60 + 40으로 소진
+
+
+def test_inputs_validation():
+    with pytest.raises(ValueError):
+        replace(BASE_INP, grace_years=15)
+    with pytest.raises(ValueError):
+        replace(BASE_INP, tenor_years=25)
+    with pytest.raises(ValueError):
+        replace(BASE_INP, max_gearing=1.2)
+    with pytest.raises(ValueError):
+        replace(BASE_INP, grace_interest="pik")
+
+
+# ---------------------------------------------------------------------------
+# Sculpting · DSCR 정의 · 회계 항등식
+# ---------------------------------------------------------------------------
+def test_sculpt_pv_identity_and_target_dscr():
+    cf = np.array([50, 60, 70, 80, 90, 100, 100, 100], dtype=float)
+    r, dscr = 0.06, 1.25
+    debt, ds = pf.sculpt(cf, r, dscr, 8, 0)
+    assert debt == pytest.approx(float((cf / dscr / (1 + r) ** np.arange(1, 9)).sum()))
+    assert np.allclose(cf / ds, dscr)
+    sch = pf.amortize(debt, ds, r)
+    assert sch["closing"].iloc[-1] == pytest.approx(0.0, abs=1e-9)
+    # 거치(이자 지급): 대출 ≤ min(CFADS_거치) ÷ (DSCR × r)
+    d2, ds2 = pf.sculpt(cf, r, dscr, 8, 2)
+    assert d2 <= cf[:2].min() / (dscr * r) + 1e-9 and ds2[0] == pytest.approx(d2 * r)
+    # 거치(이자 자본화): 거치기간 원리금 0, 대출 = 거치 종료 잔액 ÷ (1+r)^거치
+    d3, ds3 = pf.sculpt(cf, r, dscr, 8, 2, "capitalized")
+    assert ds3[:2].sum() == 0 and pf.amortize(d3, ds3, r)["closing"].iloc[-1] == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("name", list(VARIANTS))
+def test_identities_hold(name):
+    r = pf.run(VARIANTS[name])
+    checks = pf.identity_checks(r)
+    scale = r.cons.uses
+    for k, v in checks.items():
+        assert abs(v) <= 1e-9 * scale, (name, k, v)
+    o = r.ops.iloc[: r.inp.tenor_years]
+    d = o[o["debt_service"] > 0]
+    assert np.allclose(d["dscr"], d["cfads"] / d["debt_service"])        # DSCR = CFADS ÷ 원리금
+    assert r.debt <= r.inp.max_gearing * r.cons.uses * (1 + 1e-9)
+    assert r.ops["debt_closing"].iloc[-1] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_dscr_binding_sets_min_dscr_at_target():
+    r = pf.run(VARIANTS["dscr_bound"])
+    assert r.binding == "dscr" and r.min_dscr == pytest.approx(r.inp.target_dscr, rel=1e-9)
+    assert r.effective_dscr == pytest.approx(r.inp.target_dscr)
+
+
+def test_gearing_binding_caps_debt_and_raises_dscr():
+    r = pf.run(VARIANTS["gearing_bound"])
+    assert r.binding == "gearing" and r.gearing == pytest.approx(0.5, rel=1e-9)
+    assert r.min_dscr > r.inp.target_dscr and r.effective_dscr == pytest.approx(r.min_dscr, rel=1e-9)
+
+
+def test_llcr_definition():
+    r = pf.run(VARIANTS["dscr_bound"])
+    rate = r.inp.term_rate
+    t = r.inp.tenor_years
+    npv = float((r.ops["cfads"][:t] / (1 + rate) ** np.arange(1, t + 1)).sum())
+    assert r.llcr == pytest.approx(npv / r.debt)
+
+
+def test_idc_and_sources_uses():
+    r = pf.run(VARIANTS["dscr_bound"])
+    c = r.cons
+    assert c.capex == pytest.approx(BASE_INP.capex_total)
+    assert c.idc > 0 and c.uses == pytest.approx(c.capex + c.idc + c.dsra_initial)
+    assert c.dsra_initial == pytest.approx(BASE_INP.dsra_months / 12 * r.ops["debt_service"].iloc[0])
+    q = c.quarters
+    assert q["idc"].iloc[0] == 0 and (q["debt_draw"] / q["uses"]).round(12).nunique() == 1   # 비율대로 조달
+
+
+def test_capitalized_grace_locks_distributions():
+    r = pf.run(VARIANTS["grace_capitalized"])
+    o = r.ops
+    assert (o["debt_service"][:2] == 0).all() and (o["distribution"][:2] == 0).all()
+    assert o["lockup_in"][:2].sum() > 0 and o["lockup_release"].iloc[2] == pytest.approx(o["lockup_in"][:2].sum())
+    assert o["principal"][:2].sum() < 0                                  # 이자 자본화로 잔액 증가
+
+
+def test_power_passthrough_net_cost():
+    full = pf.run(replace(VARIANTS["power_partial"], power_passthrough=1.0))
+    part = pf.run(VARIANTS["power_partial"])
+    assert (full.ops["net_power"] == 0).all()
+    assert part.ops["net_power"].iloc[0] == pytest.approx(-0.1 * part.ops["power_cost"].iloc[0])
+    assert part.debt < full.debt                                         # 순전력비만큼 CFADS 감소
+
+
+# ---------------------------------------------------------------------------
+# IRR · 회수기간 · 환율
+# ---------------------------------------------------------------------------
+def test_irr_annualised_from_quarters():
+    f = np.zeros(5)
+    f[0], f[4] = -100, 110                                               # 4분기 후 110 → 연 10%
+    assert pf.irr(f) == pytest.approx(0.10, abs=1e-10)
+    assert pf.irr(np.array([100.0, 50.0])) is None                       # 부호 변화 없음
+    assert pf.payback(np.array([-100.0, 30, 30, 30, 30])) == pytest.approx((3 + 1 / 3) / 4)
+
+
+def test_all_equity_equity_irr_equals_project_irr():
+    inp = replace(BASE_INP, construction_quarters=4)
+    r = pf.run(inp)
+    zero = pf.stress(r, pf.Stress())                                     # 기준 재현
+    assert zero.equity_irr == pytest.approx(r.equity_irr)
+    # 대출 0 케이스: 목표 DSCR을 매우 높여 한도 0에 가깝게 → 자기자본 = 프로젝트
+    r0 = pf.run(replace(inp, target_dscr=1e9))
+    assert r0.debt < 1e-3 * r0.cons.uses
+    assert r0.equity_irr == pytest.approx(r0.project_irr, abs=1e-6)
+
+
+def test_exit_value_raises_irr():
+    assert pf.run(VARIANTS["exit_value"]).equity_irr > pf.run(BASE_INP).equity_irr
+
+
+def test_fx_conversion():
+    assert pf.usd_mn_to_krw_100m(1.0, 1332.1) == pytest.approx(13.321)  # 1 USD mn = 13.321억원
+    assert pf.usd_mn_to_krw_100m(100.0, 1400.0) == pytest.approx(1400.0)
+
+
+# ---------------------------------------------------------------------------
+# 스트레스·손익분기·히트맵
+# ---------------------------------------------------------------------------
+def test_stress_fixed_schedule_and_directions():
+    inp = replace(BASE_INP, tax_rate=0.0)                                # 세금 시점 효과 제거
+    b = pf.run(inp)
+    same = pf.stress(b, pf.Stress())
+    assert same.min_dscr == pytest.approx(b.min_dscr) and same.debt == pytest.approx(b.debt)
+    assert pf.stress(b, pf.Stress(rent_mult=0.9)).min_dscr < b.min_dscr < pf.stress(b, pf.Stress(rent_mult=1.1)).min_dscr
+    assert pf.stress(b, pf.Stress(rate_shift=0.01)).min_dscr < b.min_dscr
+    cap = pf.stress(b, pf.Stress(capex_mult=1.2))
+    assert cap.debt == pytest.approx(b.debt * cap.cons.uses / b.cons.uses, rel=1e-3) and cap.min_dscr < b.min_dscr
+    dl = pf.stress(b, pf.Stress(delay_quarters=4))
+    assert dl.cons.cod_quarter == inp.construction_quarters + 4 and dl.cons.idc > b.cons.idc
+    for s in (cap, dl):
+        assert abs(pf.identity_checks(s)["cash_waterfall"]) < 1e-9 * s.cons.uses
+
+
+def test_breakeven_hits_level_nearest_base():
+    b = pf.run(replace(BASE_INP, tax_rate=0.0))
+    x = pf.breakeven(b, "rent_mult", 1.0, 0.2, 2.0, near=1.0)
+    assert x is not None and x < 1.0
+    assert pf.stressed_metric(b, "rent_mult", x) == pytest.approx(1.0, abs=1e-6)
+    assert pf.breakeven(b, "delay_quarters", 0.01, 0, 8) is None        # 교차 없음
+
+
+def test_heatmap_and_tornado_shapes():
+    b = pf.run(replace(BASE_INP, tax_rate=0.0))
+    hm = pf.heatmap(b, [0.9, 1.0, 1.1], [1.0, 1.2])
+    assert hm.shape == (3, 2) and hm.loc[1.0, 1.0] == pytest.approx(b.min_dscr)
+    assert hm.loc[0.9, 1.2] < hm.loc[1.1, 1.0]
+    t = pf.tornado(b, {"rent": (pf.Stress(rent_mult=0.9), pf.Stress(rent_mult=1.1)),
+                       "rate": (pf.Stress(rate_shift=0.01), pf.Stress(rate_shift=-0.01))})
+    assert list(t.columns) == ["variable", "low", "high", "base", "span"] and t["span"].is_monotonic_decreasing
+
+
+# ---------------------------------------------------------------------------
+# 실물옵션 (LSM)
+# ---------------------------------------------------------------------------
+def _opt(n=3000, p=0.3):
+    return ro.OptionInputs(phase2=replace(BASE_INP, prelease=0.2), phase1_prelease=0.2,
+                           scenarios={"downside": 0.049, "base": 0.101, "upside": 0.137},
+                           weights={"downside": 1 / 3, "base": 1 / 3, "upside": 1 / 3}, approval_prob=p,
+                           decision_year=2, window_years=4, rent_volatility=0.15, n_paths=n, seed=42)
+
+
+def test_option_value_linear_in_probability_and_reproducible():
+    o = _opt()
+    r1 = ro.value(o, [0.0, 0.5, 1.0], [500, 1000, 3000])
+    r2 = ro.value(o, [0.0, 0.5, 1.0], [500, 1000, 3000])
+    assert r1.value == r2.value                                          # seed 고정 → 재현
+    assert r1.value == pytest.approx(0.3 * r1.value_conditional)
+    bp = r1.by_prob.set_index("approval_prob")["value"]
+    assert bp[0.0] == 0 and bp[1.0] == pytest.approx(r1.value_conditional) and bp[0.5] == pytest.approx(0.5 * bp[1.0])
+    assert r1.value_conditional >= 0                                     # 옵션은 음수가 될 수 없다
+
+
+def test_option_convergence_stderr_shrinks():
+    r = ro.value(_opt(), [0.3], [500, 2000, 3000])
+    se = list(r.convergence["stderr"])
+    assert se[0] > se[1] > se[2]
+    assert abs(r.convergence["value_conditional"].iloc[-1] - r.value_conditional) < 1e-9
+
+
+def test_option_npv_increases_with_rent():
+    o = _opt()
+    lo, hi = ro.npv_at(o, 2, 150_000, "base"), ro.npv_at(o, 2, 350_000, "base")
+    assert hi > lo
+    r = ro.value(o, [0.3], [3000])
+    be = r.breakeven_rent["base"]
+    if be is not None:
+        assert ro.npv_at(o, 2, be, "base") == pytest.approx(0.0, abs=abs(hi - lo) * 0.02)

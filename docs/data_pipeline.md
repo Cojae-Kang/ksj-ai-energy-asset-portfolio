@@ -4,7 +4,8 @@
 
 - 소스 우선순위: 공식 공시(DART, SEC) > 공공기관(ECOS, FRED, EIA, KRX, KPX) > 보조 라이브러리(pykrx, FDR, yfinance)
 - 모든 수치에 출처와 기준일을 기록하고, 가정치는 `config.yaml`에서 근거와 함께 관리합니다.
-- 해외 피어(SEC EDGAR) 비교는 Vol.3에서 다룹니다.
+- 해외 피어(SEC EDGAR) 비교는 Vol.3(IPO 공모가·해외 피어)에서 다룹니다. SEC가 프로그램 요청을 403으로 막는 환경은 [SEC 오프라인 모드](#sec-오프라인-모드-브라우저-다운로드)로 수집합니다.
+- 시리즈: Vol.1 수요·시장 → Vol.2 데이터센터 PF(한국 40MW·미국 100MW) → Vol.3 IPO 공모가·해외 피어
 
 ## Vol.1 재현
 
@@ -20,6 +21,28 @@ pytest -q                                                           # 네트워�
 - 시총 변화 분해: Δln(시총) = Δln(지배순이익) + Δln(PER). 2023년 초 시총 ↔ FY2022A, 최근 시총 ↔ FY2025A 지배순이익.
 - 커밋 대상: `data/processed/`, `data/manual/`, `research/vol01/*.pdf`, `build_summary.md`. 원자료 `data/raw/`와 차트 중간 산출물 `research/vol01/_build/`는 커밋하지 않습니다(.gitignore).
 - 한글 폰트는 저장소의 Noto Sans KR(OFL, `assets/fonts/`)을 쓰고, 없으면 Windows 맑은 고딕으로 대체합니다.
+
+## Vol.2 재현 (데이터센터 PF)
+
+```powershell
+python -m research.vol02.fetch_extra --asof 2026-10-20   # (선택) EIA 버지니아 상업용 요금 → data/processed/vol02_eia_va_com.csv
+python -m research.vol02.build --write-template          # data/manual/vol02_assumptions.csv 양식 갱신 (입력값 보존)
+python -m research.vol02.build                           # 국문/영문 PDF + research/vol02/build_summary.md
+pytest -q tests/test_pf_model.py tests/test_research_vol02.py
+```
+
+- 모델: `src/analysis/pf_model.py` (분기 건설·IDC → 연 운영 → CFADS → sculpting vs 최대 대출 비율 → waterfall·DSRA →
+  최소·평균 DSCR, LLCR, Project/Equity IRR, 회수기간), `src/analysis/real_option.py` (2단계 증설 옵션, LSM 몬테카를로, seed 고정).
+- 가정: `config.yaml` → `research.vol02.cases.{A,B}.params`. 모든 항목에 tag(ASSUMPTION(design/verify/neutral))와 근거 칸이 있고,
+  근거를 모르는 값은 `null` + `TODO(source)`입니다. **null이 있으면 그 계산만 건너뛰고 해당 Exhibit을 회색 박스로 둡니다.**
+- 사용자 입력: `data/manual/vol02_assumptions.csv`(case, item, value, unit, source_name, url, published, page, current, hint).
+  value가 있으면 config보다 우선하고, 출처 칸만 채우면 config 값에 출처가 붙습니다. % 단위는 퍼센트 숫자(2.5 = 2.5%), 가산금리는 bp.
+- Vol.1 데이터 연결: IEA 2024→2035 성장률(하단·기준·상단) → 가동률 램프업, ECOS 국고채 3·10년·FRED DGS10(기준일 2026-10-20 이전 최근값)
+  → 기준금리, DART 피어 3사 영업이익률 FY2022A→FY2025A → 함의 가격 상승률(상한값) × 전력설비 비중 → CAPEX 스트레스,
+  EIA 버지니아 상업용 판매·요금 → 케이스 B 수요·전력비(버지니아 요금 수집 전에는 미국 상업용 평균 대용).
+- 검산: 회계 항등식(조달=사용, 대출 잔액, waterfall, DSRA·배당 잠금), DSCR = CFADS ÷ 원리금, IRR, 환율 환산(USD mn × 원/달러 ÷ 100 = 억원)을
+  테스트와 `build_summary.md`에 기록합니다.
+- 커밋 대상: `research/vol02/*.pdf`, `build_summary.md`, `data/manual/vol02_assumptions.csv`. 차트 중간 산출물 `research/vol02/_build/`는 제외.
 
 ## 단계 구성
 
@@ -58,10 +81,12 @@ pytest -q                                                           # 네트워�
 ```
 .
 ├── src/
-│   ├── analysis/        # 단계별 분석 함수
+│   ├── analysis/        # 분석 함수 (pf_model.py: PF 엔진, real_option.py: 증설 옵션)
 │   └── data_fetch/      # 데이터 수집 스크립트 (로컬 실행)
 ├── research/
-│   └── vol01/           # Research Note Vol.1 (fetch_extra.py, data.py, story.py, layout.py, charts.py, build.py, PDF)
+│   ├── vol01/           # Research Note Vol.1 (fetch_extra.py, data.py, story.py, layout.py, charts.py, build.py, PDF)
+│   ├── vol02/           # Research Note Vol.2 데이터센터 PF (data.py, story.py, charts.py, build.py, fetch_extra.py, PDF)
+│   └── vol03/           # Vol.3 IPO·해외 피어 — data_notes.md (SEC 주체 검사, validate가 갱신)
 ├── assets/fonts/        # Noto Sans KR (SIL OFL 1.1)
 ├── data/
 │   ├── raw/             # 원본 데이터 + .meta.json
@@ -178,6 +203,52 @@ python -m src.data_fetch.sec --diagnose --probe   # company_tickers.json 1회 �
 
 403이면 요약표에 `SEC 403: User-Agent 확인 필요 (URL) — 차단 유형` 한 줄만 기록되고, 나머지 SEC 요청은 중단됩니다.
 이때 validate는 해외 peers를 FAIL이 아니라 `SKIPPED(sec unavailable)`로 표기합니다(티커 오류와 구분).
+403이 하루(`offline.persistent_403_hours`, 24시간) 이상 이어지면 메시지에
+"네트워크·클라이언트 차단 가능성 → 브라우저 다운로드 후 오프라인 모드" 안내가 붙습니다(최초·최근 403 시각은 `data/raw/sec/_403_state.json`, 성공 시 삭제).
+
+<a id="sec-오프라인-모드-브라우저-다운로드"></a>
+**SEC 오프라인 모드 (브라우저 다운로드)**
+
+User-Agent가 맞는데도 python·curl 모두 403이고 브라우저만 통과하는 네트워크(회사·학교 프록시, 클라이언트 지문 차단 등)에서 씁니다.
+SEC 데이터는 Vol.3(IPO·해외 피어)에서 사용합니다.
+
+1. 필요한 파일·URL 확인 (네트워크 호출 없음)
+
+   ```powershell
+   python -m src.data_fetch.sec --offline-check
+   ```
+
+2. 브라우저로 아래 URL을 열어 **원본 JSON**으로 저장 → `data/raw/sec_manual/` (로컬 전용, `data/raw/` 전체가 .gitignore)
+
+   | 파일 | 티커 | URL |
+   |---|---|---|
+   | `company_tickers.json` | (CIK 매핑) | https://www.sec.gov/files/company_tickers.json |
+   | `CIK0001674101.json` | VRT | https://data.sec.gov/api/xbrl/companyfacts/CIK0001674101.json |
+   | `CIK0001551182.json` | ETN | https://data.sec.gov/api/xbrl/companyfacts/CIK0001551182.json |
+   | `CIK0001996810.json` | GEV | https://data.sec.gov/api/xbrl/companyfacts/CIK0001996810.json |
+   | `CIK0001868275.json` | CEG | https://data.sec.gov/api/xbrl/companyfacts/CIK0001868275.json |
+   | `CIK0001692819.json` | VST | https://data.sec.gov/api/xbrl/companyfacts/CIK0001692819.json |
+
+3. 수집 (온라인과 같은 추출·저장 로직)
+
+   ```powershell
+   python -m src.data_fetch.fetch_all --source sec --sec-offline --asof 2026-10-20
+   ```
+
+   - 온라인 실행 중 403이 나면(`offline.auto_on_403: true`) 같은 실행 안에서 오프라인 모드로 자동 전환합니다.
+   - 파일이 없으면 필요한 CIK·URL 목록을 출력하고 **SKIPPED**, 일부만 있으면 있는 회사만 처리하고 PARTIAL.
+   - 각 파일 옆에 `.meta.json`(source = `SEC EDGAR (manual browser download)`, fetched_at = **파일 수정 시각**, endpoint = 원 URL, sha256)을 쓰고,
+     `company_tickers.json`은 validate 입력 위치(`data/raw/sec/`)에도 같은 meta와 함께 복사합니다. 가공본 `sec_financials.csv`의
+     `data_source` 열은 `manual browser download`.
+   - companyfacts의 `cik` 값은 숫자(`1551182`)와 0 채운 문자열(`"0001868275"`)이 섞여 있어 모두 정수로 정규화해 매칭합니다.
+
+4. **시총(상장사)과 재무(법인) 주체 검사** — `data/processed/sec_entity_check.csv`, `docs/qa/peer_validation.md`, `research/vol03/data_notes.md`
+   - company_tickers의 티커·CIK(시가총액 주체)와 companyfacts의 `cik`·`entityName`(재무 주체)을 비교합니다.
+   - 판정: ① CIK 일치 ② 법인명 완전일치(법인격 표기 제외) ③ 보통주 발행주식수(dei) 보고 ④ EPS 보고.
+     `same_consolidated` = yes(같은 법인) / likely(같은 CIK·보통주·EPS, 이름 표기만 다름) / no(다른 CIK) / unknown(보통주·EPS 미보고).
+   - yes가 아니면 validate가 해당 피어를 **WARN + 사유**로 표기하고 Vol.3 데이터 노트에 기록합니다. Vol.3 배수 계산에서는 제외합니다.
+   - 예: `CIK0001692819.json`의 entityName이 `Vistra Oper...`(운영 자회사로 보임)로 시작하면, company_tickers상 VST(Vistra Corp.)와
+     법인명이 달라 WARN. 보통주·EPS도 없으면 `unknown`(자회사 재무 가능성), 다른 CIK면 `no`(상장사 CIK 파일로 교체).
 
 ### 3) 소스별 수집 내용
 
@@ -186,11 +257,11 @@ python -m src.data_fetch.sec --diagnose --probe   # company_tickers.json 1회 �
 | `dart.py` | corpCode.xml(종목코드↔corp_code), fnlttSinglAcntAll(사업보고서 11011, CFS 우선→OFS, FY2023~2025), list.json 발행공시(C, 기본 OFF), document.xml 원문 | `data/raw/dart/`, `data/processed/dart_financials.csv` |
 | `krx.py` | KRX Open API 종가·시가총액·상장주식수 (휴장일이면 직전 거래일). 실패 시 FinanceDataReader → pykrx | `data/processed/krx_peers_market.csv`, `docs/qa/crosscheck_krx.md` |
 | `ecos.py` | 원/달러 일별 → 연평균·연말, 국고채 3년·10년 | `data/processed/ecos_fx_annual.csv`, `ecos_ktb_daily.csv` |
-| `sec.py` | company_tickers.json(CIK) → companyfacts: Revenue, OperatingIncome, NetIncome, 총차입금, 현금 | `data/processed/sec_financials.csv` |
+| `sec.py` | company_tickers.json(CIK) → companyfacts: Revenue, OperatingIncome, NetIncome, 총차입금, 현금. 403이면 오프라인 모드(브라우저 다운로드 파일) | `data/processed/sec_financials.csv`, `sec_entity_check.csv` |
 | `fred.py` | DGS10, DEXKOUS | `data/processed/fred_series.csv` |
 | `eia.py` | 미국 전력 소매판매량·가격 (부문별, 연간) — 출처: U.S. Energy Information Administration (EIA) | `data/processed/eia_retail_sales_annual.csv` |
 | `market_global.py` | yfinance 해외 peers 주가·시총 (보조 소스, `cross_check_required=True`) | `data/processed/global_peers_market.csv`, `docs/qa/crosscheck_global.md` |
-| `validate_peers.py` | config peers 티커 ↔ DART corp_code / SEC CIK 검증 (Schneider Electric은 SEC 비대상으로 별도 표기) | `docs/qa/peer_validation.md` |
+| `validate_peers.py` | config peers 티커 ↔ DART corp_code / SEC CIK 검증 + 시총·재무 주체 검사 (Schneider Electric은 SEC 비대상) | `docs/qa/peer_validation.md`, `research/vol03/data_notes.md` |
 | `consolidate.py` | 국내·해외 재무 통합 (통화·단위·회계연도 정규화, KRW 억원·USD mn 환산) | `data/processed/peers_financials.csv` |
 
 ### 4) 데이터 규칙

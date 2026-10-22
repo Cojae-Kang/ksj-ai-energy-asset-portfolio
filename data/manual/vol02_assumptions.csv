@@ -1,0 +1,63 @@
+﻿case,item,value,unit,source_name,url,published,page,current,hint
+A,phase1_mw,,MW,,,,,20,1단계 용량 / 가상 케이스: 1단계 확정 개발
+A,phase2_mw,,MW,,,,,20,2단계(옵션) 용량 / 가상 케이스: 추가 계통 승인·임차 수요 확인 시 착공하는 증설 옵션
+A,capex_per_mw,,억원/MW,,,,,null,"MW당 CAPEX / TODO(source): 국내 데이터센터 MW당 총사업비 — DART 신규시설투자 공시(투자금액 ÷ 수전·IT 용량), 업계 공사비 보고서"
+A,power_equipment_share,,%,,,,,null,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비(변압기·배전반·UPS·발전기) 비중 — 공사비 보고서 항목별 분해
+A,construction_quarters,,분기,,,,,null,건설기간 / TODO(source): 착공~준공 기간 — 국내 준공 사례 공시·보도
+A,rent_per_kw_month,,원/kW·월,,,,,250000,"임대료(kW·월) / CBRE 인용 보도(2025) 코로케이션 임대료 kW당 월 약 25만원 / TODO(source): 보도 원문 URL·발행일, CBRE 보고서 쪽수"
+A,rent_escalation,,%/년,,,,,2.5,임대료 연 인상률 / 임대료 연 인상률 2~3% (중간값 2.5%) / TODO(source): 원문 확인
+A,prelease,,%,,,,,19.75,사전 임대율 / 수도권 2027·2028 준공 예정분 사전 임대율 16~23.5% (기준값 = 중간값) / TODO(source): 원문 확인
+A,stabilized_occupancy,,%,,,,,null,안정화 가동률 / TODO(source): 안정화 가동률 — 수도권 코로케이션 공실률 통계(시장 보고서)
+A,ramp_elasticity,,배,,,,,1,램프업 탄력성 / 임차 부하 성장 = 시장 수요 성장(IEA) × 1 (근거 확보 전 중립값)
+A,opex_per_kw_year,,원/kW·년,,,,,null,"OPEX(kW·년, 전력비 제외) / TODO(source): 전력비 제외 운영비(인건비·유지보수·보험·세금) — 상장 운영사 사업보고서 부문 정보"
+A,opex_escalation,,%/년,,,,,null,OPEX 연 인상률 / TODO(source): 운영비 인상률 — 소비자물가·임금 상승률(ECOS) 등 근거 선택
+A,pue,,배,,,,,null,"PUE / TODO(source): 설계 PUE — 사업 계획·공시 사례, Uptime Institute 조사"
+A,it_load_factor,,%,,,,,null,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
+A,power_price,,원/kWh,,,,,null,전력 단가 / TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가
+A,power_passthrough,,%,,,,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
+A,tax_rate_national,,%,,,,,null,법인세율(국세·연방) / TODO(source): 법인세법 제55조 세율 (과세표준 구간·적용연도 확인)
+A,tax_rate_local,,법인세 대비 %,,,,,10,지방세(지방소득세·주세) / 지방세법 — 법인지방소득세(법인세율의 10% 수준) / TODO(source): 조문 확인
+A,dep_years,,년,,,,,null,감가상각 기간 / TODO(source): 감가상각 내용연수 — 법인세법 시행규칙 별표5(건축물)·별표6(업종별 설비) 가중
+A,operating_years,,년,,,,,null,운영기간 / TODO(source): 운영 기간(임대 계약 기간·토지 사용 기간)
+A,exit_cap_rate,,%,,,,,null,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+A,margin_bp,,bp,,,,,null,가산금리 / TODO(source): 가산금리 — 국내 데이터센터·인프라 PF 대출 공시·보도
+A,target_dscr,,배,,,,,null,목표 DSCR / TODO(source): 목표 DSCR — 대주 term sheet 관행 자료
+A,max_gearing,,%,,,,,null,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC) — PF 제도·대주 관행 자료
+A,tenor_years,,년,,,,,null,대출 만기 / TODO(source): 대출 만기 (COD 기준)
+A,grace_years,,년,,,,,null,거치기간 / TODO(source): 원금 거치기간
+A,grace_interest,,-,,,,,paid,거치기간 이자 / 거치기간 이자 현금 지급(paid). 램프업 이자 자본화는 capitalized
+A,dsra_months,,개월,,,,,null,DSRA 개월 수 / TODO(source): DSRA 적립 개월 수 — 대출 약정 관행
+A,discount_rate,,%,,,,,null,"할인율(자기자본) / TODO(source): 자기자본 할인율 — 무위험(국고채 10년, DATA) + 위험 프리미엄 근거"
+A,grid_approval_prob,,%,,,,,null,추가 계통 승인 확률 / TODO(source): 추가 계통 승인 확률 — 참고 근거: 1단계 승인 비율(계산값)
+A,approval_decision_year,,년(1단계 COD 후),,,,,null,승인 결정 시점 / TODO(source): 추가 계통 승인 결정 시점 — 전력계통영향평가 처리 기간
+A,option_window_years,,년,,,,,null,착공 대기 가능 기간 / TODO(source): 승인 후 착공 가능 기간 — 승인 유효기간·부지 확보 기간
+A,rent_volatility,,%/년,,,,,null,임대료 변동성 / TODO(source): 임대료 변동성 — 시장 임대료 시계열(시장 보고서)의 로그 변화 표준편차
+B,phase1_mw,,MW,,,,,100,1단계 용량 / 가상 케이스: 단일 단계 개발
+B,phase2_mw,,MW,,,,,0,2단계(옵션) 용량 / 증설 옵션 없음
+B,capex_per_mw,,USD mn/MW,,,,,null,MW당 CAPEX / TODO(source): 미국 하이퍼스케일 MW당 개발비 — 업계 공사비 지수·상장 REIT 10-K 개발 공시
+B,power_equipment_share,,%,,,,,null,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비 비중
+B,construction_quarters,,분기,,,,,null,건설기간 / TODO(source): 착공~준공 기간
+B,rent_per_kw_month,,USD/kW·월,,,,,null,임대료(kW·월) / TODO(source): 북버지니아 도매(wholesale) 임대료 — 시장 보고서
+B,rent_escalation,,%/년,,,,,null,임대료 연 인상률 / TODO(source): 임대료 연 인상률(계약 관행)
+B,prelease,,%,,,,,null,사전 임대율 / TODO(source): 북버지니아 공사 중 물량 사전 임대율 — 시장 보고서
+B,stabilized_occupancy,,%,,,,,null,안정화 가동률 / TODO(source): 안정화 가동률 — 북버지니아 공실률
+B,ramp_elasticity,,배,,,,,1,램프업 탄력성 / 임차 부하 성장 = 시장 수요 성장(IEA) × 1 (근거 확보 전 중립값)
+B,opex_per_kw_year,,USD/kW·년,,,,,null,"OPEX(kW·년, 전력비 제외) / TODO(source): 전력비 제외 운영비 — 상장 데이터센터 REIT 10-K"
+B,opex_escalation,,%/년,,,,,null,OPEX 연 인상률 / TODO(source): 운영비 인상률 — CPI(FRED) 등 근거 선택
+B,pue,,배,,,,,null,PUE / TODO(source): 설계 PUE
+B,it_load_factor,,%,,,,,null,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
+B,power_price,,USD/kWh,,,,,null,전력 단가 / DATA: EIA 버지니아 상업용 평균 요금(없으면 미국 상업용) — 값을 넣으면 우선
+B,power_passthrough,,%,,,,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
+B,tax_rate_national,,%,,,,,21,법인세율(국세·연방) / U.S. federal corporate income tax 21% (26 U.S.C. §11(b)) / TODO(source): 원문 확인
+B,tax_rate_local,,%,,,,,6,"지방세(지방소득세·주세) / Virginia corporate income tax 6% (Va. Code §58.1-400), 연방 과세소득에서 공제 / TODO(source): 원문 확인"
+B,dep_years,,년,,,,,null,감가상각 기간 / TODO(source): 감가상각 기간 — 회계(정액) 기준 내용연수
+B,operating_years,,년,,,,,null,운영기간 / TODO(source): 운영 기간(임대 계약 기간)
+B,exit_cap_rate,,%,,,,,null,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+B,margin_bp,,bp,,,,,null,가산금리 / TODO(source): 가산금리 — 미국 데이터센터 건설·영구 대출 보도
+B,target_dscr,,배,,,,,null,목표 DSCR / TODO(source): 목표 DSCR
+B,max_gearing,,%,,,,,null,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC)
+B,tenor_years,,년,,,,,null,대출 만기 / TODO(source): 대출 만기 (COD 기준)
+B,grace_years,,년,,,,,null,거치기간 / TODO(source): 원금 거치기간
+B,grace_interest,,-,,,,,paid,거치기간 이자 / 거치기간 이자 현금 지급(paid)
+B,dsra_months,,개월,,,,,null,DSRA 개월 수 / TODO(source): DSRA 적립 개월 수
+B,discount_rate,,%,,,,,null,할인율(자기자본) / TODO(source): 자기자본 할인율 — DGS10(DATA) + 위험 프리미엄 근거

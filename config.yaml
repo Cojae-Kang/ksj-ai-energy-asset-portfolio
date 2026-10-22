@@ -126,6 +126,7 @@ data_fetch:
     peer_validation_report: "docs/qa/peer_validation.md"
     crosscheck_report_krx: "docs/qa/crosscheck_krx.md"          # KRX Open API vs FDR/pykrx
     crosscheck_report_global: "docs/qa/crosscheck_global.md"    # yfinance vs SEC
+    vol03_data_notes: "research/vol03/data_notes.md"           # 해외 피어(SEC) 데이터 노트 (validate가 갱신)
 
   http:
     # 모든 HTTP 요청 공통 (DART·KRX·ECOS·SEC·FRED·EIA). 타임아웃이면 해당 요청만 건너뛰고 기록 후 계속.
@@ -285,6 +286,26 @@ data_fetch:
           - ["CommercialPaper"]
     shares_tag: ["dei", "EntityCommonStockSharesOutstanding"]
     not_sec_registrants: ["SU.PA"]      # Schneider Electric: Euronext Paris 상장, SEC 공시 대상 아님
+    # 오프라인 모드: 프로그램 요청이 403(네트워크·클라이언트 차단)일 때 브라우저로 받은 파일을 같은 방식으로 처리.
+    #   켜는 법: fetch_all --source sec --sec-offline (또는 enabled: true). auto_on_403이면 403 발생 시 자동 전환.
+    #   파일은 로컬 전용(data/raw/ 전체가 .gitignore). 데이터는 Vol.3(IPO·해외 피어)에서 사용.
+    offline:
+      enabled: false
+      auto_on_403: true
+      dir: "sec_manual"                 # paths.raw 아래 → data/raw/sec_manual/
+      tickers_file: "company_tickers.json"
+      companyfacts_file: "CIK{cik10}.json"
+      source_label: "SEC EDGAR (manual browser download)"
+      # 브라우저 다운로드 대상 CIK (사용자 로컬 확인값, company_tickers.json으로 재검증). ASSUMPTION(verify)
+      expected_ciks: {VRT: 1674101, ETN: 1551182, GEV: 1996810, CEG: 1868275, VST: 1692819}
+      persistent_403_hours: 24          # 403이 이 시간 이상 이어지면 '네트워크·클라이언트 차단 가능성' 안내
+      state_file: "sec/_403_state.json" # paths.raw 아래. 403 최초·최근 시각 (성공 시 삭제)
+    # 시총(상장사)과 재무(companyfacts 법인)의 주체 일치 검사 → data/processed/sec_entity_check.csv, validate WARN
+    entity_check:
+      output: "sec_entity_check.csv"    # paths.processed 아래
+      # 로컬 관찰 기록 (자동 판정 전 Vol.3 데이터 노트에 표기). 오프라인 수집 후 검사 결과로 대체된다.
+      watchlist:
+        VST: "로컬 관찰(2026-10): CIK0001692819.json의 entityName이 'Vistra Oper...'로 시작 — 운영 자회사 재무일 가능성"
 
   fred:
     env_key: "FRED_API_KEY"
@@ -416,3 +437,166 @@ research:
       multiple_led_share: 0.5           # 멀티플 기여 비중이 이 값 초과면 "멀티플이 이익보다 앞서 달렸다"
     source_status_override:
       sec: "Vol.3에서 사용"              # 해외 피어(SEC) 비교는 Vol.3. Vol.1 A2 출처 표에는 싣지 않음
+
+  # -------------------------------------------------------------------
+  # Vol.2 — AI 데이터센터 PF (케이스 A 한국 40MW·원화, 케이스 B 미국 100MW·달러). 실존 프로젝트 아님.
+  # 모든 가정: {value, unit, tag, source}. 근거를 모르는 값은 value: null + todo → 빌드는 그 계산만 건너뛰고 회색 박스.
+  # 사용자가 data/manual/vol02_assumptions.csv(케이스, 항목, 값, 단위, 출처명, URL, 발행일, 쪽수)에 값을 넣으면
+  # 그 값이 여기 값보다 우선한다 (출처명이 비어 있으면 빌드 요약에 '출처 미기재'로 표시).
+  # tag: ASSUMPTION(design) 가상 케이스 설계값 / ASSUMPTION(verify) 공개 근거 있음, 원문 확인 필요 /
+  #      ASSUMPTION(neutral) 근거 부재 시 중립값 / DATA 저장소 데이터에서 계산
+  # -------------------------------------------------------------------
+  vol02:
+    output_dir: "research/vol02"
+    build_dir: "research/vol02/_build"
+    page_pt: [960, 720]
+    title_kr: "AI 데이터센터, 대출은 얼마까지 가능한가"
+    title_en: "How Much Can an AI Data Centre Borrow?"
+    subtitle_kr: "대주의 눈으로 본 한국 40MW와 미국 100MW"
+    subtitle_en: "A lender's view of a 40 MW Korean and a 100 MW U.S. project"
+    date_label: "2026.10"
+    as_of: "2026-10-20"                 # 금리·환율 기준일
+    assumptions_csv: "data/manual/vol02_assumptions.csv"
+    inputs:
+      iea: "data/manual/iea_energy_ai.csv"
+      ktb: "data/processed/ecos_ktb_daily.csv"
+      fx: "data/processed/ecos_fx_daily.csv"
+      fred: "data/processed/fred_series.csv"
+      dart: ["data/processed/dart_financials.csv", "data/processed/vol01_dart_extra.csv"]
+      eia_state: "data/processed/vol01_eia_state.csv"             # VA·US 상업용 판매량
+      eia_sectors: ["data/processed/vol01_eia_us_sectors.csv", "data/processed/eia_retail_sales_annual.csv"]
+      eia_va_price: "data/processed/vol02_eia_va_com.csv"         # TODO(data): research.vol02.fetch_extra (로컬)
+    # 수요 → 가동률 램프업 시나리오: IEA 데이터센터 전력 소비 2024 → 2035 연평균 성장률 (data/manual/iea_energy_ai.csv)
+    demand_scenarios:
+      base_year: {metric: "dc_electricity_consumption", period: "2024"}
+      downside: {metric: "dc_electricity_consumption_range_low", period: "2035"}
+      base: {metric: "dc_electricity_consumption_base", period: "2035"}
+      upside: {metric: "dc_electricity_consumption_range_high", period: "2035"}
+      # ASSUMPTION(neutral): 시나리오 확률 동일 가중 (확률 근거 자료 없음)
+      weights: {downside: 0.3333333333, base: 0.3333333333, upside: 0.3333333333}
+    # 공사비 위험: 피어 영업이익률 상승 → '전력기기 가격 결정력'의 근거 (인과 단정 아님)
+    #   함의 가격 상승률 = (1 − OPM 시작) ÷ (1 − OPM 끝) − 1 : 단위 원가가 그대로이고 이익률 상승이 모두 가격에서
+    #   왔다고 가정한 상한값. 저·중·고 = 3사 중 최소 · 3사 합산 · 최대
+    capex_stress:
+      peers: ["267260", "010120", "298040"]          # HD현대일렉트릭·LS ELECTRIC·효성중공업
+      fy_start: "FY2022A"
+      fy_end: "FY2025A"
+    rates:
+      A: {construction: "ktb_3y", term: "ktb_10y"}  # ECOS 국고채 3년(건설), 10년(운영 대출)
+      B: {construction: "DGS10", term: "DGS10"}      # FRED DGS10 (건설기간 단기금리 시리즈 미보유 → 같은 값)
+    # 계통 승인 현황 (케이스 A 설정 근거). ASSUMPTION(verify): 사용자 메모 수치, 원문 확인 필요
+    grid_stats:
+      period: "2024.8~2026.3"
+      applied_mw: {value: 33592, unit: "MW", tag: "ASSUMPTION(verify)", source: null,
+                   todo: "TODO(source): 수도권 1단계 계통 신청 33,592MW 원문(기관·보도자료·발표일)"}
+      approved_mw: {value: 1010, unit: "MW", tag: "ASSUMPTION(verify)", source: null,
+                    todo: "TODO(source): 최종 승인 1,010MW 원문. 메모상 '약 1.9%'는 1,010 ÷ 33,592 = 3.0%와 다름 → 원문 확인"}
+      memo_ratio_pct: 1.9                            # 사용자 메모의 비율 (계산값과 대조용)
+      review_threshold_mw: {value: 10, unit: "MW", tag: "ASSUMPTION(verify)",
+                            source: "분산에너지 활성화 특별법 — 전력계통영향평가 (10MW 이상)", todo: "TODO(source): 조문·시행령 번호 확인"}
+    cases:
+      A:
+        name_kr: "케이스 A — 수도권 외곽(인천·경기 서부) 40MW 임대형 데이터센터 SPC"
+        name_en: "Case A — 40 MW leased data centre SPC, outer Seoul metro (Incheon / western Gyeonggi)"
+        short_kr: "한국 40MW"
+        short_en: "Korea 40 MW"
+        currency: "KRW"
+        money_unit_kr: "억원"
+        money_unit_en: "KRW 100mn"
+        money_scale: 1.0e8               # 원 → 억원
+        params:
+          phase1_mw: {value: 20, unit: "MW", tag: "ASSUMPTION(design)", source: "가상 케이스: 1단계 확정 개발"}
+          phase2_mw: {value: 20, unit: "MW", tag: "ASSUMPTION(design)", source: "가상 케이스: 추가 계통 승인·임차 수요 확인 시 착공하는 증설 옵션"}
+          capex_per_mw: {value: null, unit: "억원/MW", todo: "TODO(source): 국내 데이터센터 MW당 총사업비 — DART 신규시설투자 공시(투자금액 ÷ 수전·IT 용량), 업계 공사비 보고서"}
+          power_equipment_share: {value: null, unit: "%", todo: "TODO(source): 총사업비 중 전력설비(변압기·배전반·UPS·발전기) 비중 — 공사비 보고서 항목별 분해"}
+          construction_quarters: {value: null, unit: "분기", todo: "TODO(source): 착공~준공 기간 — 국내 준공 사례 공시·보도"}
+          rent_per_kw_month: {value: 250000, unit: "원/kW·월", tag: "ASSUMPTION(verify)", source: "CBRE 인용 보도(2025) 코로케이션 임대료 kW당 월 약 25만원", todo: "TODO(source): 보도 원문 URL·발행일, CBRE 보고서 쪽수"}
+          rent_escalation: {value: 0.025, low: 0.02, high: 0.03, unit: "%/년", tag: "ASSUMPTION(verify)", source: "임대료 연 인상률 2~3% (중간값 2.5%)", todo: "TODO(source): 원문 확인"}
+          prelease: {value: null, low: 0.16, high: 0.235, unit: "%", tag: "ASSUMPTION(verify)", source: "수도권 2027·2028 준공 예정분 사전 임대율 16~23.5% (기준값 = 중간값)", todo: "TODO(source): 원문 확인"}
+          stabilized_occupancy: {value: null, unit: "%", todo: "TODO(source): 안정화 가동률 — 수도권 코로케이션 공실률 통계(시장 보고서)"}
+          ramp_elasticity: {value: 1.0, unit: "배", tag: "ASSUMPTION(neutral)", source: "임차 부하 성장 = 시장 수요 성장(IEA) × 1 (근거 확보 전 중립값)"}
+          opex_per_kw_year: {value: null, unit: "원/kW·년", todo: "TODO(source): 전력비 제외 운영비(인건비·유지보수·보험·세금) — 상장 운영사 사업보고서 부문 정보"}
+          opex_escalation: {value: null, unit: "%/년", todo: "TODO(source): 운영비 인상률 — 소비자물가·임금 상승률(ECOS) 등 근거 선택"}
+          pue: {value: null, unit: "배", todo: "TODO(source): 설계 PUE — 사업 계획·공시 사례, Uptime Institute 조사"}
+          it_load_factor: {value: null, unit: "%", todo: "TODO(source): 임차 IT 용량 대비 실제 사용률"}
+          power_price: {value: null, unit: "원/kWh", todo: "TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가"}
+          power_passthrough: {value: 1.0, unit: "%", tag: "ASSUMPTION(design)", source: "전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)"}
+          tax_rate_national: {value: null, unit: "%", todo: "TODO(source): 법인세법 제55조 세율 (과세표준 구간·적용연도 확인)"}
+          tax_rate_local: {value: 0.10, unit: "법인세 대비 %", tag: "ASSUMPTION(verify)", source: "지방세법 — 법인지방소득세(법인세율의 10% 수준)", todo: "TODO(source): 조문 확인"}
+          dep_years: {value: null, unit: "년", todo: "TODO(source): 감가상각 내용연수 — 법인세법 시행규칙 별표5(건축물)·별표6(업종별 설비) 가중"}
+          operating_years: {value: null, unit: "년", todo: "TODO(source): 운영 기간(임대 계약 기간·토지 사용 기간)"}
+          exit_cap_rate: {value: null, unit: "%", todo: "선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)"}
+          margin_bp: {value: null, unit: "bp", todo: "TODO(source): 가산금리 — 국내 데이터센터·인프라 PF 대출 공시·보도"}
+          target_dscr: {value: null, unit: "배", todo: "TODO(source): 목표 DSCR — 대주 term sheet 관행 자료"}
+          max_gearing: {value: null, unit: "%", todo: "TODO(source): 최대 대출 비율(LTC) — PF 제도·대주 관행 자료"}
+          tenor_years: {value: null, unit: "년", todo: "TODO(source): 대출 만기 (COD 기준)"}
+          grace_years: {value: null, unit: "년", todo: "TODO(source): 원금 거치기간"}
+          grace_interest: {value: "paid", unit: "-", tag: "ASSUMPTION(design)", source: "거치기간 이자 현금 지급(paid). 램프업 이자 자본화는 capitalized"}
+          dsra_months: {value: null, unit: "개월", todo: "TODO(source): DSRA 적립 개월 수 — 대출 약정 관행"}
+          discount_rate: {value: null, unit: "%", todo: "TODO(source): 자기자본 할인율 — 무위험(국고채 10년, DATA) + 위험 프리미엄 근거"}
+          # 실물옵션 (2단계 20MW)
+          grid_approval_prob: {value: null, unit: "%", todo: "TODO(source): 추가 계통 승인 확률 — 참고 근거: 1단계 승인 비율(계산값)"}
+          approval_decision_year: {value: null, unit: "년(1단계 COD 후)", todo: "TODO(source): 추가 계통 승인 결정 시점 — 전력계통영향평가 처리 기간"}
+          option_window_years: {value: null, unit: "년", todo: "TODO(source): 승인 후 착공 가능 기간 — 승인 유효기간·부지 확보 기간"}
+          rent_volatility: {value: null, unit: "%/년", todo: "TODO(source): 임대료 변동성 — 시장 임대료 시계열(시장 보고서)의 로그 변화 표준편차"}
+      B:
+        name_kr: "케이스 B — 미국 버지니아 100MW 하이퍼스케일 임대형 데이터센터"
+        name_en: "Case B — 100 MW hyperscale leased data centre, Virginia, U.S."
+        short_kr: "미국 100MW"
+        short_en: "U.S. 100 MW"
+        currency: "USD"
+        money_unit_kr: "USD mn"
+        money_unit_en: "USD mn"
+        money_scale: 1.0e6               # USD → USD mn
+        params:
+          phase1_mw: {value: 100, unit: "MW", tag: "ASSUMPTION(design)", source: "가상 케이스: 단일 단계 개발"}
+          phase2_mw: {value: 0, unit: "MW", tag: "ASSUMPTION(design)", source: "증설 옵션 없음"}
+          capex_per_mw: {value: null, unit: "USD mn/MW", todo: "TODO(source): 미국 하이퍼스케일 MW당 개발비 — 업계 공사비 지수·상장 REIT 10-K 개발 공시"}
+          power_equipment_share: {value: null, unit: "%", todo: "TODO(source): 총사업비 중 전력설비 비중"}
+          construction_quarters: {value: null, unit: "분기", todo: "TODO(source): 착공~준공 기간"}
+          rent_per_kw_month: {value: null, unit: "USD/kW·월", todo: "TODO(source): 북버지니아 도매(wholesale) 임대료 — 시장 보고서"}
+          rent_escalation: {value: null, unit: "%/년", todo: "TODO(source): 임대료 연 인상률(계약 관행)"}
+          prelease: {value: null, unit: "%", todo: "TODO(source): 북버지니아 공사 중 물량 사전 임대율 — 시장 보고서"}
+          stabilized_occupancy: {value: null, unit: "%", todo: "TODO(source): 안정화 가동률 — 북버지니아 공실률"}
+          ramp_elasticity: {value: 1.0, unit: "배", tag: "ASSUMPTION(neutral)", source: "임차 부하 성장 = 시장 수요 성장(IEA) × 1 (근거 확보 전 중립값)"}
+          opex_per_kw_year: {value: null, unit: "USD/kW·년", todo: "TODO(source): 전력비 제외 운영비 — 상장 데이터센터 REIT 10-K"}
+          opex_escalation: {value: null, unit: "%/년", todo: "TODO(source): 운영비 인상률 — CPI(FRED) 등 근거 선택"}
+          pue: {value: null, unit: "배", todo: "TODO(source): 설계 PUE"}
+          it_load_factor: {value: null, unit: "%", todo: "TODO(source): 임차 IT 용량 대비 실제 사용률"}
+          power_price: {value: null, unit: "USD/kWh", todo: "DATA: EIA 버지니아 상업용 평균 요금(없으면 미국 상업용) — 값을 넣으면 우선"}
+          power_passthrough: {value: 1.0, unit: "%", tag: "ASSUMPTION(design)", source: "전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)"}
+          tax_rate_national: {value: 0.21, unit: "%", tag: "ASSUMPTION(verify)", source: "U.S. federal corporate income tax 21% (26 U.S.C. §11(b))", todo: "TODO(source): 원문 확인"}
+          tax_rate_local: {value: 0.06, unit: "%", tag: "ASSUMPTION(verify)", source: "Virginia corporate income tax 6% (Va. Code §58.1-400), 연방 과세소득에서 공제", todo: "TODO(source): 원문 확인"}
+          dep_years: {value: null, unit: "년", todo: "TODO(source): 감가상각 기간 — 회계(정액) 기준 내용연수"}
+          operating_years: {value: null, unit: "년", todo: "TODO(source): 운영 기간(임대 계약 기간)"}
+          exit_cap_rate: {value: null, unit: "%", todo: "선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)"}
+          margin_bp: {value: null, unit: "bp", todo: "TODO(source): 가산금리 — 미국 데이터센터 건설·영구 대출 보도"}
+          target_dscr: {value: null, unit: "배", todo: "TODO(source): 목표 DSCR"}
+          max_gearing: {value: null, unit: "%", todo: "TODO(source): 최대 대출 비율(LTC)"}
+          tenor_years: {value: null, unit: "년", todo: "TODO(source): 대출 만기 (COD 기준)"}
+          grace_years: {value: null, unit: "년", todo: "TODO(source): 원금 거치기간"}
+          grace_interest: {value: "paid", unit: "-", tag: "ASSUMPTION(design)", source: "거치기간 이자 현금 지급(paid)"}
+          dsra_months: {value: null, unit: "개월", todo: "TODO(source): DSRA 적립 개월 수"}
+          discount_rate: {value: null, unit: "%", todo: "TODO(source): 자기자본 할인율 — DGS10(DATA) + 위험 프리미엄 근거"}
+    # 민감도·스트레스 설계 (분석 설정, 사실 주장 아님)
+    sensitivity:
+      rent_pct: 0.10                    # 임대료 ±10%
+      occupancy_pct: 0.10               # 가동률 ±10%
+      rate_bp: 100                      # 금리 ±100bp
+      delay_quarters: [2, 4]            # 건설 지연 +2·+4분기
+      breakeven_ranges:                 # 손익분기 탐색 구간
+        rent_mult: [0.2, 2.0]
+        occ_mult: [0.2, 1.5]
+        prelease: [0.01, 1.0]
+        capex_mult: [0.5, 3.0]
+        rate_shift: [-0.04, 0.15]
+        delay_quarters: [0, 24]
+      heatmap:
+        rent_mult: [0.8, 0.9, 1.0, 1.1, 1.2]
+        capex_mult: [0.9, 1.0, 1.1, 1.2, 1.3]
+    real_option:
+      n_paths: 20000
+      seed: 42                          # = monte_carlo.seed
+      convergence_paths: [1000, 2000, 5000, 10000, 20000]
+      prob_grid: [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+      basis_degree: 2

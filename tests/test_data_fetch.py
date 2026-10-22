@@ -110,7 +110,8 @@ def cfg(tmp_path):
     out["raw_large"] = str(tmp_path / "raw" / "large")
     out["cache"] = str(tmp_path / "cache")
     out["processed_peers"] = str(tmp_path / "processed" / "peers_financials.csv")
-    for k in ["summary_report", "peer_validation_report", "crosscheck_report_krx", "crosscheck_report_global"]:
+    for k in ["summary_report", "peer_validation_report", "crosscheck_report_krx", "crosscheck_report_global",
+              "vol03_data_notes"]:
         out[k] = str(tmp_path / "reports" / Path(out[k]).name)
     c["data_fetch"]["manual_overseas_financials"] = str(tmp_path / "manual" / "overseas.csv")
     return c
@@ -739,6 +740,7 @@ def test_sec_session_headers_on_both_hosts_and_rate_limit(cfg, monkeypatch):
 
 def test_sec_403_one_line_summary_and_stop(cfg, monkeypatch):
     monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    cfg["data_fetch"]["sec"]["offline"]["auto_on_403"] = False                  # 자동 오프라인 전환 끔
     http, sess, _ = make_http(lambda *a: FakeResp(403, SEC_403_HTML))
     c = sec.SecClient(cfg, "2026-10-20", http=http)
     res = sec.run(cfg, "2026-10-20", client=c)
@@ -751,6 +753,7 @@ def test_sec_403_one_line_summary_and_stop(cfg, monkeypatch):
 
 def test_sec_companyfacts_403_stops_remaining_requests(cfg, monkeypatch):
     monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    cfg["data_fetch"]["sec"]["offline"]["auto_on_403"] = False
     tickers = {str(i): {"cik_str": 1000 + i, "ticker": p["ticker"], "title": p["name"]}
                for i, p in enumerate(cfg["peers"]["overseas"]) if p["ticker"] != "SU.PA"}
     http, sess, _ = make_http(lambda u, p, h: FakeResp(200, tickers) if u.endswith("company_tickers.json")
@@ -813,6 +816,235 @@ def test_sec_diagnose_missing_env(cfg):
 def test_sec_cli_requires_diagnose_flag(capsys):
     assert sec.main([]) == 0
     assert "fetch_all --source sec" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# SEC 오프라인 모드 (브라우저 다운로드 파일) · CIK 정규화 · 주체 검사
+# ---------------------------------------------------------------------------
+LISTED = {"VRT": (1674101, "Vertiv Holdings Co"), "ETN": (1551182, "Eaton Corp plc"),
+          "GEV": (1996810, "GE Vernova Inc."), "CEG": (1868275, "Constellation Energy Corp"),
+          "VST": (1692819, "Vistra Corp.")}
+
+
+def _facts_for(ticker, cik_value, name=None, shares=True, eps=True):
+    f = copy.deepcopy(FACTS)
+    f["cik"] = cik_value
+    f["entityName"] = name or LISTED[ticker][1]
+    if not shares:
+        f["facts"].pop("dei")
+    if eps:
+        f["facts"]["us-gaap"]["EarningsPerShareBasic"] = {"units": {"USD/shares": [
+            _fact(2.5, "2025-12-31", "2025-01-01")]}}
+    return f
+
+
+def _write_manual(cfg, facts_by_cik: dict, tickers: dict | None = None, mtime: float = 1_760_000_000):
+    d = Path(cfg["paths"]["raw"]) / "sec_manual"
+    d.mkdir(parents=True, exist_ok=True)
+    tickers = tickers or {str(i): {"cik_str": c, "ticker": t, "title": n} for i, (t, (c, n)) in enumerate(LISTED.items())}
+    (d / "company_tickers.json").write_text(json.dumps(tickers), encoding="utf-8")
+    for cik, facts in facts_by_cik.items():
+        (d / f"CIK{sec.cik10(cik)}.json").write_text(json.dumps(facts), encoding="utf-8")
+    import os
+    for f in d.glob("*.json"):
+        os.utime(f, (mtime, mtime))
+    return d
+
+
+def _all_manual(cfg, **override):
+    """5사 companyfacts. cik 표기는 숫자·0 채운 문자열을 섞는다 (실제 파일과 같은 상황)."""
+    facts = {}
+    for i, (t, (c, _)) in enumerate(LISTED.items()):
+        facts[c] = override.get(t) or _facts_for(t, c if i % 2 == 0 else sec.cik10(c))
+    return _write_manual(cfg, facts)
+
+
+@pytest.mark.parametrize("v, expected", [
+    (1551182, 1551182), ("0001868275", 1868275), ("1868275", 1868275), ("CIK0001868275", 1868275),
+    (1868275.0, 1868275), (" 0001692819 ", 1692819), (None, None), ("abc", None), (True, None), (1.5, None),
+])
+def test_normalize_cik_mixed_formats(v, expected):
+    assert sec.normalize_cik(v) == expected
+
+
+def test_cik10_accepts_both_formats():
+    assert sec.cik10(1551182) == sec.cik10("0001551182") == "0001551182"
+    with pytest.raises(ValueError):
+        sec.cik10("not-a-cik")
+
+
+def test_sec_offline_mode_reads_manual_files_without_user_agent(cfg):
+    d = _all_manual(cfg)
+    lines: list[str] = []
+    res = sec.run(cfg, "2026-10-20", offline=True, out=lines.append)          # SEC_USER_AGENT 없어도 동작
+    assert res.status == base.STATUS_SUCCESS and res.n_items == 5, res.message
+    assert "오프라인 모드" in res.message and not lines
+    proc = Path(cfg["paths"]["processed"])
+    fin = pd.read_csv(proc / "sec_financials.csv", dtype={"cik": str})
+    assert set(fin["data_source"]) == {"manual browser download"}
+    assert set(fin["cik"]) == {sec.cik10(c) for c, _ in LISTED.values()}       # 숫자·문자열 cik 모두 정규화
+    ent = pd.read_csv(proc / "sec_entity_check.csv", dtype=str)
+    assert set(ent["verdict"]) == {"OK"}
+    # meta: 출처 라벨 + 파일 수정 시각
+    m = json.loads((d / "CIK0001674101.meta.json").read_text(encoding="utf-8"))
+    assert m["source"] == "SEC EDGAR (manual browser download)"
+    assert m["fetched_at"] == "2025-10-09T08:53:20+00:00"                      # mtime 1,760,000,000
+    assert m["endpoint"].endswith("CIK0001674101.json") and m["params"] == {"cik": "0001674101"}
+    assert set(m) >= set(base.META_FIELDS) and len(m["sha256"]) == 64
+    copied = Path(cfg["paths"]["raw"]) / "sec" / "company_tickers.json"      # validate 입력 위치로 복사
+    assert copied.exists() and json.loads(base.meta_path_for(copied).read_text(encoding="utf-8"))["source"] \
+        == "SEC EDGAR (manual browser download)"
+    pmeta = json.loads((proc / "sec_financials.meta.json").read_text(encoding="utf-8"))
+    assert "manual browser download" in pmeta["source"]
+
+
+def test_sec_offline_missing_files_prints_ciks_and_urls_then_skipped(cfg):
+    lines: list[str] = []
+    res = sec.run(cfg, "2026-10-20", offline=True, out=lines.append)
+    text = "\n".join(lines)
+    assert res.status == base.STATUS_SKIPPED
+    assert "https://www.sec.gov/files/company_tickers.json" in text
+    for t, (c, _) in LISTED.items():
+        assert f"CIK {sec.cik10(c)}" in text
+        assert f"https://data.sec.gov/api/xbrl/companyfacts/CIK{sec.cik10(c)}.json" in text
+    assert "[없음]" in text and "오프라인 파일 없음" in res.message
+
+
+def test_sec_offline_partial_lists_only_missing(cfg):
+    facts = {c: _facts_for(t, c) for t, (c, _) in LISTED.items() if t != "GEV"}
+    _write_manual(cfg, facts)
+    lines: list[str] = []
+    res = sec.run(cfg, "2026-10-20", offline=True, out=lines.append)
+    assert res.status == base.STATUS_PARTIAL and res.n_items == 4
+    assert "CIK0001996810.json" in res.message
+    assert "[없음] GEV CIK 0001996810" in "\n".join(lines)
+
+
+def test_sec_offline_broken_json_is_reported(cfg):
+    d = _all_manual(cfg)
+    (d / "CIK0001551182.json").write_text("<html>blocked</html>", encoding="utf-8")
+    res = sec.run(cfg, "2026-10-20", offline=True, out=lambda s: None)
+    assert res.status == base.STATUS_PARTIAL and "JSON 해석 실패" in res.message
+
+
+def test_sec_403_auto_switches_to_offline(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    _all_manual(cfg)
+    http, sess, _ = make_http(lambda *a: FakeResp(403, SEC_403_HTML))
+    res = sec.run(cfg, "2026-10-20", client=sec.SecClient(cfg, "2026-10-20", http=http), out=lambda s: None)
+    assert res.status == base.STATUS_SUCCESS and res.n_items == 5, res.message
+    assert res.message.startswith("SEC 403: User-Agent 확인 필요") and "오프라인 모드 자동 전환" in res.message
+    assert len(sess.calls) == 1                                                # 403 이후 네트워크 요청 없음
+
+
+def test_sec_companyfacts_403_switches_to_offline_midway(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    _all_manual(cfg)
+    tickers = {str(i): {"cik_str": c, "ticker": t, "title": n} for i, (t, (c, n)) in enumerate(LISTED.items())}
+    http, sess, _ = make_http(lambda u, p, h: FakeResp(200, tickers) if u.endswith("company_tickers.json")
+                              else FakeResp(403, b"<html><body>Undeclared Automated Tool</body></html>"))
+    res = sec.run(cfg, "2026-10-20", client=sec.SecClient(cfg, "2026-10-20", http=http), out=lambda s: None)
+    assert res.status == base.STATUS_SUCCESS and res.n_items == 5, res.message
+    assert len([x for x in sess.calls if "companyfacts" in x["url"]]) == 1
+    fin = pd.read_csv(Path(cfg["paths"]["processed"]) / "sec_financials.csv")
+    assert set(fin["data_source"]) == {"manual browser download"}
+
+
+def test_sec_persistent_403_hint_after_one_day(cfg, monkeypatch, tmp_path):
+    from datetime import datetime, timedelta, timezone
+    state = tmp_path / "state.json"
+    t0 = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+    assert sec.record_403(state, t0) == 0
+    assert sec.persistent_403_note(sec.record_403(state, t0 + timedelta(hours=5)), 24) == ""
+    h = sec.record_403(state, t0 + timedelta(hours=25))
+    note = sec.persistent_403_note(h, 24)
+    assert h == pytest.approx(25) and "네트워크·클라이언트 차단 가능성 → 브라우저 다운로드 후 오프라인 모드" in note
+    sec.clear_403(state)
+    assert not state.exists()
+    # run 경로: 하루 뒤 다시 403 → 메시지에 안내
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    cfg["data_fetch"]["sec"]["offline"]["auto_on_403"] = False
+    http, _, _ = make_http(lambda *a: FakeResp(403, SEC_403_HTML))
+    c = sec.SecClient(cfg, "2026-10-20", http=http)
+    assert "차단 가능성" not in sec.run(cfg, "2026-10-20", client=c, now=t0).message
+    msg = sec.run(cfg, "2026-10-20", client=c, now=t0 + timedelta(hours=30)).message
+    assert "403이 30시간째 지속 — 네트워크·클라이언트 차단 가능성 → 브라우저 다운로드 후 오프라인 모드" in msg
+
+
+def test_sec_online_success_clears_403_state(cfg, monkeypatch):
+    monkeypatch.setenv("SEC_USER_AGENT", "Test User test@example.com")
+    state = Path(cfg["paths"]["raw"]) / "sec" / "_403_state.json"
+    sec.record_403(state)
+    tickers = {str(i): {"cik_str": c, "ticker": t, "title": n} for i, (t, (c, n)) in enumerate(LISTED.items())}
+    http, _, _ = make_http(lambda u, p, h: FakeResp(200, tickers if u.endswith("company_tickers.json") else FACTS))
+    sec.run(cfg, "2026-10-20", client=sec.SecClient(cfg, "2026-10-20", http=http))
+    assert not state.exists()
+
+
+def test_check_entity_same_likely_unknown_and_mismatch():
+    c, title = LISTED["VST"]
+    ok_ = sec.check_entity("VST", c, title, _facts_for("VST", "0001692819", "Vistra Corp."))
+    assert ok_["verdict"] == "OK" and ok_["same_consolidated"] == "yes"
+    likely = sec.check_entity("VST", c, title, _facts_for("VST", c, "Vistra Energy Corp."))
+    assert likely["verdict"] == "WARN" and likely["same_consolidated"] == "likely"
+    sub = sec.check_entity("VST", c, title, _facts_for("VST", "0001692819", "Vistra Operations Company LLC",
+                                                       shares=False, eps=False))
+    assert sub["verdict"] == "WARN" and sub["same_consolidated"] == "unknown"
+    assert "Vistra Operations Company LLC" in sub["reason"] and "보통주 발행주식수(dei) 미보고" in sub["reason"]
+    other = sec.check_entity("VST", c, title, _facts_for("VST", 1999999, "Vistra Operations Company LLC"))
+    assert other["same_consolidated"] == "no" and "주체 불일치" in other["reason"]
+    assert other["entity_cik"] == "0001999999" and other["listed_cik"] == "0001692819"
+
+
+def test_offline_uses_user_file_when_tickers_cik_differs_and_flags_it(cfg):
+    """company_tickers의 VST CIK가 사용자가 받은 파일(CIK0001692819)과 다르면 그 파일로 처리하고 주체 불일치 WARN."""
+    tickers = {str(i): {"cik_str": (1999999 if t == "VST" else c), "ticker": t, "title": n}
+               for i, (t, (c, n)) in enumerate(LISTED.items())}
+    facts = {c: _facts_for(t, c, "Vistra Operations Company LLC" if t == "VST" else None, shares=t != "VST",
+                           eps=t != "VST") for t, (c, _) in LISTED.items()}
+    _write_manual(cfg, facts, tickers)
+    res = sec.run(cfg, "2026-10-20", offline=True, out=lambda s: None)
+    assert res.n_items == 5
+    assert "expected_ciks 0001692819 ≠ company_tickers 0001999999" in res.message
+    assert "Vistra: 주체 검사 WARN" in res.message
+    ent = pd.read_csv(Path(cfg["paths"]["processed"]) / "sec_entity_check.csv", dtype=str).set_index("ticker")
+    assert ent.loc["VST", "same_consolidated"] == "no" and ent.loc["VRT", "verdict"] == "OK"
+
+
+def test_validate_marks_entity_warn_and_writes_vol03_notes(cfg):
+    facts = {c: _facts_for(t, c, "Vistra Operations Company LLC" if t == "VST" else None, shares=t != "VST",
+                           eps=t != "VST") for t, (c, _) in LISTED.items()}
+    _write_manual(cfg, facts)
+    sec.run(cfg, "2026-10-20", offline=True, out=lambda s: None)
+    res = validate_peers.run(cfg, "2026-10-20")
+    report = Path(res.outputs[0]).read_text(encoding="utf-8")
+    assert "| 해외 | Vistra | VST | NYSE | CIK 0001692819 | Vistra Corp. | WARN | 재무 주체 확인 필요:" in report
+    assert "| 해외 | Vertiv | VRT | NYSE | CIK 0001674101 | Vertiv Holdings Co | OK |" in report
+    assert "## 시총(상장사) vs 재무(법인) 주체 검사" in report and "재무 주체 WARN 1" in res.message
+    notes = Path(res.outputs[1]).read_text(encoding="utf-8")
+    assert notes.startswith("# Vol.3 데이터 노트") and "WARN 1개" in notes
+    assert "VST: 보통주·EPS 미보고 → 운영 자회사" in notes and "## 한계" in notes
+
+
+def test_vol03_notes_show_watchlist_before_collection(cfg):
+    res = validate_peers.run(cfg, "2026-10-20")
+    notes = Path(res.outputs[1]).read_text(encoding="utf-8")
+    assert "TODO(data)" in notes and "Vistra Oper" in notes and "검사 대기" in notes
+
+
+def test_fetch_all_sec_offline_flag(cfg, monkeypatch, capsys):
+    _all_manual(cfg)
+    monkeypatch.setattr(fetch_all, "load_config", lambda path=None: cfg)
+    rc = fetch_all.main(["--source", "sec", "--sec-offline", "--no-post"])
+    out = capsys.readouterr().out
+    assert rc == 0 and "SUCCESS" in out and "오프라인 모드" in out
+
+
+def test_sec_offline_check_cli(cfg, monkeypatch, capsys):
+    monkeypatch.setattr(sec, "load_config", lambda path=None: cfg)
+    assert sec.main(["--offline-check"]) == 0
+    out = capsys.readouterr().out
+    assert "CIK0001692819.json" in out and "없는 파일 6개" in out
 
 
 # ---------------------------------------------------------------------------

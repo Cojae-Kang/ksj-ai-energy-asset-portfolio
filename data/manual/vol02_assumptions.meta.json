@@ -1,0 +1,9 @@
+{
+  "source": "KSJ Research — Vol.2 가정 입력 양식 (사용자 입력)",
+  "endpoint": "(manual)",
+  "params": {},
+  "fetched_at": null,
+  "as_of": "2026-10-20",
+  "license_note": "사용자가 공개 출처의 값을 직접 입력. 각 행의 source_name·url·published·page 열에 출처 기재. 비공개·내부 자료 금지.",
+  "note": "열: case, item, value, unit, source_name, url, published, page (+ current = 현재 적용값(config 또는 이 파일), hint = 항목 설명·찾을 출처). value가 있으면 config.yaml research.vol02 값보다 우선. % 단위는 퍼센트 숫자로 입력(2.5 = 2.5%), bp는 bp 숫자. 양식 갱신: python -m research.vol02.build --write-template (입력값 보존)."
+}

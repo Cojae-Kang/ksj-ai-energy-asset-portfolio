@@ -323,7 +323,15 @@ def draw_placeholder(c, ctx: Ctx, x: float, y_top: float, w: float, h: float, re
     c.drawCentredString(x + w / 2, cy, ctx.labels["pending"])
     c.setFont(RL_REGULAR, 8.2)
     c.setFillColor(hexc(col["note"]))
-    c.drawCentredString(x + w / 2, cy - 18, reason)
+    if stringWidth(reason, RL_REGULAR, 8.2) <= w - 24:
+        c.drawCentredString(x + w / 2, cy - 18, reason)
+    else:   # 긴 사유(빠진 입력 목록 등)는 줄바꿈
+        st = ParagraphStyle("ph", fontName=RL_REGULAR, fontSize=8.2, leading=11.5, textColor=hexc(col["note"]),
+                            alignment=1)
+        p = Paragraph(escape(reason), st)
+        _, ph = p.wrap(w - 28, h)
+        p.drawOn(c, x + 14, cy - 10 - ph)
+        cy -= ph - 10
     if cmd:
         size = fit_size(cmd, "Courier", 8.2, w - 24, 6)
         c.setFont("Courier", size)
