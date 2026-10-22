@@ -798,7 +798,7 @@ research:
       corr_stress: 0.5                  # ASSUMPTION(judgment): 동조 민감도 — 성장률·PER·순이익률 쌍별 상관 0.5 (하방이 함께 오는 경우)
     # 증권신고서 할인율 실증 (research.vol03.ipo_discounts, 로컬 실행: DART 공시검색 + 원문). 결과 n ≥ min_n이면 밴드 할인율을 분포 기반(sourced)으로
     ipo_discounts:
-      bgn_de: "20250101"
+      bgn_de: "20241201"                # 2024-12 접수 최초 신고서까지 포함 (2025-01 정정분이 최초로 잡히는 문제 방지)
       end_de: "20261020"
       pblntf_ty: "C"                    # 발행공시
       pblntf_detail_ty: "C001"          # ASSUMPTION(verify): 증권신고서(지분증권)
