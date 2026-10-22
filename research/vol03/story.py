@@ -268,9 +268,9 @@ class Story:
         f = self.f
         if ok(f.band_dp) and ok(f.mc_dp):
             bd, g = f.band_dp, self.v["discount_grid"]
-            tail = (self.T(f"할인율 {g[0] * 100:.0f}~{g[-1] * 100:.0f}%만으로는 이중 고점을 덮지 못한다", f"a {g[0] * 100:.0f}–{g[-1] * 100:.0f}% discount alone cannot cover the double peak")
+            tail = (self.T("할인율만으로는 이중 고점을 못 덮는다", f"a {g[0] * 100:.0f}–{g[-1] * 100:.0f}% discount alone cannot cover the double peak")
                     if not self.dp_covered() else self.T(f"이중 고점까지 덮으려면 할인율 {self.bd_text(bd)}", f"covering the double peak takes {self.bd_text(bd)}"))
-            return self.T(f"희망공모가 {self.band_text()}(현재 기준) vs {self.won_rng(bd.low, bd.high)}(이익률 정점 반영) — {tail}",
+            return self.T(f"희망공모가 {self.band_text()} vs 이익률 정점 반영 {self.won_rng(bd.low, bd.high)} — {tail}",
                           f"Indicative range {self.band_text()} (current basis) vs {self.won_rng(bd.low, bd.high)} (with peak margins) — {tail}")
         return self.T(f"희망공모가 {self.band_text()} — 현재 PER {self.x(self.per())} 기준 평가가액에서 {self.disc_text()} 할인해야 사이클 고점 위험을 덮는다",
                       f"Indicative range {self.band_text()}: a {self.disc_text()} discount to the {self.x(self.per())} P/E value is what covers cycle-peak risk")
@@ -1069,7 +1069,7 @@ class Story:
         (_, mle, _), (_, mhe, _) = s_.stats_ex["low"], s_.stats_ex["high"]
         pos = ev.rank((b.d_low + b.d_high) / 2, "mid")
         span = self.T(f"접수 {fs.period[0]}~{fs.period[1]}", f"filed {fs.period[0]} to {fs.period[1]}")
-        pick = (self.T(f"Target(공모금액 약 {self.offer_amount(b.low) / 10:,.0f}0억원대)에는 하위 표본 사용(n ≥ {ev.sub_min_n})",
+        pick = (self.T(f"Target(공모금액 약 {self.offer_amount(b.low) / 10:,.0f}0억원대)에는 하위 표본({ev.sub_rule}) 사용(n ≥ {ev.sub_min_n})",
                        f"Target (offer ≈ KRW {self.offer_amount(b.low) / 10:,.0f}bn) uses the sub-sample (n ≥ {ev.sub_min_n})")
                 if ev.chosen == "sub" else
                 self.T(f"하위 표본({ev.sub_rule}) {ss.n}건 < {ev.sub_min_n} → 전체 분포 사용", f"Sub-sample n = {ss.n} < {ev.sub_min_n} → full distribution used"))
@@ -1080,7 +1080,8 @@ class Story:
                if ev.n_cls_excluded else self.T(f"검색 {sa}~{sb} 중 실제 신고일 범위가 좁음", f"actual filing dates cover only part of {sa} to {sb}"))
         short = (self.T(f" 표본 {ev.full.n}건 < 목표 {ev.target_n}건({why})", f" Sample {ev.full.n} < target {ev.target_n} ({why})")
                  if ev.full.n < ev.target_n else "")
-        return Cell(title=self.T(f"국내 IPO 할인율({self.ipo_label()}): 하단 중앙값 {ml * 100:.0f}% · 상단 {mh * 100:.0f}% — Target 밴드는 분포의 P{pos * 100:.0f}",
+        short_lab = self.T(f"하위 표본 {ev.sub.n}건", "") if ev.chosen == "sub" else self.T(f"전체 {ev.full.n}건", "")
+        return Cell(title=self.T(f"국내 IPO 할인율({short_lab}) 중앙값 {ml * 100:.0f}~{mh * 100:.0f}% — Target 밴드는 P{pos * 100:.0f}",
                                  f"Korean IPO discounts ({self.ipo_label()}): median {ml * 100:.0f}% (low) · {mh * 100:.0f}% (high) — Target's range at P{pos * 100:.0f}"),
                     src=["ipo"], legend=[(self.c["warm_grey_light"], self.T("전체", "All")), (self.c["panel"], self.T("하위 표본", "Sub-sample"))] if ss.n >= 3 else
                     [(self.c["warm_grey_light"], self.T("사분위 상자 · 중앙값", "IQR box · median"))], unit=self.T("할인율 (평가가액 대비)", "Discount to value"),
@@ -1280,7 +1281,7 @@ class Story:
                              "Risk the discount cannot carry goes into structure: evidence of margin durability (backlog, long-term contracts), less secondary sale, lock-ups"))
             c4 = Cell(title=self.T("결론: 할인율이 덮는 것은 배수 고점, 이익률 고점은 구조와 공시로", "Conclusion: the discount covers the peak multiple; the peak margin needs structure and disclosure"),
                       bullets=bl, src=["fss", "ksj"], note=self.T("몬테카를로(p7) 계산값 · 공모가 결정 위치는 금융감독원 발표", "From the Monte Carlo (p7) · pricing positions from an FSS release"))
-            title = (self.T(f"시사점: 이중 고점(정점 이익 × 정점 배수)은 할인율 {grid[0] * 100:.0f}~{grid[-1] * 100:.0f}%만으로 덮이지 않는다 — 이익 지속성 증명과 공모 구조가 함께 가야 한다",
+            title = (self.T(f"시사점: 이중 고점은 할인율 {grid[0] * 100:.0f}~{grid[-1] * 100:.0f}%로 덮이지 않는다 — 이익 지속성과 공모 구조가 함께 가야 한다",
                             f"Implication: a double peak (peak earnings × peak multiple) is not covered by a {grid[0] * 100:.0f}–{grid[-1] * 100:.0f}% discount alone — earnings durability and deal structure must do the rest")
                      if not self.dp_covered() else
                      self.T(f"시사점: 이중 고점까지 덮으려면 할인율 {self.pct(dp.required[0.5], 0)} 이상 — 배수만 보는 할인율({self.pct(mc.required[0.5], 0)})은 부족하다",

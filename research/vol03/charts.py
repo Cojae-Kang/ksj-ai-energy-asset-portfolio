@@ -262,15 +262,17 @@ def discount_boxes(series: Sequence[tuple[str, Sequence[float]]], c: Mapping, ma
         x0, x1 = float(np.nanmin(allv)), float(np.nanmax(allv))
         pad = max(2.0, (x1 - x0) * 0.06)
         ax.set_xlim(x0 - pad, x1 + pad)
-        for k, (v, lab, col) in enumerate(marks):
+        row = 0.34                                                   # 표시선 이름은 상자 위 빈 줄에 한 줄씩 (서로·상자와 겹치지 않게)
+        top = 0.5 - row * len(marks)
+        for k, (v, lab, col) in enumerate(sorted(marks, key=lambda m: m[0])):
             right = v * 100 > x0 + (x1 - x0) * 0.6
             ax.axvline(v * 100, color=col, lw=1.2, ls="--")
-            ax.text(v * 100, n + 0.62 - 0.22 * k, (f"{lab} {v * 100:.0f}% " if right else f" {lab} {v * 100:.0f}%"), ha="right" if right else "left",
-                    va="center", fontsize=FS - 0.2, fontweight="bold", color=col)
+            ax.text(v * 100, top + row * (k + 0.5), (f"{lab} {v * 100:.0f}% " if right else f" {lab} {v * 100:.0f}%"), ha="right" if right else "left",
+                    va="center", fontsize=FS - 0.2, fontweight="bold", color=col,
+                    bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.6, "alpha": 0.9})
         ax.set_yticks(list(range(1, n + 1)))
         ax.set_yticklabels(labels)
-        ax.set_ylim(0.5, n + 0.85)
-        ax.invert_yaxis()
+        ax.set_ylim(n + 0.5, top)                                    # 위가 1번 줄 (뒤집힌 축)
         ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}%"))
         ax.tick_params(axis="x", labelsize=FS - 0.4, colors=c["note"])
         _style(ax, c, grid_x=True)
