@@ -275,7 +275,7 @@ def test_story_public_text_and_numbers(cfg, fill):
             assert not leaks, leaks[:3]
         by = {p.label: p for p in pages}
         assert "Claude Code" in by["A5"].cells[0].strip and c["research"]["repo_url"] in by["A5"].cells[0].note
-        assert len(by["A1"].cells[0].table.rows) == 8
+        assert len(by["A1"].cells[0].table.rows) == (9 if fill else 8)                    # 전력 별도 청구 Base → take-or-pay 질문 추가
         if lang == "kr":
             assert sum("본문의 판단은 저자 개인의 견해" in t for t in texts) >= 1
             assert "임대율가" not in joined and "지연가" not in joined
@@ -388,7 +388,8 @@ def test_committed_assumptions_tags_and_counts():
     assert A["interest_reserve_buffer"].value == pytest.approx(0.10)
     assert {A[k].status for k in ("grace_years", "grace_interest", "interest_reserve_buffer")} == {"judgment"}
     # 전력비: 별도 청구가 기준(판단) · 한전 판매단가(근거) · 연 2% 인상(판단)
-    assert A["power_passthrough"].value == 1.0 and A["power_passthrough"].status == "judgment"
+    assert A["power_passthrough"].value == 1.0 and A["power_passthrough"].status == "sourced"
+    assert "datacenterscouts.com" in A["power_passthrough"].url and "gr1d.us" in A["power_passthrough"].url
     assert A["power_price"].value == pytest.approx(181.9) and A["power_price"].status == "sourced" and A["power_price"].published == "2026-08-27"
     assert A["power_escalation"].value == pytest.approx(0.02) and A["power_escalation"].status == "judgment"
     assert B["capex_per_mw"].value == pytest.approx(17.6 + 0.584) and B["capex_per_mw"].status == "sourced"
@@ -396,8 +397,10 @@ def test_committed_assumptions_tags_and_counts():
     assert (B["rent_per_kw_month"].value, B["rent_per_kw_month"].high) == (190.0, 235.0)
     assert B["margin_bp"].value is None and B["target_dscr"].status == "sourced"
     # 이전 null 항목: 제안값을 저자 판단으로 입력
+    assert B["exit_cap_rate"].value == pytest.approx(0.06) and B["exit_cap_rate"].status == "sourced"      # Houlihan Lokey 2026.10
+    assert (B["exit_cap_rate"].low, B["exit_cap_rate"].high) == (pytest.approx(0.05), pytest.approx(0.075)) and "hl.com" in B["exit_cap_rate"].url
     for case, k, v in (("A", "pue", 1.3), ("B", "pue", 1.3), ("A", "it_load_factor", 0.7), ("B", "it_load_factor", 0.7),
-                       ("A", "dep_years", 20), ("B", "dep_years", 20), ("A", "exit_cap_rate", 0.07), ("B", "exit_cap_rate", 0.06),
+                       ("A", "dep_years", 20), ("B", "dep_years", 20), ("A", "exit_cap_rate", 0.07),
                        ("A", "discount_rate", 0.10), ("A", "option_window_years", 2)):
         x = a[case][k]
         assert x.value == pytest.approx(v) and x.status == "judgment", (case, k)

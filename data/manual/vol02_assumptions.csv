@@ -18,13 +18,13 @@ A,opex_escalation,2.5,,,%/년,judgment,저자 판단,,,,2.5,OPEX 연 인상률 /
 A,pue,1.3,,,배,judgment,저자 판단: 신규 대형 데이터센터 설계값 범위의 중간 (사업 계획 공시로 확인 필요),,,,1.3,"PUE / TODO(source): 설계 PUE — 사업 계획·공시 사례, Uptime Institute 조사"
 A,it_load_factor,70,,,%,judgment,저자 판단: 임차 IT 용량 대비 실사용 70% (계약·운영 자료로 확인 필요),,,,70,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
 A,power_price,181.9,,,원/kWh,sourced,한전 2025년 평균 산업용 판매단가 181.9원/kWh (시대일보),https://www.sidae.com/article/2026082717032378136,2026-08-27,,181.9,전력 단가 / TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가
-A,power_passthrough,100,,,%,judgment,"저자 판단: 대형 임대 계약은 전력비 별도 청구가 일반적이고, 한국 25만원·미국 190~235달러 임대료가 모두 CBRE 계열 수치이므로 같은 정의(전력 제외)로 일관 처리. CBRE 임대료 정의(전력 포함 여부)는 원문 미확인 → 전력 포함 임대(SPC 부담)는 스트레스 시나리오",,,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
+A,power_passthrough,100,,,%,sourced,"도매 임대 관행: 임대료는 kW당으로 정하고 전력은 별도 청구가 일반적(Data Center Scouts: ""The rent is quoted per kilowatt and power is usually billed on top"", 구조 3종 = modified gross / NNN / gross with allowance), 턴키 임대료 ""per kilowatt-month, gross plus electricity""(gr1d, MetLife 인용). 한·미 임대료 모두 CBRE 계열 수치라 같은 정의(전력 제외)로 처리. CBRE 임대료의 전력 포함 정의는 원문 미확인",https://datacenterscouts.com/data-center-leasing/ ; https://gr1d.us/insights/powered-shell-vs-turnkey-vs-colocation,2026-10-08 ; 2026-10-15,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
 A,power_escalation,2,,,%/년,judgment,저자 판단: 전력단가 연 2% 인상,,,,2,전력단가 연 인상률 / TODO(source): 전력단가 연 인상률 — 한전 판매단가 시계열
 A,tax_brackets,"2:10,200:20,3000:22,inf:25",,,억원:%,sourced,"법인세법 제55조(2026 사업연도부터 1%p 인상, 국가법령정보센터 원문 확인), 택스가이드",https://taxguide.im/blog/corptax-rate,,,"2:10,200:20,3000:22,inf:25","법인세 누진세율(국세) / TODO(source): 법인세법 제55조 누진세율 '상한:세율' (예: 2:10,200:20,3000:22,inf:25)"
 A,tax_rate_local,10,,,법인세 대비 %,sourced,지방소득세 = 법인세의 10% (택스가이드),https://taxguide.im/blog/corptax-rate,,,10,지방세(지방소득세·주세) / 지방세법 — 법인지방소득세(법인세율의 10% 수준) / TODO(source): 조문 확인
 A,dep_years,20,,,년,judgment,"저자 판단: 정액 20년 (건물 40년·전기·기계설비 15년 내외 가중, 비중 확인 필요)",,,,20,감가상각 기간 / TODO(source): 감가상각 내용연수 — 법인세법 시행규칙 별표5(건축물)·별표6(업종별 설비) 가중
 A,operating_years,25,,,년,judgment,저자 판단,,,,25,운영기간 / TODO(source): 운영 기간(임대 계약 기간·토지 사용 기간)
-A,exit_cap_rate,7,,,%,judgment,저자 판단: 잔존가치 cap rate 7.0% (국내 데이터센터 거래 공개 사례 확인 필요),,,,7,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+A,exit_cap_rate,7,,,%,judgment,"저자 판단: 국내 데이터센터 거래 cap rate 공개 근거 없음 → 미국 안정화 하이퍼스케일 범위(5.0~7.5%, Houlihan Lokey 2026.10) 안에서 B(6.0%)보다 1.0%p 높게 둠 — 계통 승인·사전 임대율 위험과 거래 시장 유동성 차이 반영",,,,7,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
 A,margin_bp,150,,,bp,judgment,"저자 판단 (비교: 전량 임차 군산 선순위 '5% 초반', 이데일리). 기준금리 = ECOS 국고채 3년",https://en.edaily.co.kr/news/eda202610125649/,2026-10-12,,150,가산금리 / TODO(source): 가산금리 — 국내 데이터센터·인프라 PF 대출 공시·보도
 A,target_dscr,1.45,,,배,judgment,"저자 판단 (근거: 소형·램프업형 1.45~1.60배, Gridlines 2026)",https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,1.45,목표 DSCR / TODO(source): 목표 DSCR — 대주 term sheet 관행 자료
 A,max_gearing,65,,,%,judgment,"저자 판단 (비교: 군산 본PF 6,576억 ÷ 사업비 8,700억 ≈ 76%, 이데일리)",https://en.edaily.co.kr/news/eda202610125649/,2026-10-12,,65,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC) — PF 제도·대주 관행 자료
@@ -63,7 +63,7 @@ B,tax_rate_national,,,,%,,,,,,21,법인세율(국세·연방) / U.S. federal cor
 B,tax_rate_local,,,,%,,,,,,6,"지방세(지방소득세·주세) / Virginia corporate income tax 6% (Va. Code §58.1-400), 연방 과세소득에서 공제 / TODO(source): 원문 확인"
 B,dep_years,20,,,년,judgment,저자 판단: 정액 20년,,,,20,감가상각 기간 / TODO(source): 감가상각 기간 — 회계(정액) 기준 내용연수
 B,operating_years,25,,,년,judgment,저자 판단,,,,25,운영기간 / TODO(source): 운영 기간(임대 계약 기간)
-B,exit_cap_rate,6,,,%,judgment,저자 판단: 잔존가치 cap rate 6.0% (북미 데이터센터 거래 cap rate 보고서 확인 필요),,,,6,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+B,exit_cap_rate,6,5,7.5,%,sourced,"Houlihan Lokey Data Center Update(2026.10): 안정화 하이퍼스케일 cap rate 5.0~7.5%, 디지털리얼티-블랙스톤 북버지니아 3개 센터 거래 내재 cap rate 5%대 초반 → 6.0%는 실제 거래보다 보수적",https://cdn.hl.com/pdf/2026/real-estate-data-center-update-october-2026.pdf,2026-10,,6,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
 B,margin_bp,,,,bp,,,,,,null,가산금리 / TODO(source): 가산금리 — 미국 데이터센터 건설·영구 대출 보도
 B,target_dscr,1.30,,,배,sourced,Gridlines 2026: 투자등급 임차인 하이퍼스케일 1.20~1.40배,https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,1.3,목표 DSCR / TODO(source): 목표 DSCR
 B,max_gearing,75,,,%,sourced,Lev 2026: 데이터센터 LTC 60~80%,https://www.lev.com/blog/data-center-financing-2026,2026-08-20,,75,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC)

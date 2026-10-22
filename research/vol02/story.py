@@ -130,6 +130,9 @@ class Story:
             "finance": self.T("Gridlines(2026), Lev(2026-08-20), 이데일리(2026-10-12)", "Gridlines (2026); Lev (20 Aug 2026); Edaily (12 Oct 2026)"),
             "tax": self.T("법인세법 제55조(택스가이드), 미국 연방 세법 26 U.S.C. §11(b), 버지니아 주법 §58.1-400",
                           "Korean Corporate Tax Act Art. 55 (Taxguide); 26 U.S.C. §11(b); Va. Code §58.1-400"),
+            "lease": self.T("Data Center Scouts, Data center leasing(2026-09-25 게시, 2026-10-08 갱신); gr1d, Powered Shell vs Turnkey vs Colocation(2026-10-15)",
+                            "Data Center Scouts, Data center leasing (posted 25 Sep 2026, updated 8 Oct 2026); gr1d, Powered Shell vs Turnkey vs Colocation (15 Oct 2026)"),
+            "hl": "Houlihan Lokey, Data Center Update (Oct 2026)",
             "power": self.T("시대일보(2026-08-27, 한전 2025년 평균 산업용 판매단가)", "Sidae Ilbo (27 Aug 2026; KEPCO 2025 average industrial tariff)"),
             "ksj": "KSJ Research",
         }
@@ -377,8 +380,8 @@ class Story:
             pc = self.power_clause()
             if pc is not None:
                 pt_r, gr_r, _ = pc
-                bl.append(self.T(f"{cs} — 기준은 별도 청구(CBRE 임대료와 같은 전력 제외 정의, CBRE 정의는 원문 미확인)",
-                                 f"{cs} — base is pass-through (same ex-power definition as CBRE rents; CBRE definition not verified)"))
+                bl.append(self.T(f"{cs} — 기준은 별도 청구(도매 임대 관행, Data Center Scouts·gr1d). CBRE 임대료의 전력 포함 정의는 원문 미확인. 도매 임대 관행상 전력은 별도 청구가 일반적",
+                                 f"{cs} — base is pass-through (wholesale practice; Data Center Scouts, gr1d). CBRE's definition of whether rent includes power is not verified; in wholesale leasing, power is usually billed separately"))
             bl.append(self.T(f"{self.binding_text(b)}: 최소 DSCR {self.x(b.min_dscr)}, Equity IRR {self.irr2(b)}",
                              f"{self.binding_text(b)[0].upper() + self.binding_text(b)[1:]}: min DSCR {self.x(b.min_dscr)}, equity IRR {self.irr2(b)}"))
         else:
@@ -510,12 +513,12 @@ class Story:
                          if res else
                          self.T("SPC는 장기 책임임대 임대료로 대출을 갚고, 전력비는 임차인이 부담한다(패스스루)",
                                 "The SPC repays debt from long-term committed rent; power is passed through to the tenant")),
-                  src=["ksj"], chart_key="structure", chart=charts.structure(nodes, edges, c),
+                  src=["ksj", "lease"], chart_key="structure", chart=charts.structure(nodes, edges, c),
                   note=(self.T(f"케이스 A 기준 구조도(가상). 임대료를 전력 포함(gross)으로 보고 SPC가 전력비 부담(원문에서 전력 포함 여부 미확인 → p7에 별도 청구 비교).",
                                f"Case A structure (hypothetical). Rent treated as gross of power, so the SPC pays power (inclusion not confirmed in the source; pass-through compared on p7).")
                         if gross else
-                        self.T(f"케이스 A 기준 구조도(가상). 전력비 별도 청구 {pt * 100:.0f}%(저자 판단: 대형 임대 계약의 일반 구조, 한·미 임대료 모두 CBRE 계열이라 같은 전력 제외 정의로 처리 — CBRE 정의는 원문 미확인). 전력 포함 임대는 p7 스트레스.",
-                               f"Case A structure (hypothetical). Power billed separately, {pt * 100:.0f}% (judgment: usual for large leases; both rents are CBRE-family figures, so one ex-power definition — CBRE definition not verified). Gross rent is a stress on p7.")) + rs)
+                        self.T(f"케이스 A 기준 구조도(가상). 전력비 별도 청구 {pt * 100:.0f}%(도매 임대는 kW당 임대료 + 전력 별도 청구가 일반적: Data Center Scouts·gr1d, 한·미 임대료를 같은 전력 제외 정의로 처리). CBRE 임대료의 전력 포함 정의는 원문 미확인. 도매 임대 관행상 전력은 별도 청구가 일반적. 전력 포함 임대는 p7 스트레스.",
+                               f"Case A structure (hypothetical). Power billed separately, {pt * 100:.0f}% (wholesale leases quote rent per kW with power billed on top: Data Center Scouts, gr1d; both rents use one ex-power definition). CBRE's definition of whether rent includes power is not verified; in wholesale leasing, power is usually billed separately. Gross rent is a stress on p7.")) + rs)
         rows = [
             [self.T("임대차", "Lease"), self.T("임차인", "Tenant"), self.T("장기 책임임대 · 임대료 kW·월 · 연 인상", "Long-term committed lease; rent per kW-month; annual escalation"),
              self.T("사전 임대율 · 임차인 신용", "Pre-lease ratio; tenant credit")],
@@ -1154,7 +1157,8 @@ class Story:
         dep = (self.T(f"감가상각 정액 {da:.0f}년", f"straight-line depreciation {da:.0f} yrs") if da and da == db
                else self.T("감가상각 미반영 → IRR 보수적", "no depreciation → IRRs conservative"))
         ny = int(self.A("operating_years").value or 0) + 1
-        tv = (self.T(f"잔존가치 = {ny}년차 EBITDA ÷ cap rate(A {self.pct(ca)} · B {self.pct(cb)}, 저자 판단)", f"terminal value = year-{ny} EBITDA ÷ cap rate (A {self.pct(ca)}, B {self.pct(cb)}; judgment)")
+        tv = (self.T(f"잔존가치 = {ny}년차 EBITDA ÷ cap rate(A {self.pct(ca)} 저자 판단: 국내 거래 근거 없어 미국보다 1%p 높게 · B {self.pct(cb)}: Houlihan Lokey 안정화 하이퍼스케일 5.0~7.5%, 북버지니아 실제 거래 5%대 초반보다 보수적)",
+                     f"terminal value = year-{ny} EBITDA ÷ cap rate (A {self.pct(ca)}, judgment: no Korean deal evidence, set 1pp above the U.S.; B {self.pct(cb)}: Houlihan Lokey stabilised hyperscale 5.0–7.5%, conservative vs low-5% Northern Virginia deals)")
               if ca and cb else self.T("잔존가치 제외", "no terminal value"))
         return f"{dep}, {tv}" if self.kr else f"{dep[0].upper() + dep[1:]}; {tv}"
 
@@ -1191,7 +1195,7 @@ class Story:
             pcost = float(gr_r.ops["power_cost"].iloc[si])
             c1 = Cell(title=self.T(f"전력비 포함 비율 0%→100%: Equity IRR {self.pct(curve[shares[0]].equity_irr)} → {self.pct(curve[shares[-1]].equity_irr)}, 대출 한도 {self.money('A', curve[shares[0]].debt)} → {self.money('A', curve[shares[-1]].debt)}",
                                    f"Power share in rent 0%→100%: equity IRR {self.pct(curve[shares[0]].equity_irr)} → {self.pct(curve[shares[-1]].equity_irr)}; debt {self.money('A', curve[shares[0]].debt)} → {self.money('A', curve[shares[-1]].debt)}"),
-                      src=["market", "power", "ksj"],
+                      src=["market", "lease", "power", "ksj"],
                       legend=[(c["warm_grey_light"], self.T("대출 한도(억원)", "Debt (KRW)")), (c["gold"], "Equity IRR"),
                               (c["brick"], self.T("잔존가치 제외", "Ex-TV"))],
                       unit=self.T("x축 = 임대료에 포함된 전력비 비율(SPC 부담), 단계마다 다시 sizing", "x-axis = share of power cost inside rent (SPC-borne), re-sized at each step"),
@@ -1199,10 +1203,10 @@ class Story:
                       chart=charts.debt_irr_curve(labs, [curve[sh].debt for sh in shares], [curve[sh].equity_irr * 100 for sh in shares],
                                                   [curve[sh].equity_irr_ex_tv * 100 for sh in shares] if curve[shares[0]].terminal_value else None,
                                                   notes, c, dfmt, ("debt", "IRR", "ex-TV")),
-                      note=self.T(f"0% = 전력비 별도 청구(기준, 저자 판단: 대형 임대 계약의 일반 구조, 한·미 임대료 모두 CBRE 계열이라 같은 전력 제외 정의로 처리 — CBRE 정의는 원문 미확인), 100% = 전력 포함 임대(SPC 부담, 스트레스). "
+                      note=self.T(f"0% = 전력비 별도 청구(기준: 도매 임대는 kW당 임대료 + 전력 별도 청구가 일반적, Data Center Scouts·gr1d — CBRE 임대료의 전력 포함 정의는 원문 미확인. 도매 임대 관행상 전력은 별도 청구가 일반적), 100% = 전력 포함 임대(SPC 부담, 스트레스). "
                                   f"전력비 = IT {a.inp.mw:,.0f}MW × 가동률 × IT 부하율 {self.pct(a.inp.it_load_factor, 0)} × PUE {a.inp.pue:.1f} × 8,760시간 × {a.inp.power_price:,.1f}원/kWh(한전 2025년 평균 산업용, 시대일보 2026-08-27), 연 {self.pct(a.inp.power_escalation, 0)} 인상 — 안정화 첫해 {self.money('A', pcost)}. "
                                   + (f"전력 포함 시 단가 {cut_v:+.0f}원({cut_cfg.get('note', '')}, 시대일보 {cut_cfg.get('published', '')})이면 Equity IRR {self.pct(cut.equity_irr)}·대출 {self.money('A', cut.debt)} — 제안 단계라 민감도로만" if cut is not None else ""),
-                                  f"0% = power billed separately (base; judgment: usual for large leases, and both rents are CBRE-family figures, so one ex-power definition — CBRE definition not verified); 100% = gross rent (SPC pays; stress). "
+                                  f"0% = power billed separately (base: wholesale leases quote rent per kW with power on top, Data Center Scouts, gr1d — CBRE's definition of whether rent includes power is not verified; in wholesale leasing, power is usually billed separately); 100% = gross rent (SPC pays; stress). "
                                   f"Power = IT {a.inp.mw:,.0f} MW × occupancy × IT load {self.pct(a.inp.it_load_factor, 0)} × PUE {a.inp.pue:.1f} × 8,760 h × KRW {a.inp.power_price:,.1f}/kWh (KEPCO 2025 avg industrial), +{self.pct(a.inp.power_escalation, 0)}/yr — {self.money('A', pcost)} in the first stabilised year. "
                                   + (f"With gross rent, a KRW {cut_v:+.0f}/kWh cut (proposal for the northern Seoul metro, Sidae Ilbo {cut_cfg.get('published', '')}) gives equity IRR {self.pct(cut.equity_irr)}, debt {self.money('A', cut.debt)} — proposal only, sensitivity" if cut is not None else "")))
         else:
@@ -1295,8 +1299,11 @@ class Story:
         power_row = [self.T("① 전력비 부담", "① Power-cost clause"),
                      (self.T(f"별도 청구 vs 전력 포함: Equity IRR {self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}, 대출 {self.money('A', pc[0].debt)} vs {self.money('A', pc[1].debt)}",
                              f"Pass-through vs gross: equity IRR {self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}; debt {self.money('A', pc[0].debt)} vs {self.money('A', pc[1].debt)}")
-                      if pc is not None else self.T("패스스루 조항 · 예외(공용부) 확인", "Pass-through clause; carve-outs")),
-                     self.T("패스스루 조항 · 버지니아 요금 상승 시 임차인 부담 (오른쪽 아래 표)", "Pass-through clause; tenant burden as Virginia prices rise (table below right)"), "7, 8"]
+                      if pc is not None else self.T("패스스루 조항 · 예외(공용부) 확인", "Pass-through clause; carve-outs"))
+                     + self.T(" — 확인: 별도 청구 시 take-or-pay 최소 요금 유무(배정 전력의 60~85%로 늘어나는 추세)",
+                              " — check: take-or-pay minimum on billed power (trending to 60–85% of allocated power)"),
+                     self.T("패스스루 · take-or-pay 최소 요금 조항 · 버지니아 요금 상승 시 임차인 부담 (오른쪽 아래 표)",
+                            "Pass-through and take-or-pay clauses; tenant burden as Virginia prices rise (table below right)"), "7, 8, A1"]
         rows = [
             power_row,
             [self.T("계통 승인", "Grid approval"), self.T(f"1단계 확정 승인 필수 · 2단계는 옵션 (승인률 {self.grid_short()})", f"Phase 1 approval a must; phase 2 as an option ({self.grid_short()})"),
@@ -1323,7 +1330,7 @@ class Story:
         ]
         c1 = Cell(title=self.T("대주 체크리스트: 첫 번째 확인 항목은 전력비 부담 구조, 그다음 한국은 '승인과 임차인', 미국은 '금리와 공사비'",
                                "Lender checklist: check the power-cost structure first; then Korea — approval and tenants, U.S. — rates and cost"),
-                  src=["grid", "market", "cost", "finance", "ksj"],
+                  src=["lease", "grid", "market", "cost", "finance", "ksj"],
                   table=TableSpec([self.T("항목", "Item"), self.T("한국 40MW", "Korea 40 MW"), self.T("미국 100MW", "U.S. 100 MW"), self.T("근거 쪽", "Pages")], rows,
                                   [0.15, 0.40, 0.33, 0.12], ["L", "L", "L", "C"], shade_rows={0}, gold_cells={(0, 1)}, font_size=8.0),
                   note=self.T("가상 케이스 기준의 점검 항목. 숫자는 본문 계산값", "Checklist for the hypothetical cases; figures from the body"))
@@ -1338,8 +1345,8 @@ class Story:
         else:
             limits.append(self.T("감가상각·잔존가치 미입력 → 법인세 과대, IRR 보수적", "No depreciation or terminal value → tax overstated, IRRs conservative"))
         if not self.a_gross() and self.power_clause() is not None:
-            limits.append(self.T("케이스 A 임대료 25만원은 전력 제외(별도 청구)로 보고 미국 CBRE 수치와 같은 정의로 처리했다 — CBRE 임대료 정의는 원문 미확인, 전력 포함이면 p7 스트레스",
-                                 "Case A's KRW 250k rent is treated as ex-power (billed separately), the same definition as the U.S. CBRE figures — CBRE's definition not verified; gross rent is the p7 stress"))
+            limits.append(self.T("케이스 A 임대료 25만원은 전력 제외(별도 청구)로 보고 미국 CBRE 수치와 같은 정의로 처리했다 — CBRE 임대료의 전력 포함 정의는 원문 미확인. 도매 임대 관행상 전력은 별도 청구가 일반적. 전력 포함이면 p7 스트레스",
+                                 "Case A's KRW 250k rent is treated as ex-power (billed separately), the same definition as the U.S. CBRE figures — CBRE's definition of whether rent includes power is not verified; in wholesale leasing, power is usually billed separately. Gross rent is the p7 stress"))
         if self.a_gross():
             limits.append(self.T("케이스 A 임대료 25만원의 전력 포함 여부는 원문에서 미확인 — 전력 포함(SPC 부담)을 기준으로 두고 별도 청구를 비교(p7)",
                                  "Whether Case A's KRW 250k rent includes power is unconfirmed — gross is the base, pass-through compared (p7)"))
@@ -1470,10 +1477,10 @@ class Story:
         if pc is not None and not self.a_gross():
             pt_r, gr_r, _ = pc
             pcs = float(gr_r.ops["power_cost"].iloc[a.power["stab_year"] - 1]) if a.power else float("nan")
-            ans = self.T(f"케이스 A·B 모두 임차인이 사용량 × 단가로 낸다(별도 청구, 대형 임대 계약의 일반 구조 — 한·미 임대료가 모두 CBRE 계열이라 같은 정의로 처리). "
+            ans = self.T(f"케이스 A·B 모두 임차인이 사용량 × 단가로 낸다(별도 청구: 도매 임대는 kW당 임대료 + 전력 별도 청구가 일반적 — Data Center Scouts·gr1d, 한·미 임대료를 같은 정의로 처리). "
                          f"임대료에 전력이 포함되면 SPC가 안정화 첫해 {self.money('A', pcs)}을 부담해 Equity IRR {self.pct(pt_r.equity_irr)} → {self.pct(gr_r.equity_irr)}, 대출 한도 {self.money('A', pt_r.debt)} → {self.money('A', gr_r.debt)}. "
                          "그래서 대주가 가장 먼저 확인할 조항이다",
-                         f"In both cases the tenant pays usage × tariff (billed separately, usual for large leases; both rents are CBRE-family figures, so one definition). "
+                         f"In both cases the tenant pays usage × tariff (billed separately: wholesale rent is quoted per kW with power on top — Data Center Scouts, gr1d; one definition for both rents). "
                          f"If rent included power, the SPC would bear {self.money('A', pcs)} in the first stabilised year: equity IRR {self.pct(pt_r.equity_irr)} → {self.pct(gr_r.equity_irr)}, debt {self.money('A', pt_r.debt)} → {self.money('A', gr_r.debt)}. "
                          "That makes it the first clause a lender checks")
             key.add(len(qa))
@@ -1485,6 +1492,16 @@ class Story:
                          f"Case A treats the KRW 250k rent as gross of power, so the SPC pays (inclusion unconfirmed → conservative lender view). Stabilised power cost {self.money('A', a.power['power_cost_stab'])} "
                          f"({self.pct(a.power['share_of_revenue_stab'], 0)} of revenue). If passed through, yield on cost {self.pct(a.yoc)} → {self.pct(pf_yoc(ptr))}, debt {self.money('A', a.base.debt)} → {self.money('A', ptr.debt)}. Case B passes power to the tenant")
         qa.append([self.T("전력비는 누가 내나?", "Who pays for power?"), ans, "1, 7"])
+        if pc is not None and not self.a_gross():
+            mid_ = a.power_curve.get(0.5)
+            qa.append([self.T("전력비를 임차인이 내면 SPC의 전력 위험은 사라지나?", "If the tenant pays for power, is the SPC's power risk gone?"),
+                       self.T("아니다. take-or-pay 최소 요금과 미사용 전력 처리 조항에 달려 있다. 임차인이 배정 전력보다 덜 쓰면 계약 전력 기준 요금이 SPC에 남을 수 있어, "
+                              "별도 청구 계약에도 최소 요금(배정 전력의 60~85%로 늘어나는 추세, Data Center Scouts)이 있는지 확인해야 한다. 조항이 있으면 위험은 임차인 신용 위험으로 바뀐다. "
+                              + (f"이 노트의 Base는 전액 전가를 가정했고, 절반만 전가되면 Equity IRR {self.pct(pc[0].equity_irr)} → {self.pct(mid_.equity_irr)}(p7 곡선)" if mid_ is not None else ""),
+                              "No. It depends on take-or-pay minimums and how unused power is treated. If the tenant draws less than its allocation, charges based on contracted capacity can stay with the SPC, "
+                              "so check whether the lease sets a minimum (trending to 60–85% of allocated power, Data Center Scouts). With one, the risk becomes tenant credit risk. "
+                              + (f"The base assumes full pass-through; at half, equity IRR falls {self.pct(pc[0].equity_irr)} → {self.pct(mid_.equity_irr)} (p7 curve)" if mid_ is not None else "")),
+                       "7, 8"])
         # 6-2 램프업 이자
         if ok(a) and a.inp.grace_interest == "reserve" and a.inp.grace_years > 0:
             g_ = a.inp.grace_years
@@ -1511,9 +1528,9 @@ class Story:
                           f"Computed in USD, converted at ECOS USD/KRW {fx:,.1f} ({r.fx_date}): KRW 100mn = USD mn × FX ÷ 100. Hedging costs are excluded" if fx else "FX data pending"),
                    "6, A4"])
         cell = Cell(title=self.T(f"예상 질문 {len(qa)}개와 답 — 대주 관점 포함", f"{len(qa)} expected questions, including the lender's view"),
-                    src=["grid", "market", "iea", "ecos", "fred", "dart", "eia"],
+                    src=["grid", "market", "lease", "iea", "ecos", "fred", "dart", "eia"],
                     table=TableSpec([self.T("질문", "Question"), self.T("답", "Answer"), self.T("근거 쪽", "Page")], qa, [0.22, 0.7, 0.08],
-                                    ["L", "L", "C"], shade_rows=key, font_size=8.1),
+                                    ["L", "L", "C"], shade_rows=key, font_size=7.8 if len(qa) > 9 else 8.1),
                     note=self.T("답의 숫자는 본문과 같은 계산 결과. 음영 = 대주 관점 핵심 질문", "Numbers match the body; shaded = core lender questions"))
         return Page("full", "A1", self.T("예상 질의응답: 대주가 먼저 묻는 것", "Expected Q&A: what lenders ask first"),
                     self.T("투자심사·대주 실사에서 나올 질문과 근거 쪽수", "Questions likely in credit review and lender due diligence, with page references"), [cell], grid="1x1")
@@ -1562,7 +1579,8 @@ class Story:
                   ("stocktitan", "Cushman & Wakefield 2026 Cost Guide", "Cushman & Wakefield 2026 Cost Guide"),
                   ("global-data-center-trends", "CBRE Global DC Trends 2026", "CBRE Global DC Trends 2026"),
                   ("north-america-data-center", "CBRE NA DC Trends H1 2026", "CBRE NA DC Trends H1 2026"), ("lev.com", "Lev 2026", "Lev 2026"),
-                  ("sidae", "시대일보", "Sidae Ilbo")]
+                  ("sidae", "시대일보", "Sidae Ilbo"), ("datacenterscouts", "Data Center Scouts", "Data Center Scouts"),
+                  ("gr1d", "gr1d", "gr1d"), ("hl.com", "Houlihan Lokey 2026.10", "Houlihan Lokey (Oct 2026)")]
 
     def publishers(self, a: Assumption) -> list[str]:
         u = a.url or ""
@@ -1627,7 +1645,7 @@ class Story:
         n_i = sum(d[k].status == "input" for k in keys)
         cell = Cell(title=self.T(f"{self.name(case)}: 근거 있음 {n_s}개 · 저자 판단 {n_j}개 · 미입력 {n_i}개 — 판단은 음영으로 구분",
                                  f"{self.name(case)}: {n_s} sourced · {n_j} author's judgment · {n_i} not set — judgments shaded"),
-                    src=["market", "cost", "finance", "tax"] if case == "B" else ["market", "cost", "finance", "tax", "grid"],
+                    src=["market", "cost", "finance", "tax", "hl"] if case == "B" else ["market", "lease", "cost", "finance", "tax", "grid", "hl"],
                     table=TableSpec([self.T("항목", "Item"), self.T("값 (범위)", "Value (range)"), self.T("단위", "Unit"), self.T("근거·출처", "Basis / source"),
                                      self.T("상태", "Status")], rows, [0.19, 0.14, 0.10, 0.46, 0.11], ["L", "R", "L", "L", "C"],
                                     shade_rows=shade, brick_cells=brick, gold_cells=gold, strong_cells=strong, font_size=7.4),
