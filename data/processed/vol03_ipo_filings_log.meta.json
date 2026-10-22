@@ -2,7 +2,7 @@
   "source": "Open DART list.json",
   "endpoint": "(processed)",
   "params": {},
-  "fetched_at": "2026-10-22T15:39:07+00:00",
+  "fetched_at": "2026-10-22T16:17:31+00:00",
   "as_of": "2026-10-20",
-  "license_note": "신고서별 처리: used(사용) · after_first(같은 회사 이후 신고서, 기록만) · no_band · low_confidence · download_fail · excluded_*"
+  "license_note": "신고서별 처리(접수 시점 판정): used=사용 · low_confidence=추출 신뢰도 낮음 · after_first=같은 회사 이후 신고서(기록만) · listed_at_filing=접수 시점 상장사(상장일 ≤ 접수일, 원문 없이 제외) · not_ipo_text=원문에 IPO 문구·밴드 없음(상장사 유상증자 등) · after_not_ipo=접수 시점 상장사로 판정된 회사의 이후 신고서 · no_band=원문에서 밴드 미검출(IPO 문구는 있음) · download_fail=원문 다운로드·해석 실패 · skipped_limit=원문 상한 초과 · excluded_report=보고서명 불일치 · excluded_name=스팩·리츠 등 제외 이름 · excluded_cls=현재 corp_cls ≠ E로 제외(예전 방식, look-ahead bias)"
 }
