@@ -48,12 +48,13 @@ def build(cfg: Mapping, as_of: str, langs: tuple[str, ...] = ("kr", "en"), out_d
         st = story.Story(cfg, facts, lang)
         pages = st.pages()
         ctx = layout.Ctx(cfg["research"]["colors"], w, h, lang, cfg["research"]["brand"], st.sources(), st.labels(),
-                         build_dir, st.footer())
+                         build_dir, st.footer(), cfg["research"].get("copyright", ""))
         path = out_dir / f"KSJ_Research_Vol01_{lang.upper()}.pdf"
         n = layout.render(path, ctx, pages, cover_bg, {
             "title": v["title_kr"] if lang == "kr" else v["title_en"], "author": cfg["research"]["author"],
             "subject": f"{cfg['research']['brand']} Research Note Vol.1"})
         result["pdfs"][lang], result["pages"][lang] = path, n
+        result.setdefault("render_warnings", {})[lang] = list(ctx.warnings)
         result["pending"][lang] = [(pg.label, cell.title, cell.placeholder[1]) for pg in pages for cell in pg.cells
                                    if cell.placeholder]
         if lang == "kr":
@@ -102,6 +103,8 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
     f = r["facts"]
     lines = ["# Vol.1 빌드 요약\n", f"- 기준일: {as_of} · 빌드(UTC): {utc_now_iso()}", f"- 폰트: {r['fonts']}", ""]
     lines += ["## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
+    rw = [f"{lang}: {w}" for lang, ws in r.get("render_warnings", {}).items() for w in ws]
+    lines += ["", "**렌더링 점검 (목차·바닥글·뒤표지 넘침)**: " + ("; ".join(rw) if rw else "이상 없음")]
     lines += ["", "## 페이지 제목 (국문)", ""] + [f"- **{lab}** {t}" for lab, t in r.get("page_titles", [])]
     pend = r["pending"].get("kr") or next(iter(r["pending"].values()), [])
     lines += ["", "## 데이터 수집 후 생성되는 Exhibit", ""]

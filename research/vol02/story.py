@@ -120,8 +120,8 @@ class Story:
             "fred": "FRED, Federal Reserve Bank of St. Louis (DGS10)",
             "dart": self.T("금융감독원 DART 사업보고서(연결)", "FSS DART annual reports (consolidated)"),
             "eia": "U.S. Energy Information Administration (EIA), Electricity retail sales",
-            "grid": self.T("수도권 계통 신청·승인 공개 보도(2024.8~2026.3, 신규 신청 전체 기준, 원문 확인 중)",
-                           "Public reports on Seoul-metro grid applications (Aug 2024–Mar 2026, all new applications; source being verified)"),
+            "grid": self.T("블록미디어, 국내 AI 데이터센터 프로젝트 4건의 가동 준비 현황과 손익분기 조건(2024.8~2026.3 수도권 1단계 계통 신청·최종 공급 승인)",
+                           "Blockmedia, readiness and breakeven conditions of four Korean AI data-centre projects (Seoul-metro phase-1 grid applications and final supply approvals, Aug 2024–Mar 2026)"),
             "law": self.T("분산에너지 활성화 특별법(전력계통영향평가)", "Distributed Energy Act (grid impact assessment)"),
             "market": self.T("블록미디어(CBRE 인용), CBRE Global Data Center Trends 2026, CBRE North America Data Center Trends H1 2026",
                              "Blockmedia (citing CBRE); CBRE Global Data Center Trends 2026; CBRE North America Data Center Trends H1 2026"),
@@ -169,7 +169,7 @@ class Story:
 
     def grid_basis(self) -> str:
         g = self.f.grid
-        return self.T(f"{g.period}, {g.basis_note}", f"{g.period}, all new grid applications in the Seoul metro")
+        return self.T(f"{g.period}, {g.basis_note}", f"{g.period}, all Seoul-metro phase-1 grid applications (final supply approval)")
 
     def capex_range_text(self) -> str:
         cx = self.A("capex_per_mw")
@@ -281,7 +281,10 @@ class Story:
             self.T(f"기준일 {self.f.as_of}. 계산 방법과 코드는 저장소에서 재현할 수 있다.",
                    f"As of {self.f.as_of}. Methods and code can be reproduced from the repository."),
         ]
-        return Page("back", title="Disclosures", extra={"items": items, "repo": self.cfg["research"]["repo_url"]})
+        from research.disclosures import contact_line, license_items
+        items += license_items(self.cfg, self.kr)
+        return Page("back", title="Disclosures", extra={"items": items, "repo": self.cfg["research"]["repo_url"],
+                                                         "contact": contact_line(self.cfg)})
 
     # --- Executive Summary --------------------------------------------------
     def headline(self) -> str:
@@ -809,6 +812,9 @@ class Story:
                               + "DSRA 목표 = 다음 해 원리금 × 개월/12, 만기 해에 해제. 원금 음수 = 원리금 < 이자(잔액 증가)",
                               ("Reserve: negative = draw (interest gap); the balance is released to equity in the last grace year. Bracketed DSCR = ramp-up CFADS ÷ interest before reserve. " if res else "")
                               + "DSRA target = next year's debt service × months/12, released at maturity. Negative principal = debt service below interest"))
+        t0_ = inp.grace_years if inp.grace_interest == "reserve" else 0
+        dc_ = (o["cfads_contracted"] / o["debt_service"]).iloc[t0_:inp.tenor_years]
+        c_year = int(o["year"].iloc[t0_ + int(np.nanargmin(dc_.to_numpy()))]) if len(dc_) else None
         srows = []
         for s in SCENARIOS:
             r_ = a.scenarios[s]
@@ -828,8 +834,12 @@ class Story:
                   table=TableSpec([self.T("시나리오(성장률)", "Scenario (growth)"), self.T("대출 한도", "Debt"), self.T("최소 DSCR", "Min DSCR"), "LLCR",
                                    "Project IRR", "Equity IRR", self.T("계약분 DSCR", "Contr. DSCR")], srows,
                                   [0.2, 0.17, 0.12, 0.1, 0.13, 0.13, 0.15], ["L", "R", "R", "R", "R", "R", "R"], shade_rows={1}, font_size=8.2),
-                  note=self.T("시나리오마다 대출을 다시 산정(sizing). 램프업 = 기준 기간 × IEA 기준 성장률 ÷ 시나리오 성장률. 계약분 DSCR = 사전 임대 계약 임대료만으로 본 최소 DSCR",
-                              "Debt re-sized per scenario. Ramp-up = base period × IEA base growth ÷ scenario growth. Contracted DSCR = min DSCR on pre-leased rent only"))
+                  note=self.T("시나리오마다 대출을 다시 산정(sizing). 램프업 = 기준 기간 × IEA 기준 성장률 ÷ 시나리오 성장률. "
+                              f"계약분 DSCR = 사전 임대율 {self.pct(inp.prelease)}의 계약 임대료만으로 본 원금 상환 기간 최소 DSCR"
+                              + (f"({c_year}년차)" if c_year else "") + " — 앵커 임차인 부재 위험을 보여주는 지표",
+                              "Debt re-sized per scenario. Ramp-up = base period × IEA base growth ÷ scenario growth. "
+                              f"Contracted DSCR = min DSCR over principal repayment years on {self.pct(inp.prelease)} pre-leased rent only"
+                              + (f" (year {c_year})" if c_year else "") + " — a gauge of the risk of having no anchor tenant"))
         title = self.T(f"{self.name(case)} 대출 한도 {self.money(case, b.debt)}(총사업비의 {self.pct(b.gearing, 0)}) — {self.binding_text(b)}",
                        f"{self.name(case)} debt capacity {self.money(case, b.debt)} ({self.pct(b.gearing, 0)} of cost) — {self.binding_text(b)}")
         if b.min_dscr_contracted < 0:
@@ -838,8 +848,8 @@ class Story:
         else:
             ctxt = self.T(f"계약 임대료만으로는 최소 DSCR {self.x(b.min_dscr_contracted)}", f"on contracted rent only, min DSCR {self.x(b.min_dscr_contracted)}")
         rs_ = (self.T(f" · 이자유보계좌 {self.money(case, b.cons.reserve_initial)}", f" · interest reserve {self.money(case, b.cons.reserve_initial)}") if res else "")
-        sub = self.T(f"최소 DSCR {self.x(b.min_dscr)} · LLCR {self.x(b.llcr)} · Equity IRR {self.pct(b.equity_irr)}{rs_} — {ctxt}",
-                     f"Min DSCR {self.x(b.min_dscr)} · LLCR {self.x(b.llcr)} · equity IRR {self.pct(b.equity_irr)}{rs_} — {ctxt}")
+        sub = self.T(f"최소 DSCR {self.x(b.min_dscr)} · LLCR {self.x(b.llcr)} · Equity IRR {self.irr2(b)}{rs_}",
+                     f"Min DSCR {self.x(b.min_dscr)} · LLCR {self.x(b.llcr)} · equity IRR {self.irr2(b)}{rs_}")
         return title, sub, [c1, c2, c3, c4]
 
     # --- p4 민감도·스트레스 ---------------------------------------------------
@@ -952,9 +962,13 @@ class Story:
                                            f"Case B: min DSCR {self.x(b.base.min_dscr)}; most sensitive: {vn[b.tornado.iloc[0]['variable']]}{t20}"),
                               src=["ksj"], table=TableSpec([self.T("변수", "Variable"), self.T("불리", "Adverse"), self.T("유리", "Favourable")], rows,
                                                            [0.5, 0.25, 0.25], ["L", "R", "R"], font_size=8.6),
-                              note=self.T(f"같은 스트레스 + 임대료 −20%: 하이퍼스케일 실계약 임대료가 CBRE 호가(250~500kW 기준)보다 낮을 경우의 위험. 대출 스케줄 고정"
+                              note=self.T(f"같은 스트레스 + 임대료 −20%: 하이퍼스케일 실계약 임대료가 CBRE 호가(250~500kW 기준)보다 낮을 경우의 위험. "
+                                          + (f"CAPEX(전력기기 가격) = 전력설비 비중 {self.pct(self.B('power_equipment_share').value, 0)}(C&W 2026) × 피어 함의 가격 상승률(고 {self.pct((b.capex_stress['high'] - 1) / self.B('power_equipment_share').value)}) = +{(b.capex_stress['high'] - 1) * 100:.1f}%. " if ok(b.capex_stress) else "")
+                                          + "대출 스케줄 고정"
                                           + (f", 가산금리 {b.margin_bp:.0f}bp 시나리오(미확정)" if b.margin_bp is not None else ""),
-                                          f"Same stresses plus rent −20%: the risk that hyperscale contract rents sit below CBRE quotes (250–500 kW). Debt schedule fixed"
+                                          f"Same stresses plus rent −20%: the risk that hyperscale contract rents sit below CBRE quotes (250–500 kW). "
+                                          + (f"CAPEX (equipment prices) = power-equipment share {self.pct(self.B('power_equipment_share').value, 0)} (C&W 2026) × peer-implied price rise (high) = +{(b.capex_stress['high'] - 1) * 100:.1f}%. " if ok(b.capex_stress) else "")
+                                          + "Debt schedule fixed"
                                           + (f"; {b.margin_bp:.0f}bp margin scenario (not yet sourced)" if b.margin_bp is not None else ""))))
         else:
             cells.append(self.pending(self.T("케이스 B 스트레스 요약", "Case B stress summary"), ["ksj"], b))
@@ -1009,8 +1023,8 @@ class Story:
                   chart_key="opt_prob",
                   chart=charts.xy([(self.T("옵션 가치", "Option"), list(bp["approval_prob"] * 100), list(bp["value"]), c["gold"])], c,
                                   lambda v: f"{v:.0f}%", lambda v: f"{v:,.0f}", vline=vl),
-                  note=self.T(f"승인 확률 시나리오 10/30/50%(기준 30%, 저자 판단). 승인률은 신규 신청 전체 기준이라 개별 사업 확률이 아니다. 가치 = p × 승인 조건부 가치. {pend_kr}",
-                              f"Approval scenarios 10/30/50% (base 30%, author's judgment). The approval rate covers all new applications, not one project's odds. Value = p × conditional value. {pend_en}"))
+                  note=self.T(f"승인 확률 시나리오 10/30/50%(기준 30%, 저자 판단). 승인률은 수도권 1단계 신청 전체 기준(블록미디어)이라 개별 사업 확률이 아니다. 가치 = p × 승인 조건부 가치. {pend_kr}",
+                              f"Approval scenarios 10/30/50% (base 30%, author's judgment). The approval rate covers all Seoul-metro phase-1 applications (Blockmedia), not one project's odds. Value = p × conditional value. {pend_en}"))
         crit = r.critical_rent
         rows = [[self.T("지금 짓기 (승인 즉시 착공)", "Build now (on approval)"), self.money("A", r.build_now)],
                 [self.T("기다리기 (최적 착공, 옵션 가치)", "Wait (optimal timing, option value)"), self.money("A", r.value)],
@@ -1027,16 +1041,26 @@ class Story:
         dec_en = f"year {oi.decision_year} after phase-1 COD" + (" (= end of ramp-up, when demand is confirmed)" if op.decision_derived else "")
         cv = r.convergence
         last = cv.iloc[-1]
+        same = [s_ for s_ in SCENARIOS if s_ != "base" and crit.get(s_) is not None and crit.get(s_) == crit.get("base")]
+        crit_note_kr = crit_note_en = ""
+        if same:
+            occ_note = {s_: oi.scenarios[s_].get("ramp_years") for s_ in ["base"] + same}
+            crit_note_kr = (f" 임계 임대료 {'·'.join(self.scen(x) for x in same)} = 기준: 결정 시점(COD+{oi.decision_year}년)에 두 시나리오 모두 1단계가 안정화 가동률 "
+                            f"{self.pct(oi.phase2.stabilized_occupancy, 0)}에 도달(램프업 " + "·".join(f"{v:.1f}년" for v in occ_note.values() if v) + ")해 "
+                            "2단계 사전 임대율과 NPV가 같다(격자 해상도 문제 아님).")
+            crit_note_en = (f" Trigger rent for {', '.join(self.scen(x).lower() for x in same)} = base: by the decision date (COD+{oi.decision_year}) phase 1 is stabilised at "
+                            f"{self.pct(oi.phase2.stabilized_occupancy, 0)} in both (ramp-up " + "/".join(f"{v:.1f}" for v in occ_note.values() if v) + " yrs), "
+                            "so phase-2 pre-lease and NPV are identical (not a grid-resolution effect).")
         c2 = Cell(title=self.T(f"지금 짓기 {self.money('A', r.build_now)} vs 기다리기 {self.money('A', r.value)} — 기다림의 가치 {self.money('A', r.flexibility)}",
                                f"Build now {self.money('A', r.build_now)} vs wait {self.money('A', r.value)} — value of waiting {self.money('A', r.flexibility)}"),
                   src=["ksj"], table=TableSpec([self.T("항목 (p = 30%)", "Item (p = 30%)"), self.T("값", "Value")], rows, [0.56, 0.44], ["L", "R"],
                                                shade_rows={1}, gold_cells={(1, 1), (2, 1)}, font_size=8.2),
                   note=self.T(f"결정 시점 = {dec_kr}, 대기 {oi.window_years}년, 할인율 {self.pct(oi.phase2.discount_rate, 0)}, 임대료 변동성 {self.pct(oi.rent_volatility, 0)}(저자 판단), "
                               f"경로 {oi.n_paths:,}개·seed {oi.seed}: 표준오차 {last['stderr'] / last['value_conditional'] * 100:.1f}%"
-                              f"(경로 {int(cv.iloc[0]['n_paths']):,}개 {cv.iloc[0]['stderr'] / cv.iloc[0]['value_conditional'] * 100:.1f}%) — 수렴 확인",
+                              f"(경로 {int(cv.iloc[0]['n_paths']):,}개 {cv.iloc[0]['stderr'] / cv.iloc[0]['value_conditional'] * 100:.1f}%) — 수렴 확인." + crit_note_kr,
                               f"Decision {dec_en}; window {oi.window_years} yrs; discount {self.pct(oi.phase2.discount_rate, 0)}; rent vol. {self.pct(oi.rent_volatility, 0)} (judgment); "
                               f"{oi.n_paths:,} paths, seed {oi.seed}: s.e. {last['stderr'] / last['value_conditional'] * 100:.1f}% "
-                              f"({int(cv.iloc[0]['n_paths']):,} paths: {cv.iloc[0]['stderr'] / cv.iloc[0]['value_conditional'] * 100:.1f}%) — converged"))
+                              f"({int(cv.iloc[0]['n_paths']):,} paths: {cv.iloc[0]['stderr'] / cv.iloc[0]['value_conditional'] * 100:.1f}%) — converged." + crit_note_en))
         gd = op.grid
         drs, wins = sorted(gd["discount_rate"].unique()), sorted(gd["window_years"].unique())
         grows = []
@@ -1062,7 +1086,7 @@ class Story:
                  if r.build_now <= 0 else
                  self.T(f"2단계 20MW: 옵션 가치 {self.money('A', r.value)}(승인 확률 30%) — 기다릴 권리가 {josa(self.money('A', r.flexibility), ('을', '를'))} 더한다",
                         f"Phase 2 (20 MW): option value {self.money('A', r.value)} at p = 30% — the right to wait adds {self.money('A', r.flexibility)}"))
-        sub = self.T(f"승인 확률 10/30/50% · 결정 {dec_kr} · 참고: 수도권 승인률 {self.grid_short()}(신규 신청 전체 기준)" + (f" · {pend_kr}" if pend else ""),
+        sub = self.T(f"승인 확률 10/30/50% · 결정 {dec_kr} · 참고: 수도권 승인률 {self.grid_short()}(1단계 신청 전체 기준)" + (f" · {pend_kr}" if pend else ""),
                      f"Approval 10/30/50% · decision at COD+{oi.decision_year} yrs · ref.: Seoul-metro approval {self.grid_short()}" + (" · discount rate and window on a grid" if pend else ""))
         return Page("body", "5", title, sub, [c1, c2, c3, tree])
 
@@ -1157,8 +1181,8 @@ class Story:
         dep = (self.T(f"감가상각 정액 {da:.0f}년", f"straight-line depreciation {da:.0f} yrs") if da and da == db
                else self.T("감가상각 미반영 → IRR 보수적", "no depreciation → IRRs conservative"))
         ny = int(self.A("operating_years").value or 0) + 1
-        tv = (self.T(f"잔존가치 = {ny}년차 EBITDA ÷ cap rate(A {self.pct(ca)} 저자 판단: 국내 거래 근거 없어 미국보다 1%p 높게 · B {self.pct(cb)}: Houlihan Lokey 안정화 하이퍼스케일 5.0~7.5%, 북버지니아 실제 거래 5%대 초반보다 보수적)",
-                     f"terminal value = year-{ny} EBITDA ÷ cap rate (A {self.pct(ca)}, judgment: no Korean deal evidence, set 1pp above the U.S.; B {self.pct(cb)}: Houlihan Lokey stabilised hyperscale 5.0–7.5%, conservative vs low-5% Northern Virginia deals)")
+        tv = (self.T(f"잔존가치 = {ny}년차 EBITDA ÷ cap rate(A {self.pct(ca)} 저자 판단: 국내 거래 근거 없어 미국보다 1%p 높게 · B {self.pct(cb)}: Houlihan Lokey 안정화 하이퍼스케일 5.0~7.5%(같은 문서 1H 2026 표 5.0~7.25%), 북버지니아 실제 거래 5%대 초반보다 보수적)",
+                     f"terminal value = year-{ny} EBITDA ÷ cap rate (A {self.pct(ca)}, judgment: no Korean deal evidence, set 1pp above the U.S.; B {self.pct(cb)}: Houlihan Lokey stabilised hyperscale 5.0–7.5% (5.0–7.25% in the same document's 1H 2026 table), conservative vs low-5% Northern Virginia deals)")
               if ca and cb else self.T("잔존가치 제외", "no terminal value"))
         return f"{dep}, {tv}" if self.kr else f"{dep[0].upper() + dep[1:]}; {tv}"
 
@@ -1686,9 +1710,9 @@ class Story:
         if g.ratio is not None:
             if g.ratio_n is not None:
                 krows.append([self.T("계통 승인률 (건수)", "Grid approval (count)"), f"{g.approved_n:,.0f} ÷ {g.applied_n:,.0f} = {self.pct(g.ratio_n, 2)}", g.period,
-                              self.T("공개 보도(원문 확인 중)", "Public reports (verifying)")])
+                              self.T("블록미디어(확인 완료)", "Blockmedia (verified)")])
             krows.append([self.T("계통 승인률 (용량)", "Grid approval (capacity)"), f"{g.approved:,.0f} ÷ {g.applied:,.0f} = {self.pct(g.ratio, 2)}", g.period,
-                          self.T("공개 보도(원문 확인 중)", "Public reports (verifying)")])
+                          self.T("블록미디어(확인 완료)", "Blockmedia (verified)")])
         if ok(self.f.va):
             y, p = self.f.va.price_latest
             krows.append([self.T("버지니아 상업용 평균 요금", "Virginia commercial average price"), f"{p:.2f}¢/kWh", str(y), "EIA"])

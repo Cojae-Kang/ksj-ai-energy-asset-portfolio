@@ -362,6 +362,9 @@ research:
   tagline: "AI Energy Asset Portfolio"
   author: "Shinjae Kang"
   repo_url: "https://github.com/Cojae-Kang/ksj-ai-energy-asset-portfolio"   # PDF·README는 이 값만 사용
+  copyright: "© 2026 Shinjae Kang"     # 모든 페이지 바닥글 왼쪽·표지
+  contact: "toonword@naver.com"        # 뒤표지 하단(GitHub 주소 아래). 커밋 작성자 이메일과 무관
+  content_license: "CC BY 4.0"         # 보고서·도표·문장 (코드는 MIT, LICENSE)
   fonts:
     dir: "assets/fonts"
     regular: "NotoSansKR-Regular.ttf"
@@ -496,12 +499,14 @@ research:
     # 계통 승인 현황 (케이스 A 설정 근거). 건수 기준 1.9%(522건 중 10건), 용량 기준 3.0%(33,592MW 중 1,010MW) — 두 기준 모두 표기
     grid_stats:
       period: "2024.8~2026.3"
-      basis_note: "수도권 신규 계통 신청 전체 기준"
-      applied_mw: {value: 33592, unit: "MW", tag: "ASSUMPTION(verify)", source: null,
-                   todo: "TODO(source): 수도권 1단계 계통 신청 33,592MW 원문(기관·보도자료·발표일)"}
-      approved_mw: {value: 1010, unit: "MW", tag: "ASSUMPTION(verify)", source: null, todo: "TODO(source): 최종 승인 1,010MW 원문"}
-      applied_count: {value: 522, unit: "건", tag: "ASSUMPTION(verify)", source: null, todo: "TODO(source): 신청 522건 원문"}
-      approved_count: {value: 10, unit: "건", tag: "ASSUMPTION(verify)", source: null, todo: "TODO(source): 승인 10건 원문"}
+      basis_note: "수도권 1단계 계통 신청 전체 기준(최종 공급 승인)"
+      source: {name: "블록미디어, 국내 AI 데이터센터 프로젝트 4건의 가동 준비 현황과 손익분기 조건",
+               url: "https://www.blockmedia.co.kr/archives/1141412", tag: "ASSUMPTION(sourced)",
+               note: "2024.8~2026.3 수도권 1단계 신청 522건·33,592MW 중 최종 공급 승인 10건·1,010MW (원문 확인 완료)"}
+      applied_mw: {value: 33592, unit: "MW", tag: "ASSUMPTION(sourced)", source: "블록미디어 (grid_stats.source)"}
+      approved_mw: {value: 1010, unit: "MW", tag: "ASSUMPTION(sourced)", source: "블록미디어 (grid_stats.source)"}
+      applied_count: {value: 522, unit: "건", tag: "ASSUMPTION(sourced)", source: "블록미디어 (grid_stats.source)"}
+      approved_count: {value: 10, unit: "건", tag: "ASSUMPTION(sourced)", source: "블록미디어 (grid_stats.source)"}
       review_threshold_mw: {value: 10, unit: "MW", tag: "ASSUMPTION(verify)",
                             source: "분산에너지 활성화 특별법 — 전력계통영향평가 (10MW 이상)", todo: "TODO(source): 조문·시행령 번호 확인"}
     cases:

@@ -475,6 +475,8 @@ class GridStats:
     threshold_mw: float | None
     period: str
     basis_note: str
+    source_name: str = ""
+    source_url: str = ""
 
     @property
     def ratio(self) -> float | None:
@@ -490,8 +492,9 @@ class GridStats:
 def grid_stats(cfg: Mapping) -> GridStats:
     g = cfg["research"]["vol02"]["grid_stats"]
     gv = lambda k: (g.get(k) or {}).get("value")  # noqa: E731
+    src = g.get("source") or {}
     return GridStats(gv("applied_mw"), gv("approved_mw"), gv("applied_count"), gv("approved_count"),
-                     gv("review_threshold_mw"), g["period"], g.get("basis_note", ""))
+                     gv("review_threshold_mw"), g["period"], g.get("basis_note", ""), src.get("name", ""), src.get("url", ""))
 
 
 # ---------------------------------------------------------------------------

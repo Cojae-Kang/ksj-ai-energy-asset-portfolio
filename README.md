@@ -1,5 +1,7 @@
 # 강신재 AI 에너지 자산 포트폴리오 | KSJ AI Energy Asset Portfolio
 
+IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오입니다. 분석 로직과 코드를 공개합니다. (A personal research portfolio prepared for IB and infrastructure-finance roles; analysis logic and code are public.)
+
 > **핵심 질문: AI 데이터센터 전력 수요는 진짜인가, 그리고 주식시장은 그것을 이미 가격에 반영했나?**
 >
 > 기준일 2026-10-20 · 저자 강신재(Shinjae Kang) · 교육·연구 목적, 투자 권유 아님 · [English below](#english)
@@ -69,7 +71,7 @@ pytest -q                                                           # 네트워�
 | FRED | Federal Reserve Bank of St. Louis | 미 국채 10년 금리 | FRED 이용약관, 출처 표기 |
 
 - 원자료(API 응답 원본)는 저장소에 올리지 않고, 가공 데이터와 출처·기준일만 공개합니다.
-- 코드: [MIT License](LICENSE) · 폰트: Noto Sans KR (SIL Open Font License 1.1, `assets/fonts/`)
+- 코드: [MIT License](LICENSE) · 보고서·도표: [CC BY 4.0](LICENSE-CONTENT) · 폰트: Noto Sans KR (SIL Open Font License 1.1, `assets/fonts/`)
 
 ## 면책
 
@@ -128,8 +130,26 @@ See the commands in the Korean section above and [docs/data_pipeline.md](docs/da
 
 ### Data sources and terms
 
-IEA (CC BY 4.0, © IEA) · U.S. EIA (U.S. government data) · KRX · DART (Financial Supervisory Service) · Bank of Korea ECOS · FRED (Federal Reserve Bank of St. Louis). Each is used with attribution under its provider's terms; raw API responses are not redistributed. Code under the [MIT License](LICENSE); fonts under the SIL Open Font License 1.1.
+IEA (CC BY 4.0, © IEA) · U.S. EIA (U.S. government data) · KRX · DART (Financial Supervisory Service) · Bank of Korea ECOS · FRED (Federal Reserve Bank of St. Louis). Each is used with attribution under its provider's terms; raw API responses are not redistributed. Code under the [MIT License](LICENSE); reports and charts under [CC BY 4.0](LICENSE-CONTENT); fonts under the SIL Open Font License 1.1.
 
 ### Disclaimer
 
 Personal portfolio for education and research; not investment advice. Judgements are the author's own. "Target Co." is hypothetical and unrelated to any real company. Public data are used without any guarantee of accuracy or completeness.
+
+---
+
+## License
+
+| 대상 · Scope | 라이선스 · License |
+|---|---|
+| 코드 (`src/`, `research/**/*.py`, `tests/` 등) · Code | [MIT License](LICENSE) — 저작권 표시 유지 조건 · keep the copyright notice |
+| 보고서·도표·문장 (`research/vol01/`, `research/vol02/` PDF, `figures/`, `reports/`, `docs/`) · Reports, charts, text | [CC BY 4.0](LICENSE-CONTENT) ([https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/)) — 인용·활용 시 "Shinjae Kang (KSJ Research)"와 출처 표시 · credit required |
+| 제3자 데이터·자료 (IEA, EIA, CBRE, KRX, DART, ECOS, FRED, 보도·업계 보고서 등) · Third-party data | 각 원저작자의 권리와 이용 조건을 따릅니다 · subject to each owner's terms |
+
+© 2026 Shinjae Kang (강신재). 특정 금융회사·부서와 무관한 개인 리서치입니다 · Not affiliated with any financial institution.
+
+**인용 예시 · Suggested citation**
+
+> Kang, Shinjae (2026). KSJ Research Note Vol.2. https://github.com/Cojae-Kang/ksj-ai-energy-asset-portfolio
+
+**연락처 · Contact:** toonword@naver.com

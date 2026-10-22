@@ -171,7 +171,10 @@ class Story:
             self.T(f"기준일 {self.f.as_of}. 수치·출처·계산 방법은 Appendix A2와 저장소 코드로 재현할 수 있다.",
                    f"As of {self.f.as_of}. Figures, sources and methods can be reproduced from Appendix A2 and the code."),
         ]
-        return Page("back", title="Disclosures", extra={"items": items, "repo": self.cfg["research"]["repo_url"]})
+        from research.disclosures import contact_line, license_items
+        items += license_items(self.cfg, self.kr)
+        return Page("back", title="Disclosures", extra={"items": items, "repo": self.cfg["research"]["repo_url"],
+                                                         "contact": contact_line(self.cfg)})
 
     # --- 대표 PER ---------------------------------------------------------------
     def per_rep(self) -> str | None:

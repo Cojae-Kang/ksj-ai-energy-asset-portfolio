@@ -47,12 +47,13 @@ def build(cfg: Mapping, as_of: str | None = None, langs: tuple[str, ...] = ("kr"
         st = story.Story(cfg, facts, lang)
         pages = st.pages()
         ctx = layout.Ctx(cfg["research"]["colors"], w, h, lang, cfg["research"]["brand"], st.sources(), st.labels(),
-                         build_dir, st.footer())
+                         build_dir, st.footer(), cfg["research"].get("copyright", ""))
         path = out_dir / f"KSJ_Research_Vol02_{lang.upper()}.pdf"
         n = layout.render(path, ctx, pages, cover_bg, {
             "title": v["title_kr"] if lang == "kr" else v["title_en"], "author": cfg["research"]["author"],
             "subject": f"{cfg['research']['brand']} Research Note Vol.2"})
         result["pdfs"][lang], result["pages"][lang] = path, n
+        result.setdefault("render_warnings", {})[lang] = list(ctx.warnings)
         result["pending"][lang] = [(pg.label, cell.title, cell.placeholder[0]) for pg in pages for cell in pg.cells if cell.placeholder]
         if lang == "kr":
             result["exec_lines"] = st.exec_conclusions()
@@ -229,6 +230,8 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
         L += ["## Executive Summary 결론 문장 (국문 PDF와 같은 문장)", "", f"- 헤드라인: {r['exec_lines'][0]}"] \
              + [f"{i}. {t}" for i, t in enumerate(r["exec_lines"][1:], 1)] + [""]
     L += ["## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
+    rw = [f"{lang}: {w}" for lang, ws in r.get("render_warnings", {}).items() for w in ws]
+    L += ["", "**렌더링 점검 (목차·바닥글·뒤표지 넘침)**: " + ("; ".join(rw) if rw else "이상 없음")]
     L += ["", "## 페이지 제목 (국문)", ""] + [f"- **{lab}** {t}" for lab, t in r.get("page_titles", [])]
     pend = r["pending"].get("kr") or next(iter(r["pending"].values()), [])
     L += ["", "## 입력·출처 확인 후 생성되는 Exhibit", ""] + ([f"- p{lab}: {t} — {why}" for lab, t, why in pend] or ["- 없음"])
@@ -324,7 +327,7 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
           "- 케이스 A 임대료의 전력 포함 여부는 원문에서 미확인 → 전력 포함(SPC 부담)을 기준, 별도 청구를 대안으로 병기",
           "- 가산금리(B)는 미확정 → 150/250/350bp 시나리오, 가운데 값을 대표로 표기. 옵션 할인율·대기 기간은 대표값 + 격자",
           "- 전력단가 인하 제안(수도권 북부 −10원/kWh)은 확정 전 → 민감도로만",
-          "- 피어 이익률→가격은 상한값(인과 아님), 계통 승인 수치는 공개 보도 기준(원문 확인 필요)"]
+          "- 피어 이익률→가격은 상한값(인과 아님). 계통 승인 수치는 블록미디어 원문 확인 완료(2024.8~2026.3 수도권 1단계 신청 기준)"]
     # 가정 집계
     L += ["", "## 가정 집계 (보고서 가정표 기준)", ""]
     cnt = assumption_counts(f)

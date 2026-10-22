@@ -193,7 +193,7 @@ def test_grid_ratio_both_bases(cfg):
     g = D.grid_stats(cfg)
     assert g.ratio == pytest.approx(1010 / 33592) and round(g.ratio * 100, 1) == 3.0      # 용량 기준
     assert g.ratio_n == pytest.approx(10 / 522) and round(g.ratio_n * 100, 1) == 1.9      # 건수 기준
-    assert "신규" in g.basis_note
+    assert "1단계 계통 신청 전체" in g.basis_note and "최종 공급 승인" in g.basis_note
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +314,7 @@ def test_build_pdfs(cfg, tmp_path, fill):
     assert "## 가정 집계" in summary and "근거 있는 가정" in summary and "저자 판단" in summary
     assert "## 범위 점검" in summary and ("범위 내" in summary or "⚠" in summary) == fill
     assert "## Executive Summary 결론 문장" in summary and "- 헤드라인:" in summary
+    assert r["render_warnings"] == {"kr": [], "en": []} and "렌더링 점검 (목차·바닥글·뒤표지 넘침)**: 이상 없음" in summary
 
 
 def test_vol01_roadmap_wording():
@@ -450,3 +451,44 @@ def test_committed_case_results_and_checks():
     assert all(r["마이너스 상환"] == "없음" for r in rows)
     base_row = next(r for r in rows if r["케이스"].startswith("A 기준"))
     assert "별도 청구" in base_row["케이스"] and "잔존가치 제외" in " ".join(rows[0])
+
+
+# ---------------------------------------------------------------------------
+# 저작권·라이선스·연락처, 목차 넘침 검사, 출처 보완
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("vol", ["vol01", "vol02"])
+def test_disclosures_license_and_contact(vol):
+    from research.disclosures import contact_line, license_items
+    cfg = base.load_config()
+    for kr in (True, False):
+        items = license_items(cfg, kr)
+        assert len(items) == 3 and "CC BY 4.0" in items[1] and "MIT" in items[2] and "Shinjae Kang (KSJ Research)" in items[1]
+    assert license_items(cfg, True)[0].startswith("이 보고서는 IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오")
+    assert contact_line(cfg) == "Contact: toonword@naver.com" and cfg["research"]["copyright"] == "© 2026 Shinjae Kang"
+
+
+def test_toc_fit_shrinks_long_rows():
+    pytest.importorskip("reportlab")
+    from research.vol01 import layout
+    from research.vol01.fonts import register_reportlab, resolve_fonts
+    cfg = base.load_config()
+    register_reportlab(resolve_fonts(cfg))
+    ctx = layout.Ctx(cfg["research"]["colors"], 960, 720, "kr", "KSJ", {}, {}, Path("."), "footer", "© 2026 Shinjae Kang")
+    short = "짧은 결론"
+    assert layout.toc_fit(ctx, short, 600, 61) == (11.2, True)
+    long_ = "개발 수익률: 한국은 전력비 부담 조항 하나로 Equity IRR이 16.1%(별도 청구) vs 5.7%(전력 포함 임대)로 갈린다, 미국은 대출금리와의 격차가 2.1%p로 좁혀졌다"
+    size, fits = layout.toc_fit(ctx, long_, 600, 61)
+    assert fits and size < 11.2
+    assert layout.toc_fit(ctx, long_ * 4, 600, 61)[1] is False                       # 줄여도 안 되면 넘침으로 보고
+    assert layout.footer_text(ctx) == "© 2026 Shinjae Kang · footer"
+
+
+def test_review_fixes_sources():
+    cfg = base.load_config()
+    g = D.grid_stats(cfg)
+    assert g.source_url == "https://www.blockmedia.co.kr/archives/1141412" and "블록미디어" in g.source_name
+    assert (g.applied_n, g.applied, g.approved_n, g.approved) == (522, 33592, 10, 1010)
+    a = D.load_assumptions(cfg)
+    pe = a["B"]["power_equipment_share"]
+    assert pe.value == pytest.approx(0.21) and pe.status == "sourced"
+    assert "7.25" in a["B"]["exit_cap_rate"].source

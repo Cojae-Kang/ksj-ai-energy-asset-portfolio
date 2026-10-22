@@ -34,7 +34,7 @@ A,grace_interest,reserve,,,-,judgment,저자 판단: 이자 원금 가산 대신
 A,interest_reserve_buffer,10,,,%,judgment,저자 판단: 이자유보계좌 = 기준 시나리오 거치기간 부족분 합계 + 10% 여유,,,,10,이자유보계좌 여유율 / 램프업 이자유보계좌 여유율 (reserve 모드: 기준 시나리오 거치기간 이자 부족분 합계 × (1 + 여유율))
 A,dsra_months,6,,,개월,judgment,저자 판단,,,,6,DSRA 개월 수 / TODO(source): DSRA 적립 개월 수 — 대출 약정 관행
 A,discount_rate,10,,,%,judgment,저자 판단: 옵션 할인율 기준 10% (8/10/12% 격자 유지),,,,10,"할인율(자기자본) / TODO(source): 자기자본 할인율 — 무위험(국고채 10년, DATA) + 위험 프리미엄 근거"
-A,grid_approval_prob,30,10,50,%,judgment,저자 판단: 시나리오 10/30/50% (참고: 수도권 승인률 건수 1.9%·용량 3.0%),,,,30,추가 계통 승인 확률 / TODO(source): 추가 계통 승인 확률 — 참고 근거: 1단계 승인 비율(계산값)
+A,grid_approval_prob,30,10,50,%,judgment,"저자 판단: 시나리오 10/30/50% (참고: 수도권 1단계 신청 승인률 건수 1.9%·용량 3.0%, 블록미디어 원문 확인)",https://www.blockmedia.co.kr/archives/1141412,,,30,추가 계통 승인 확률 / TODO(source): 추가 계통 승인 확률 — 참고 근거: 1단계 승인 비율(계산값)
 A,approval_decision_year,,,,년(1단계 COD 후),,,,,,null,승인 결정 시점 / TODO(source): 추가 계통 승인 결정 시점 — 전력계통영향평가 처리 기간
 A,option_window_years,2,,,년,judgment,저자 판단: 승인 후 착공 대기 2년 (0/2/4년 격자 유지),,,,2,착공 대기 가능 기간 / TODO(source): 승인 후 착공 가능 기간 — 승인 유효기간·부지 확보 기간
 A,rent_volatility,15,,,%/년,judgment,저자 판단 (참고: 임대료 2019 14만원 → 2025 25만원),,,,15,임대료 변동성 / TODO(source): 임대료 변동성 — 시장 임대료 시계열(시장 보고서)의 로그 변화 표준편차
@@ -42,7 +42,7 @@ B,phase1_mw,,,,MW,,,,,,100,1단계 용량 / 가상 케이스: 단일 단계 개�
 B,phase2_mw,,,,MW,,,,,,0,2단계(옵션) 용량 / 증설 옵션 없음
 B,capex_per_mw,18.184,,,USD mn/MW,sourced,Cushman & Wakefield 2026 Data Center Development Cost Guide: 신축 USD 17.6mn/MW + 부지 0.584mn/MW (칩·GPU 제외),https://www.stocktitan.net/news/CWK/cushman-wakefield-releases-2026-data-center-development-cost-guide-xf33r13eb1oh.html,2026-09-03,,18.184,MW당 CAPEX / TODO(source): 미국 하이퍼스케일 MW당 개발비 — 업계 공사비 지수·상장 REIT 10-K 개발 공시
 B,capex_yoy_change,21,,,%,sourced,Cushman & Wakefield 2026 Data Center Development Cost Guide: AI 사양 공사비 1년 새 21% 상승,https://www.stocktitan.net/news/CWK/cushman-wakefield-releases-2026-data-center-development-cost-guide-xf33r13eb1oh.html,2026-09-03,,21,"AI 사양 공사비 1년 상승률 / TODO(source): AI 사양 공사비 1년 상승률 — 업계 공사비 보고서 (서술용, 모델 입력 아님)"
-B,power_equipment_share,,,,%,,,,,,null,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비 비중
+B,power_equipment_share,21,,,%,sourced,Cushman & Wakefield 2026 Data Center Development Cost Guide: 전력 인프라가 신축 원가의 약 21%로 최대 항목,https://www.stocktitan.net/news/CWK/cushman-wakefield-releases-2026-data-center-development-cost-guide-xf33r13eb1oh.html,2026-09-03,,21,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비 비중
 B,construction_quarters,8,,,분기,judgment,저자 판단: 건설기간 24개월,,,,8,건설기간 / TODO(source): 착공~준공 기간
 B,rent_per_kw_month,190,190,235,USD/kW·월,sourced,CBRE Global Data Center Trends 2026 (250~500kW 기준). 100MW 하이퍼스케일 계약은 더 낮을 수 있음 → 임대료 −20% 스트레스,https://www.cbre.com/insights/reports/global-data-center-trends-2026,2026-06-17,,190,임대료(kW·월) / TODO(source): 북버지니아 도매(wholesale) 임대료 — 시장 보고서
 B,rent_escalation,3,,,%/년,sourced,"Gridlines 2026; 블록미디어: 10MW 이상 글로벌 계약 10년+, 3% 또는 CPI 연동",https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/ ; https://www.blockmedia.co.kr/archives/1141412,,,3,임대료 연 인상률 / TODO(source): 임대료 연 인상률(계약 관행)
@@ -63,7 +63,7 @@ B,tax_rate_national,,,,%,,,,,,21,법인세율(국세·연방) / U.S. federal cor
 B,tax_rate_local,,,,%,,,,,,6,"지방세(지방소득세·주세) / Virginia corporate income tax 6% (Va. Code §58.1-400), 연방 과세소득에서 공제 / TODO(source): 원문 확인"
 B,dep_years,20,,,년,judgment,저자 판단: 정액 20년,,,,20,감가상각 기간 / TODO(source): 감가상각 기간 — 회계(정액) 기준 내용연수
 B,operating_years,25,,,년,judgment,저자 판단,,,,25,운영기간 / TODO(source): 운영 기간(임대 계약 기간)
-B,exit_cap_rate,6,5,7.5,%,sourced,"Houlihan Lokey Data Center Update(2026.10): 안정화 하이퍼스케일 cap rate 5.0~7.5%, 디지털리얼티-블랙스톤 북버지니아 3개 센터 거래 내재 cap rate 5%대 초반 → 6.0%는 실제 거래보다 보수적",https://cdn.hl.com/pdf/2026/real-estate-data-center-update-october-2026.pdf,2026-10,,6,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+B,exit_cap_rate,6,5,7.5,%,sourced,"Houlihan Lokey Data Center Update(2026.10): 안정화 하이퍼스케일 cap rate 5.0~7.5%(같은 문서 내 1H 2026 표에는 5.0~7.25%로 표기), 디지털리얼티-블랙스톤 북버지니아 3개 센터 거래 내재 cap rate 5%대 초반 → 6.0%는 실제 거래보다 보수적",https://cdn.hl.com/pdf/2026/real-estate-data-center-update-october-2026.pdf,2026-10,,6,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
 B,margin_bp,,,,bp,,,,,,null,가산금리 / TODO(source): 가산금리 — 미국 데이터센터 건설·영구 대출 보도
 B,target_dscr,1.30,,,배,sourced,Gridlines 2026: 투자등급 임차인 하이퍼스케일 1.20~1.40배,https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,1.3,목표 DSCR / TODO(source): 목표 DSCR
 B,max_gearing,75,,,%,sourced,Lev 2026: 데이터센터 LTC 60~80%,https://www.lev.com/blog/data-center-financing-2026,2026-08-20,,75,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC)

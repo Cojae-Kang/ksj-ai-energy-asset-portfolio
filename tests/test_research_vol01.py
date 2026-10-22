@@ -420,7 +420,11 @@ def test_build_landscape_pdfs(cfg, tmp_path, fy2022):
         assert pend == []
     else:
         assert [lab for lab, _, _ in pend] == ["4", "4"] and all(cmd == data.CMD_DART for _, _, cmd in pend)
+    assert r["render_warnings"] == {"kr": [], "en": []}                         # 목차·바닥글·뒤표지 넘침 없음
+    raw = (out / "KSJ_Research_Vol01_KR.pdf").read_bytes()
+    assert b"/Author (Shinjae Kang)" in raw or b"Shinjae Kang" in raw
     summary = (out / "build_summary.md").read_text(encoding="utf-8")
+    assert "렌더링 점검" in summary and "이상 없음" in summary
     assert "KRX 시총 검산" in summary and "split_consistent" in summary
     assert ("시총 분해 (FY2022A → FY2025A)" in summary) == fy2022
     assert (out / "_build").exists()

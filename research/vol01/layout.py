@@ -101,6 +101,8 @@ class Ctx:
     labels: dict[str, str]            # 고정 문구 (출처:, 주:, 데이터 수집 후 생성 …)
     build_dir: Path
     footer: str
+    copyright: str = ""               # 바닥글 왼쪽·표지 (예: © 2026 Shinjae Kang)
+    warnings: list[str] = field(default_factory=list)   # 렌더링 점검 결과 (목차 넘침 등)
 
 
 # ---------------------------------------------------------------------------
@@ -164,11 +166,19 @@ def header(c, ctx: Ctx, title: str, subtitle: str) -> float:
     return ctx.h - BAR_H - GRID_TOP_GAP
 
 
+def footer_text(ctx: Ctx) -> str:
+    return f"{ctx.copyright} · {ctx.footer}" if ctx.copyright else ctx.footer
+
+
 def footer(c, ctx: Ctx, label: str) -> None:
     col = ctx.colors
+    text = footer_text(ctx)
+    size = fit_size(text, RL_REGULAR, 7.4, ctx.w - 2 * MX - 60, 5.5)     # 쪽 번호 자리를 남기고 넘치면 축소
+    if stringWidth(text, RL_REGULAR, size) > ctx.w - 2 * MX - 60:
+        ctx.warnings.append(f"바닥글 넘침: {text[:40]}…")
     c.setFillColor(hexc(col["note"]))
-    c.setFont(RL_REGULAR, 7.4)
-    c.drawString(MX, 14, ctx.footer)
+    c.setFont(RL_REGULAR, size)
+    c.drawString(MX, 14, text)
     if label:
         c.setFont(RL_BOLD, 9.5)
         c.setFillColor(hexc(col["text"]))
@@ -456,11 +466,23 @@ def draw_exec(c, ctx: Ctx, page: Page) -> None:
         draw_bigbox(c, ctx, b, rx, top - i * (bh + gap), rw, bh)
 
 
+def toc_fit(ctx: Ctx, text: str, width: float, row_h: float, start: float = 11.2, min_size: float = 8.0) -> tuple[float, bool]:
+    """목차 결론 문단이 행(제목 아래 ~ 구분선 위)에 들어가는 가장 큰 글자 크기. (크기, 들어가는지)."""
+    avail = row_h - 30 - 10                       # 문단 시작(y − 30) ~ 구분선(y − row_h + 6) 사이, 여백 4pt
+    size = start
+    while True:
+        _, h = para(text, style(ctx, size, leading=1.35)).wrap(width, 10_000)
+        if h <= avail or size <= min_size:
+            return size, h <= avail
+        size = round(size - 0.4, 2)
+
+
 def draw_toc(c, ctx: Ctx, page: Page) -> None:
     col = ctx.colors
     top = header(c, ctx, page.title, page.subtitle)
     y = top - 6
     row_h = (top - FOOT_H - 20) / max(len(page.toc), 1)
+    cw = ctx.w - 2 * MX - 190
     for num, name, concl, pg in page.toc:
         c.setFillColor(hexc(col["gold"]))
         c.setFont(RL_BOLD, 30 if len(num) <= 3 else 20)
@@ -468,7 +490,10 @@ def draw_toc(c, ctx: Ctx, page: Page) -> None:
         c.setFillColor(hexc(col["text"]))
         c.setFont(RL_BOLD, 16)
         c.drawString(MX + 100, y - 20, name)
-        draw_para(c, para(concl, style(ctx, 11.2, leading=1.35)), MX + 100, y - 30, ctx.w - 2 * MX - 190)
+        size, fits = toc_fit(ctx, concl, cw, row_h)
+        if not fits:
+            ctx.warnings.append(f"목차 넘침: {num} {name}")
+        draw_para(c, para(concl, style(ctx, size, leading=1.35)), MX + 100, y - 30, cw)
         c.setFont(RL_BOLD, 14)
         c.setFillColor(hexc(col["brown_dark"]))
         c.drawRightString(ctx.w - MX, y - 18, pg)
@@ -508,6 +533,8 @@ def draw_cover(c, ctx: Ctx, page: Page, bg_png: Path) -> None:
     c.setFont(RL_REGULAR, 8)
     c.setFillColor(hexc(col["warm_grey"]))
     c.drawRightString(ctx.w - 48, 48, page.extra["note"])
+    if ctx.copyright:
+        c.drawString(x, 48, ctx.copyright)
 
 
 def draw_back(c, ctx: Ctx, page: Page) -> None:
@@ -520,17 +547,30 @@ def draw_back(c, ctx: Ctx, page: Page) -> None:
     c.setStrokeColor(hexc(col["gold"]))
     c.setLineWidth(0.8)
     c.line(64, ctx.h - 108, 64 + 200, ctx.h - 108)
-    y = ctx.h - 136
-    st = ParagraphStyle("bk", fontName=RL_REGULAR, fontSize=10.5, leading=16.5, textColor=hexc(col["warm_grey_light"]),
-                        leftIndent=12, bulletIndent=0)
-    for t in page.extra["items"]:
-        y -= draw_para(c, Paragraph(escape(t), st, bulletText="•"), 64, y, ctx.w * 0.7) + 8
+    top = ctx.h - 136
+    floor = 118                                    # 브랜드(92)·저장소(72)·연락처(56) 위
+    size = 10.5
+    while True:                                    # 항목이 많으면 글자를 줄여 하단 정보와 겹치지 않게
+        st = ParagraphStyle(f"bk{size}", fontName=RL_REGULAR, fontSize=size, leading=size * 1.57,
+                            textColor=hexc(col["warm_grey_light"]), leftIndent=12, bulletIndent=0)
+        ps = [Paragraph(escape(t), st, bulletText="•") for t in page.extra["items"]]
+        total = sum(p.wrap(ctx.w * 0.78, 10_000)[1] + 6 for p in ps)
+        if top - total >= floor or size <= 8:
+            break
+        size = round(size - 0.3, 2)
+    if top - total < floor:
+        ctx.warnings.append("뒤표지 고지 넘침")
+    y = top
+    for p in ps:
+        y -= draw_para(c, p, 64, y, ctx.w * 0.78) + 6
     c.setFillColor(hexc(col["gold"]))
     c.setFont(RL_BOLD, 18)
     c.drawString(64, 92, ctx.brand)
     c.setFont(RL_REGULAR, 9.5)
     c.setFillColor(hexc(col["warm_grey_light"]))
     c.drawString(64, 72, page.extra["repo"])
+    if page.extra.get("contact"):
+        c.drawString(64, 56, page.extra["contact"])
 
 
 def render(path: Path, ctx: Ctx, pages: list[Page], cover_bg: Path, meta: dict) -> int:
