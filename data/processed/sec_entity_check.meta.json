@@ -1,0 +1,8 @@
+{
+  "source": "SEC EDGAR (manual browser download)",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-22T04:30:58+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "시총(company_tickers 상장사) vs 재무(companyfacts 법인) 주체 검사. verdict OK/WARN"
+}

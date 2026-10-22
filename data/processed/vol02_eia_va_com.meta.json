@@ -1,0 +1,8 @@
+{
+  "source": "U.S. Energy Information Administration (EIA)",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-22T04:33:17+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "electricity/retail-sales, VA·US, COM, annual 2015~최신. sales: million kWh, price: cents/kWh"
+}

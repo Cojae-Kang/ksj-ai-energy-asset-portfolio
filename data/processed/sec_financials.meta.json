@@ -1,0 +1,8 @@
+{
+  "source": "SEC EDGAR (manual browser download)",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-22T04:30:58+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "USD mn, 10-K 연간값(최신 filed 기준). 총차입금 정의는 config ASSUMPTION 참조. data_source 열: online API / manual browser download"
+}

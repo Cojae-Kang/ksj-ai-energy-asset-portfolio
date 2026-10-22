@@ -2,7 +2,7 @@
   "source": "Open DART, SEC EDGAR, ECOS, manual",
   "endpoint": "(processed)",
   "params": {},
-  "fetched_at": "2026-10-20T14:35:15+00:00",
+  "fetched_at": "2026-10-22T04:30:58+00:00",
   "as_of": "2026-10-20",
   "license_note": "원통화(KRW 억원/USD mn) + KRW 억원·USD mn 환산. flow=연평균, stock=연말 환율(ECOS)."
 }
