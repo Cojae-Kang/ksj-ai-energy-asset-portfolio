@@ -31,8 +31,9 @@ def cfg(tmp_path):
     c = copy.deepcopy(base.load_config())
     v = c["research"]["vol03"]
     v["assumptions_csv"] = str(tmp_path / "vol03_assumptions.csv")
-    for k in ("market_points", "global_market", "market_manual", "peer_extra", "peer_manual", "ipo_discounts"):
+    for k in ("market_points", "global_market", "market_manual", "peer_extra", "peer_manual", "ipo_discounts", "ipo_log"):
         v["inputs"][k] = str(tmp_path / f"{k}.csv")          # 미국 시세·D&A·IPO 실증 없음 (수집 전 상태를 재현)
+    v["ipo_discounts"]["qa_report"] = str(tmp_path / "qa_ipo.md")
     c["monte_carlo"]["n_sims"] = 4000
     v["monte_carlo"]["convergence"] = [500, 1000, 2000, 4000]
     return c
@@ -372,6 +373,7 @@ def real_cfg(tmp_path):
     c = copy.deepcopy(base.load_config())
     c["research"]["vol03"]["assumptions_csv"] = str(tmp_path / "vol03_assumptions.csv")
     c["research"]["vol03"]["inputs"]["ipo_discounts"] = str(tmp_path / "ipo.csv")
+    c["research"]["vol03"]["inputs"]["ipo_log"] = str(tmp_path / "ipo_log.csv")
     return c
 
 
@@ -481,13 +483,16 @@ def test_pick_filings_and_run_with_fake_client(cfg, tmp_path):
     found = pd.DataFrame([
         {"corp_code": "001", "corp_name": "가나다", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250301000001", "rcept_dt": "20250301", "stock_code": ""},
         {"corp_code": "001", "corp_name": "가나다", "corp_cls": "E", "report_nm": "[기재정정]증권신고서(지분증권)", "rcept_no": "20250320000002", "rcept_dt": "20250320", "stock_code": ""},
+        {"corp_code": "001", "corp_name": "가나다", "corp_cls": "E", "report_nm": "[기재정정]증권신고서(지분증권)", "rcept_no": "20250405000007", "rcept_dt": "20250405", "stock_code": ""},
         {"corp_code": "002", "corp_name": "라마바", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250401000003", "rcept_dt": "20250401", "stock_code": ""},
         {"corp_code": "003", "corp_name": "엔에이치스팩30호", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250402000004", "rcept_dt": "20250402", "stock_code": ""},
         {"corp_code": "004", "corp_name": "상장사", "corp_cls": "Y", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250403000005", "rcept_dt": "20250403", "stock_code": "111111"},
         {"corp_code": "005", "corp_name": "깨진문서", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250404000006", "rcept_dt": "20250404", "stock_code": ""}])
     icfg = cfg["research"]["vol03"]["ipo_discounts"]
-    pk = ip.pick_filings(found, icfg)
-    assert list(pk["rcept_no"]) == ["20250320000002", "20250401000003", "20250404000006"]       # 정정 최신 · 스팩·상장사 제외
+    cand, log0 = ip.pick_filings(found, icfg)
+    assert list(cand["rcept_no"]) == ["20250301000001", "20250320000002", "20250405000007", "20250401000003", "20250404000006"]  # 회사·접수 순
+    assert {r["decision"] for r in log0} == {"excluded_cls", "excluded_name"}
+    docs = {"1": DOC_LOW, "2": DOC_HIGH.replace("</body>", "<p>공모주식수 : 8,000,000주</p></body>"), "7": DOC_MISMATCH, "3": DOC_IMPLIED}
 
     class Fake:
         large_dir = tmp_path / "large"
@@ -498,19 +503,39 @@ def test_pick_filings_and_run_with_fake_client(cfg, tmp_path):
 
         def download_document(self, rno):
             p_ = tmp_path / f"{rno}.zip"
-            p_.write_bytes(b"not a zip" if rno.endswith("6") else _zip(DOC_HIGH if rno.endswith("2") else DOC_IMPLIED))
+            p_.write_bytes(b"not a zip" if rno.endswith("6") else _zip(docs[rno[-1]]))
             return p_
     r = ip.run(cfg, "2026-10-20", client=Fake())
     df = pd.read_csv(cfg["research"]["vol03"]["inputs"]["ipo_discounts"], dtype={"rcept_no": str, "corp_code": str})
     assert list(df.columns) == ip.COLUMNS and len(df) == 2 and r.status == "PARTIAL" and "깨진문서" in r.message
+    g = df.set_index("corp_code")
+    assert g.loc["001", "rcept_no"] == "20250320000002"          # 밴드가 처음 나온 신고서 (첫 신고서는 밴드 없음, 이후 정정은 기록만)
+    assert g.loc["001", "offer_amount_low"] == pytest.approx(8e6 * 21000 / 1e8) and g.loc["001", "offer_amount_high"] == pytest.approx(2000.0)
     assert set(df["market"]) == {"KOSPI", "KOSDAQ"} and df["url"].str.contains("dart.fss.or.kr/dsaf001").all()
     assert Path(str(cfg["research"]["vol03"]["inputs"]["ipo_discounts"]).replace(".csv", ".meta.json")).exists()
+    lg = pd.read_csv(cfg["research"]["vol03"]["inputs"]["ipo_log"], dtype=str).set_index("rcept_no")
+    assert lg.loc["20250301000001", "decision"] == "no_band" and lg.loc["20250405000007", "decision"] == "after_first"
+    assert lg.loc["20250320000002", "decision"] == "used" and lg.loc["20250404000006", "decision"] == "download_fail"
+    assert lg.loc["20250402000004", "decision"] == "excluded_name" and lg.loc["20250403000005", "decision"] == "excluded_cls"
+    qa = Path(icfg["qa_report"]).read_text(encoding="utf-8")
+    assert "구간(월)별" in qa and "목표 표본 40건 미달 (2건)" in qa and "원문에서 밴드 미검출 1건" in qa and "2025-03-20~2025-04-01" in qa
 
 
-def _ipo_rows(n: int) -> pd.DataFrame:
+def test_outlier_flag_and_size_bucket():
+    from research.vol03 import ipo_discounts as ip
+    ip.set_outlier_bounds({"outlier_high": 0.5, "outlier_low": 0.1})
+    hi = ip.parse_prospectus(ip.to_text(DOC_HIGH.replace("32,145원", "58,824원").replace("22.23% ~ 34.67%", "57.50% ~ 64.30%")))
+    assert hi["outlier"] and hi["needs_review"] and "원문 확인 필요" in hi["notes"]
+    assert not ip.parse_prospectus(ip.zip_text(_zip(DOC_HIGH)))["outlier"]
+    assert [ip.size_bucket(x, [300, 1000]) for x in (100, 300, 999, 2000, float("nan"))] == ["<300억", "300~1,000억", "300~1,000억", "≥1,000억", "미상"]
+
+
+def _ipo_rows(n: int, n_sub: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(0)
     lo = rng.uniform(0.15, 0.25, n)
-    return pd.DataFrame({"company": [f"합성{i}" for i in range(n)], "corp_code": "x", "market": "KOSDAQ", "rcept_dt": "20250101",
+    return pd.DataFrame({"company": [f"합성{i}" for i in range(n)], "corp_code": "x",
+                         "market": ["KOSPI" if i < n_sub else "KOSDAQ" for i in range(n)],
+                         "rcept_dt": [f"2025{1 + i % 12:02d}15" for i in range(n)], "offer_amount_low": 200.0,
                          "rcept_no": [f"2025{i:010d}" for i in range(n)], "url": "u", "report_nm": "증권신고서(지분증권)",
                          "value_per_share": 10000.0, "band_low": 10000 * (1 - lo - 0.1), "band_high": 10000 * (1 - lo),
                          "discount_low": lo, "discount_high": lo + 0.1, "discount_implied_low": lo, "discount_implied_high": lo + 0.1,
@@ -536,6 +561,90 @@ def test_ipo_evidence_switches_band(real_cfg, tmp_path, n):
     from research.vol03.story import Story
     by = {p.label: p for p in Story(real_cfg, f, "kr").pages()}
     assert by["6"].grid == "3-2" and by["8"].grid == "3-2" and any(c_.chart_key.startswith("ipo_") for c_ in by["6"].cells)
+
+
+def test_ipo_sub_sample_and_outliers(real_cfg):
+    t = _ipo_rows(30, n_sub=12)
+    t.loc[29, ["discount_low", "discount_high"]] = [0.49, 0.575]       # 크리에이츠형 이상치 (원문 확인 필요)
+    t.loc[28, "offer_amount_low"] = 1500.0                             # 코스닥이지만 공모금액 1,000억원 이상 → 하위 표본
+    t.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
+    ev = D.ipo_evidence(real_cfg)
+    assert ev.full.n == 30 and ev.sub.n == 13 and ev.chosen == "sub" and ev.used
+    assert ev.full.n_outlier == 1 and ev.full.stats_ex["high"][1] < ev.full.stats["high"][1]
+    assert ev.full.period == ("2025-01-15", "2025-12-15")
+    sub = t[(t["market"] == "KOSPI") | (t["offer_amount_low"] >= 1000)]
+    a = D.load_facts(real_cfg).assumptions["band_discount_low"]
+    assert a.value == pytest.approx(np.median(sub["discount_low"])) and "하위 표본" in a.source and "2025-" in a.source
+    t["market"], t["offer_amount_low"] = "KOSDAQ", 200.0                # 하위 표본 < 10건 → 전체 표본 + 각주
+    t.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
+    f = D.load_facts(real_cfg)
+    assert f.ipo.chosen == "full" and f.ipo.sub.n == 0 and f.assumptions["band_discount_low"].value == pytest.approx(np.median(t["discount_low"]))
+    from research.vol03.story import Story
+    by = {p.label: p for p in Story(real_cfg, f, "kr").pages()}
+    txt = " ".join(str(c_.note or "") + " ".join(map(str, c_.bullets or [])) for c_ in by["6"].cells)
+    assert "전체 분포 사용" in txt and "이상치" in txt and "2025-01-15" in txt
+    from research.vol03 import build as B
+    assert any("하위 표본" in x for x in B.anomalies(f, real_cfg)) and any("목표 40건" in x for x in B.todo_items(f, real_cfg))
+
+
+def test_breakdown_shortfall_without_log():
+    from research.vol03 import ipo_discounts as ip
+    d = _ipo_rows(5)
+    d["outlier"] = False
+    icfg = {"bgn_de": "20250101", "end_de": "20250331", "target_n": 40, "size_buckets": [300, 1000]}
+    md = ip.breakdown(d, None, icfg)
+    assert "202502" in md and "검색 로그" in md and "목표 표본 40건 미달 (5건)" in md
+    lg = pd.DataFrame([ip._log({"rcept_dt": "20250115", "rcept_no": "1"}, "no_band")])
+    md2 = ip.breakdown(d, lg, icfg)
+    assert "원문에서 밴드 미검출 1건" in md2 and "검색 결과가 없는 월 2개" in md2
+
+
+def _dart_rows(extra):
+    base_ = [{"sj_div": "BS", "account_id": "ifrs-full_OtherCurrentFinancialLiabilities", "account_nm": "단기금융부채", "account_detail": "-", "thstrm_amount": "139200000000"},
+             {"sj_div": "BS", "account_id": "ifrs-full_OtherNoncurrentFinancialLiabilities", "account_nm": "장기금융부채", "account_detail": "-", "thstrm_amount": "46900000000"},
+             {"sj_div": "BS", "account_id": "ifrs-full_ContractLiabilities", "account_nm": "계약부채", "account_detail": "-", "thstrm_amount": "900000000000"}]
+    return base_ + extra
+
+
+def test_hde_debt_proxy_override_and_manual(real_cfg, tmp_path):
+    from src.data_fetch import dart
+    dcfg = real_cfg["data_fetch"]["dart"]
+    m, _, flags = dart.extract_dart_metrics(_dart_rows([]), dcfg, ticker="267260")
+    assert m["total_debt"] == pytest.approx(1392 + 469) and any("proxy" in x and "주석 확인 전" in x for x in flags)   # 계약부채 제외
+    m2, _, flags2 = dart.extract_dart_metrics(_dart_rows([]), dcfg, ticker="298040")
+    assert not any("proxy" in x for x in flags2) and m2.get("total_debt") != pytest.approx(1392 + 469)
+    cand = {c["account_nm"]: c for c in dart.debt_candidates(_dart_rows([]), dcfg["total_debt"], ticker="267260")}
+    assert cand["단기금융부채"]["selected"] and not cand["계약부채"]["selected"]
+    f = D.load_facts(real_cfg)                                         # 커밋된 수동 대용치 CSV (DART 총차입금이 비었을 때만)
+    hd = f.peers.table.set_index("ticker").loc["267260"]
+    assert bool(hd["debt_proxy"]) and not bool(f.peers.table.set_index("ticker").loc["010120", "debt_proxy"])
+    from research.vol03.story import Story
+    by = {p.label: p for p in Story(real_cfg, f, "kr").pages()}
+    ev_rows = [r for c_ in by["4"].cells if c_.table for r in c_.table.rows if "HD현대일렉트릭" in str(r[0])]
+    assert ev_rows and any("대용" in str(r[0]) for r in ev_rows)
+
+
+def test_ev_ebitda_auto_switch(real_cfg, tmp_path):
+    f0 = D.load_facts(real_cfg)
+    t = f0.peers.table
+    app = t[t["group"].isin(["domestic", "core"]) & t["has_fin"] & (t["status"] != "held")]       # EV 후보 전원 (보류 R6 제외)
+    assert f0.peers.ev_basis == "EBIT" and app["da1"].isna().any()
+    rows = [{"company": r["company"], "ticker": r["ticker"], "region": r["region"], "fiscal_year": "FY2025A", "metric": "da",
+             "value": round(float(r["oi1"]) * 0.2, 1), "unit": "억원" if r["region"] == "KR" else "USD mn", "source": "synthetic", "detail": "test"}
+            for _, r in app.iterrows()]
+    p_ = tmp_path / "peer_manual.csv"
+    pd.DataFrame(rows).to_csv(p_, index=False)
+    real_cfg["research"]["vol03"]["inputs"]["peer_manual"] = str(p_)
+    f = D.load_facts(real_cfg)
+    assert f.peers.ev_basis == "EBITDA"
+    from research.vol03.story import Story
+    st = Story(real_cfg, f, "kr")
+    by = {p.label: p for p in st.pages()}
+    assert st.da_missing() == ([], [])
+    gl = [r[0] for c_ in by["A5"].cells if c_.table for r in c_.table.rows]
+    assert "EV/EBITDA" in gl and "EV/EBIT" not in gl
+    txt = " ".join(str(c_.note or "") for c_ in by["4"].cells)
+    assert "EV/EBIT 대용" not in txt and "D&A 미수집" not in txt
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +673,14 @@ def test_dart_debt_id_fallback_and_candidates(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "차입금 후보" in out and "장기차입금" in out
     assert dart.main(["--debt-candidates", "999999", "--year", "2025"]) == 1
+    da_rows = named + [{"sj_div": "CF", "account_id": "dart_Dep", "account_nm": "감가상각비", "account_detail": "-", "thstrm_amount": "30000000000"},
+                       {"sj_div": "CF", "account_id": "dart_RouDep", "account_nm": "사용권자산상각비", "account_detail": "-", "thstrm_amount": "1000000000"}]
+    spec = cfg["research"]["vol03"]["fetch_extra"]["dart_da"]
+    dc = {c["account_nm"]: c for c in dart.da_candidates(da_rows, spec)}
+    assert set(dc) == {"감가상각비", "사용권자산상각비"} and dc["감가상각비"]["selected"] and dc["감가상각비"]["amount_krw_100m"] == pytest.approx(300.0)
+    (raw / "fnltt_298040_2025_CFS.json").write_text(_json.dumps({"list": da_rows}, ensure_ascii=False), encoding="utf-8")
+    assert dart.main(["--da-candidates", "298040", "--year", "2025"]) == 0
+    assert "상각 계정 후보 2개" in capsys.readouterr().out
 
 
 def test_write_extra_no_future_warning(cfg, recwarn):

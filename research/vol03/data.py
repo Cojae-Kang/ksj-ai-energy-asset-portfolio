@@ -191,6 +191,15 @@ def domestic(cfg: Mapping) -> Domestic | Unavailable:
     for c in ("revenue", "operating_income", "net_income", "cash", "total_debt"):
         fin[c] = fin[c].map(num) if c in fin else float("nan")
     fin = fin.drop_duplicates(["ticker", "fy"], keep="first")
+    fin["debt_proxy"] = fin["flags"].astype(str).str.contains("total_debt:proxy") if "flags" in fin else False
+    px = _read(_inp(cfg, "debt_proxy")[0]) if "debt_proxy" in cfg["research"]["vol03"]["inputs"] else None
+    if px is not None:                              # DART total_debt가 비어 있을 때만 수기 대용치 (주석 확인 전)
+        px = px.assign(ticker=px["ticker"].astype(str).str.zfill(6), fy=px["fiscal_year"].map(_fy), amount=px["amount"].map(num))
+        for (tk, fy), g in px.groupby(["ticker", "fy"]):
+            m_ = (fin["ticker"] == tk) & (fin["fy"] == fy)
+            if m_.any() and not finite(float(fin.loc[m_, "total_debt"].iloc[0])):
+                fin.loc[m_, "total_debt"] = float(g["amount"].sum())
+                fin.loc[m_, "debt_proxy"] = True
     k["ticker"] = k["ticker"].astype(str).str.zfill(6)
     for c in ("market_cap_krw_100m", "close_krw", "listed_shares"):
         k[c] = k[c].map(num)
@@ -360,6 +369,7 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
                      "mcap1": m["mcap_t1"], "mcap0": m["mcap_t0"], "ni1": ni1, "ni0": ni0,
                      "rev1": dom.val(t, fy1, "revenue"), "rev0": dom.val(t, fy0, "revenue"), "oi1": dom.val(t, fy1, "operating_income"),
                      "net_debt1": debt - cash if finite(debt) and finite(cash) else float("nan"), "debt_missing": not finite(debt),
+                     "debt_proxy": bool(dom.fin[(dom.fin["ticker"] == t) & (dom.fin["fy"] == fy1)]["debt_proxy"].any()),
                      "entity_warn": False, "has_fin": finite(ni1), "listed0": finite(m["mcap_t0"]), "mcap_src": "KRX",
                      "shares_check": float("nan")})
     # 해외
@@ -410,6 +420,7 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
                      "mcap_src": str(mk.loc["latest", "source"]) if "latest" in mk.index else "", "shares_check": chk,
                      "entity_reason": str(e.iloc[0].get("reason", "")) if not e.empty else ""})
     t = pd.DataFrame(rows)
+    t["debt_proxy"] = t["debt_proxy"].eq(True) if "debt_proxy" in t else False   # 해외 행은 대용치 없음
     # D&A (EBITDA) — 모든 적용 후보에 있을 때만 EBITDA, 아니면 EBIT 대용
     da = {}
     if ok(ovs):
@@ -422,7 +433,8 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
     for col, ni, per in (("s1", "ni1", "per1"), ("s0", "ni0", "per0")):
         t[col] = [im.screen_per(pe, n, per_max=float(out["per_max"]), entity_warn=w, exclude_nonpositive=out["exclude_nonpositive"],
                                 exclude_entity_warn=out["exclude_entity_warn"]) for pe, n, w in zip(t[per], t[ni], t["entity_warn"])]
-    cand = t["group"].isin(["domestic", "core"]) & t["has_fin"]
+    held_tk = {k.upper() for k in (mcfg.get("hold_out") or {})}       # R6 보류 회사는 EV 배수에 안 들어가므로 D&A 요건에서 제외
+    cand = t["group"].isin(["domestic", "core"]) & t["has_fin"] & ~t["ticker"].isin(held_tk)
     ev_basis = "EBITDA" if cand.any() and t.loc[cand, "da1"].notna().all() else "EBIT"
     t["ev1"] = [im.enterprise_value(a, b) for a, b in zip(t["mcap1"], t["net_debt1"])]
     t["ebitda1"] = t["oi1"] + t["da1"] if ev_basis == "EBITDA" else t["oi1"]
@@ -743,21 +755,72 @@ def run_mc(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation | Unavailab
 # 국내 IPO 할인율 실증 (DART 증권신고서, research.vol03.ipo_discounts 결과)
 # ---------------------------------------------------------------------------
 @dataclass
+class IPOSample:
+    label: str                   # full | sub
+    table: pd.DataFrame
+    stats: dict[str, tuple[float, float, float]]   # low·high·mid → (Q1, 중앙값, Q3)
+    stats_ex: dict[str, tuple[float, float, float]]  # 이상치 제외 민감도
+    n_outlier: int
+    period: tuple[str, str]      # 실제 접수일 최소~최대 (YYYY-MM-DD)
+
+    @property
+    def n(self) -> int:
+        return len(self.table)
+
+
+@dataclass
 class IPOEvidence:
-    table: pd.DataFrame          # 사용 행 (신뢰도 기준 통과, 할인율 하단·상단 있음)
+    full: IPOSample
+    sub: IPOSample               # 코스피 또는 공모금액 ≥ sub_min_offer
+    chosen: str                  # 밴드에 쓰는 표본: sub(n ≥ sub_min_n) | full
     n_all: int                   # 파일 전체 행
-    n: int
-    stats: dict[str, tuple[float, float, float]]   # low·high·mid → (Q1, 중앙값, Q3) 할인율
-    used: bool                   # n ≥ min_n → 밴드 할인율을 분포 기반으로
+    used: bool                   # 선택 표본 n ≥ min_n → 밴드 할인율을 분포 기반으로
     min_n: int
-    period: tuple[str, str]
+    sub_min_n: int
+    target_n: int
+    search: tuple[str, str]      # 검색 기간 (YYYYMMDD)
+    sub_rule: str                # 하위 표본 정의 (문구용)
     as_of: str | None
 
+    @property
+    def sample(self) -> IPOSample:
+        return self.sub if self.chosen == "sub" else self.full
+
+    # 이전 버전 호환 (보고서·빌드 문구)
+    @property
+    def n(self) -> int:
+        return self.sample.n
+
+    @property
+    def table(self) -> pd.DataFrame:
+        return self.sample.table
+
+    @property
+    def stats(self) -> dict:
+        return self.sample.stats
+
+    @property
+    def period(self) -> tuple[str, str]:
+        return self.sample.period
+
     def rank(self, d: float, which: str = "mid") -> float:
-        """할인율 d가 분포에서 차지하는 백분위 (0~1)."""
+        """할인율 d가 선택 표본 분포에서 차지하는 백분위 (0~1)."""
         col = {"low": "discount_low", "high": "discount_high", "mid": "discount_mid"}[which]
-        x = self.table[col].to_numpy()
+        x = self.sample.table[col].to_numpy()
         return float(np.mean(x <= d)) if len(x) else float("nan")
+
+
+def _quart(t: pd.DataFrame, col: str) -> tuple[float, float, float]:
+    return tuple(float(np.quantile(t[col], x)) for x in (0.25, 0.5, 0.75)) if len(t) else (float("nan"),) * 3
+
+
+def _sample(label: str, t: pd.DataFrame) -> IPOSample:
+    ex = t[~t["outlier"]]
+    d = sorted(str(x) for x in t["rcept_dt"]) if len(t) else []
+    fmt = lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]}" if len(x) == 8 else x  # noqa: E731
+    return IPOSample(label, t, {k: _quart(t, f"discount_{k}") for k in ("low", "high", "mid")},
+                     {k: _quart(ex, f"discount_{k}") for k in ("low", "high", "mid")}, int(t["outlier"].sum()),
+                     (fmt(d[0]), fmt(d[-1])) if d else ("", ""))
 
 
 def ipo_evidence(cfg: Mapping) -> IPOEvidence | Unavailable:
@@ -767,29 +830,39 @@ def ipo_evidence(cfg: Mapping) -> IPOEvidence | Unavailable:
     df = _read(path) if path is not None else None
     if df is None:
         return Unavailable("국내 IPO 할인율 실증 미수집", "Korean IPO discount evidence not collected", ["vol03_ipo_discounts.csv"])
-    for c in ("discount_low", "discount_high", "value_per_share", "band_low", "band_high"):
+    for c in ("discount_low", "discount_high", "value_per_share", "band_low", "band_high", "offer_amount_low"):
         df[c] = df[c].map(num) if c in df else float("nan")
     use = set(icfg.get("use_confidence", ["high", "medium"]))
     t = df[df["confidence"].isin(use) & df["discount_low"].notna() & df["discount_high"].notna()].copy()
     t["discount_mid"] = (t["discount_low"] + t["discount_high"]) / 2
-    q = lambda col: tuple(float(np.quantile(t[col], x)) for x in (0.25, 0.5, 0.75)) if len(t) else (float("nan"),) * 3  # noqa: E731
+    hi, lo = float(icfg.get("outlier_high", 0.5)), float(icfg.get("outlier_low", 0.1))
+    t["outlier"] = (t["discount_high"] > hi) | (t["discount_low"] < lo)          # 원문 확인 필요 (분포에는 유지, 민감도로 제외 결과)
+    mk, mo = set(icfg.get("sub_markets", ["KOSPI"])), float(icfg.get("sub_min_offer", 1000))
+    sub = t[t["market"].isin(mk) | (t["offer_amount_low"] >= mo)]
+    full_s, sub_s = _sample("full", t), _sample("sub", sub)
+    sub_min = int(icfg.get("sub_min_n", 10))
+    chosen = "sub" if sub_s.n >= sub_min else "full"
     min_n = int(icfg.get("min_n", 10))
     m = meta_info(path)
-    return IPOEvidence(t, len(df), len(t), {"low": q("discount_low"), "high": q("discount_high"), "mid": q("discount_mid")},
-                       len(t) >= min_n, min_n, (str(icfg.get("bgn_de", "")), str(icfg.get("end_de", ""))), m.get("as_of"))
+    return IPOEvidence(full_s, sub_s, chosen, len(df), (sub_s if chosen == "sub" else full_s).n >= min_n, min_n, sub_min,
+                       int(icfg.get("target_n", 40)), (str(icfg.get("bgn_de", "")), str(icfg.get("end_de", ""))),
+                       f"{'·'.join(sorted(mk))} 또는 공모금액 {mo:,.0f}억원 이상", m.get("as_of"))
 
 
 def apply_evidence(a: dict[str, Assumption], ev: IPOEvidence | Unavailable) -> None:
-    """n ≥ min_n이고 사용자가 밴드 할인율을 직접 넣지 않았으면 분포 중앙값(하단·상단)을 근거 있는(sourced) 값으로."""
+    """선택 표본 n ≥ min_n이고 사용자가 밴드 할인율을 직접 넣지 않았으면 분포 중앙값(하단·상단)을 근거 있는(sourced) 값으로."""
     if not ok(ev) or not ev.used:
         return
+    s_ = ev.sample
+    lab = (f"하위 표본({ev.sub_rule}) {s_.n}건" if ev.chosen == "sub" else
+           f"전체 {s_.n}건 (하위 표본 {ev.sub.n}건 < {ev.sub_min_n})")
     for key, which in (("band_discount_low", "low"), ("band_discount_high", "high")):
         cur = a[key]
         if cur.value is None:
-            q1, med, q3 = ev.stats[which]
+            q1, med, q3 = s_.stats[which]
             cur.value, cur.low, cur.high, cur.origin = med, q1, q3, "evidence"
             cur.tag = "ASSUMPTION(sourced)"
-            cur.source = (f"DART 증권신고서(지분증권) 신규 상장 {ev.n}건 할인율 중앙값 (범위 = 사분위, {ev.period[0]}~{ev.period[1]})")
+            cur.source = f"DART 증권신고서(지분증권) 신규 상장 {lab} 할인율 중앙값 (범위 = 사분위, 접수 {s_.period[0]}~{s_.period[1]})"
             cur.url = "https://dart.fss.or.kr"
 
 
@@ -843,9 +916,13 @@ SOURCES = [
 ]
 
 
-def source_status(cfg: Mapping, ovs: Overseas | Unavailable) -> list[dict]:
+def source_status(cfg: Mapping, ovs: Overseas | Unavailable, ipo: "IPOEvidence | Unavailable | None" = None) -> list[dict]:
     rows = []
     for sid, org_kr, org_en, ds_kr, ds_en, key in SOURCES:
+        if sid == "ipo" and ok(ipo) and ipo is not None:             # 정적 검색 기간 대신 실제 표본 신고일 범위
+            a, b = ipo.full.period
+            ds_kr = f"신규 상장 증권신고서 평가가액·희망공모가·할인율 (n={ipo.full.n}, 신고일 {a}~{b})"
+            ds_en = f"New-listing prospectuses: value, range, discount (n={ipo.full.n}, filed {a} to {b})"
         if key == "market":
             okk = ok(ovs) and not ovs.market.empty
             path = _inp(cfg, "market_points")[0]
@@ -905,7 +982,7 @@ def load_facts(cfg: Mapping, as_of: str | None = None) -> Facts:
     band = band_from(cfg, a, val, mc) if ok(val) else Unavailable(val.reason, val.reason_en, val.missing)
     band_dp = band_mc(cfg, a, val, mc_dp) if ok(val) and ok(mc_dp) else Unavailable("이중 고점 몬테카를로 없음", "No double-peak run")
     fx, fd = fx_on(cfg, as_of)
-    return Facts(as_of, a, dom, ovs, pe, der, mu, val, mc, band, links(cfg, as_of), fx, fd, source_status(cfg, ovs), entity_rows(ovs),
+    return Facts(as_of, a, dom, ovs, pe, der, mu, val, mc, band, links(cfg, as_of), fx, fd, source_status(cfg, ovs, ev), entity_rows(ovs),
                  mc_dp, mc_st, band_dp, ev)
 
 

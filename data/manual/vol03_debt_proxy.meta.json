@@ -1,0 +1,9 @@
+{
+  "source": "Open DART fnlttSinglAcntAll (사업보고서 연결 재무상태표) — 로컬 계정 점검 결과의 수기 기록",
+  "endpoint": "(manual)",
+  "params": {"ticker": "267260", "fiscal_year": "FY2025A"},
+  "fetched_at": "2026-10-22",
+  "as_of": "2026-10-20",
+  "license_note": "금융감독원 Open DART 공개 공시. 억원 단위 반올림 값.",
+  "note": "임시 대용치: dart_financials.csv의 total_debt가 비어 있을 때만 사용. config data_fetch.dart.total_debt.company_overrides로 DART를 다시 수집하면 그 값(플래그 total_debt:proxy)이 우선. 차입금 성격은 사업보고서 주석으로 확인 필요."
+}

@@ -239,3 +239,40 @@ def discount_dist(lows: Sequence[float], highs: Sequence[float], c: Mapping, mar
         _style(ax, c, grid_x=True)
         _save(fig, path)
     return draw
+
+
+def discount_boxes(series: Sequence[tuple[str, Sequence[float]]], c: Mapping, marks: Sequence[tuple[float, str, str]]) -> Draw:
+    """할인율 분포 상자그림 여러 줄(전체·하위 표본 × 하단·상단) + Target 할인율 표시선."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        labels = [lab for lab, _ in series]
+        lf = label_frac(labels, w, lo=0.16)
+        ax = fig.add_axes([lf, 0.14, 0.95 - lf, 0.76])
+        data = [np.asarray(v, float) * 100 for _, v in series]
+        kw = dict(widths=0.5, patch_artist=True, showfliers=True, medianprops={"color": c["charcoal"], "lw": 1.6},
+                  flierprops={"markersize": 2.5, "markerfacecolor": c["warm_grey"]})
+        try:
+            bp = ax.boxplot(data, orientation="horizontal", **kw)
+        except TypeError:
+            bp = ax.boxplot(data, vert=False, **kw)
+        for k, patch in enumerate(bp["boxes"]):
+            patch.set(facecolor=c["warm_grey_light"] if k < 2 else c["panel"], edgecolor=c["warm_grey"])
+        n = len(series)
+        allv = np.concatenate(data + [np.asarray([m[0] * 100 for m in marks])])
+        x0, x1 = float(np.nanmin(allv)), float(np.nanmax(allv))
+        pad = max(2.0, (x1 - x0) * 0.06)
+        ax.set_xlim(x0 - pad, x1 + pad)
+        for k, (v, lab, col) in enumerate(marks):
+            right = v * 100 > x0 + (x1 - x0) * 0.6
+            ax.axvline(v * 100, color=col, lw=1.2, ls="--")
+            ax.text(v * 100, n + 0.62 - 0.22 * k, (f"{lab} {v * 100:.0f}% " if right else f" {lab} {v * 100:.0f}%"), ha="right" if right else "left",
+                    va="center", fontsize=FS - 0.2, fontweight="bold", color=col)
+        ax.set_yticks(list(range(1, n + 1)))
+        ax.set_yticklabels(labels)
+        ax.set_ylim(0.5, n + 0.85)
+        ax.invert_yaxis()
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}%"))
+        ax.tick_params(axis="x", labelsize=FS - 0.4, colors=c["note"])
+        _style(ax, c, grid_x=True)
+        _save(fig, path)
+    return draw

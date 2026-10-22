@@ -226,7 +226,10 @@ def anomalies(f: data.Facts, cfg: Mapping) -> list[str]:
             if np.isfinite(r["ni1"]) and np.isfinite(r["oi1"]) and r["ni1"] > r["oi1"] * 1.5 and r["oi1"] > 0 and r["status"] != "held":
                 out.append(f"{r['company']} FY2025A 순이익 {r['ni1']:,.0f} > 영업이익 {r['oi1']:,.0f} USD mn ({r['ni1'] / r['oi1']:.1f}배) — 영업외 이익(일회성) 가능성, PER 분모 과대 → 배수 과소")
         if f.peers.ev_basis == "EBIT":
-            out.append("EV 배수는 D&A 미수집으로 EV/EBIT 대용 — EV/EBITDA보다 높게 나온다")
+            m = t[t["group"].isin(["domestic", "core"]) & (t["status"] == "applied") & t["da1"].isna()]
+            out.append(f"EV 배수는 D&A 미수집({', '.join(m['company'])})으로 EV/EBIT 대용 — EV/EBITDA보다 높게 나온다")
+        if t["debt_proxy"].any():
+            out.append(f"{', '.join(t[t['debt_proxy']]['company'])} 총차입금 = 기타금융부채 대용치(주석 확인 전) — 리스·파생 포함 가능성")
     if ok(f.val) and f.val.ev_per_share:
         d = f.val.ev_per_share / f.val.per_share["current"] - 1
         if abs(d) > 0.2:
@@ -250,6 +253,14 @@ def anomalies(f: data.Facts, cfg: Mapping) -> list[str]:
         y0, y1 = min(f.der.hist), max(f.der.hist)
         r = f.der.hist[y0]["npm"] / f.der.hist[y1]["npm"]
         out.append(f"3사 합산 순이익률 FY{y0}A {f.der.hist[y0]['npm'] * 100:.1f}% → FY{y1}A {f.der.hist[y1]['npm'] * 100:.1f}% (FY{y0}A 이익률이면 평가가액 {r * 100:.0f}%) — 이중 고점 몬테카를로(p7)로 반영")
+    if ok(f.ipo):
+        ev = f.ipo
+        for _, r in ev.full.table[ev.full.table["outlier"]].iterrows():
+            out.append(f"IPO 할인율 {r['company']}({r['rcept_no']}) {r['discount_low'] * 100:.1f}~{r['discount_high'] * 100:.1f}% — 50% 초과·10% 미만 범위 밖, 원문 확인 필요(분포에는 유지)")
+        if ev.full.n < ev.target_n:
+            out.append(f"IPO 할인율 표본 {ev.full.n}건(실제 신고일 {ev.full.period[0]}~{ev.full.period[1]}) < 목표 {ev.target_n}건 — 검색 기간 일부만 반영, 분위 신뢰 제한")
+        if ev.chosen == "full":
+            out.append(f"Target(공모 2,000억원대)과 비슷한 하위 표본({ev.sub_rule}) {ev.sub.n}건 < {ev.sub_min_n}건 — 전체 표본 분포로 대체")
     if ok(f.mult) and f.mult.applied_group == "domestic":
         out.append("적용 배수가 국내 3사만 — 미국 핵심 비교군 시총 미수집(TODO(data))")
     return out
@@ -280,12 +291,18 @@ def todo_items(f: data.Facts, cfg: Mapping) -> list[str]:
             out.append(f"[verify] {r['company']} 10-K 주석: 영업외 이익(순이익 {r['ni1']:,.0f} vs 영업이익 {r['oi1']:,.0f} USD mn)·장기차입금 — 확인 후 config multiples.hold_out에서 삭제")
         kr_da = t[(t["region"] == "KR") & (t["status"] == "applied") & t["da1"].isna()]
         if len(kr_da):
-            out.append(f"[data] 국내 D&A 미수집: {', '.join(kr_da['company'])} — research.vol03.fetch_extra --only dart 재실행, 계정명 확인(현금흐름표 '감가상각비' 표기)")
+            out.append(f"[data] 국내 D&A 미수집: {', '.join(kr_da['company'])} — python -m src.data_fetch.dart --da-candidates " + "/".join(kr_da["ticker"]) + " (로컬 원자료로 계정 후보 확인) → 현금흐름표에 없으면 주석 수치를 data/manual/vol03_peer_manual.csv에 입력")
         if (t["region"] == "KR").any() and t[(t["region"] == "KR") & (t["status"] == "applied")]["debt_missing"].any():
             out.append("[check] 국내 총차입금 매핑 점검: python -m src.data_fetch.dart --debt-candidates 267260 (로컬 원자료, API 호출 없음) → "
                        "후보가 없으면 무차입, 이름만 다르면 IFRS account_id 2차 매칭(id_fallback)으로 재수집")
     if not ok(f.ipo):
         out.append(f"[data] 국내 IPO 할인율 실증: python -m research.vol03.ipo_discounts --asof {f.as_of} (DART 증권신고서, 로컬)")
+    elif f.ipo.full.n < f.ipo.target_n:
+        out.append(f"[data] IPO 할인율 표본 {f.ipo.full.n}건 < 목표 {f.ipo.target_n}건 (실제 신고일 {f.ipo.full.period[0]}~{f.ipo.full.period[1]}) — "
+                   f"python -m research.vol03.ipo_discounts --asof {f.as_of} (월 구간·전체 페이지 재검색, 로컬)")
+    if ok(f.peers) and f.peers.table["debt_proxy"].any():
+        names = ", ".join(f.peers.table[f.peers.table["debt_proxy"]]["company"])
+        out.append(f"[verify] 총차입금 대용치(주석 확인 전): {names} — 사업보고서 차입금 주석과 대조 후 config data_fetch.dart.total_debt.company_overrides 정리")
     out.append("[manual] Schneider Electric: data/manual/overseas_financials_manual.csv(재무) + data/manual/vol03_market_manual.csv(종가·주식수, EUR) — 이번 편 제외")
     return out
 
@@ -350,9 +367,28 @@ def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
     L += ["", "### 국내 IPO 할인율 실증 (DART 증권신고서)", ""]
     if ok(f.ipo):
         ev = f.ipo
-        L += [f"- 전체 {ev.n_all}건 중 사용 {ev.n}건 (신뢰도 기준) · 기간 {ev.period[0]}~{ev.period[1]} · "
-              + " · ".join(f"{k} Q1/중앙값/Q3 {a * 100:.1f}/{b * 100:.1f}/{c * 100:.1f}%" for k, (a, b, c) in ev.stats.items())
+        q = lambda st: " · ".join(f"{k} {a * 100:.1f}/{b * 100:.1f}/{c * 100:.1f}%" for k, (a, b, c) in st.items())  # noqa: E731
+        for s_, lab in ((ev.full, "전체"), (ev.sub, f"하위 표본({ev.sub_rule})")):
+            L += [f"- {lab}: n = {s_.n} · 실제 신고일 {s_.period[0] or '—'}~{s_.period[1] or '—'} · Q1/중앙값/Q3 {q(s_.stats) if s_.n else '—'}"
+                  + (f" · 이상치 {s_.n_outlier}건 제외 시 {q(s_.stats_ex)}" if s_.n_outlier else "")]
+        L += [f"- 파일 {ev.n_all}행 · 밴드 기준 표본: {'하위 표본' if ev.chosen == 'sub' else '전체'}"
+              + ("" if ev.chosen == "sub" else f" (하위 표본 {ev.sub.n}건 < {ev.sub_min_n}건)")
               + (f" → n ≥ {ev.min_n}: 밴드 할인율에 사용(sourced)" if ev.used else f" → n < {ev.min_n}: 몬테카를로 밴드 유지")]
+        if ev.full.n < ev.target_n:
+            L += [f"- 목표 표본 {ev.target_n}건 미달 ({ev.full.n}건) — 월 구간 재검색: {ev_cmd(f)}"]
+        out_t = ev.full.table[ev.full.table["outlier"]]
+        if len(out_t):
+            L += ["", "원문 확인 필요(할인율 상단 > 50% 또는 하단 < 10%, 분포에는 유지):", "",
+                  markdown_table([{"회사": r["company"], "접수번호": r["rcept_no"], "할인율 %": f"{r['discount_low'] * 100:.1f}~{r['discount_high'] * 100:.1f}"}
+                                  for _, r in out_t.iterrows()])]
+        try:
+            from research.vol03 import ipo_discounts as idc
+            icfg = cfg["research"]["vol03"]["ipo_discounts"]
+            lp = data._inp(cfg, "ipo_log")[0]
+            lg = data._read(lp) if lp.exists() else None
+            L += ["", idc.breakdown(ev.full.table, lg, icfg)]
+        except Exception as e:  # noqa: BLE001 — 분해표는 보조
+            L += [f"- 구간·시장·규모별 분해 생략: {type(e).__name__}"]
     else:
         L += [f"- 미수집 — {ev_cmd(f)}"]
     L += ["", "### 검산 (배수·단위·환율·공모 구조·재현)", "", markdown_table(checks(f, cfg)) if checks(f, cfg) else "- 계산 보류"]

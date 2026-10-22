@@ -178,10 +178,15 @@ data_fetch:
     total_debt:
       sj_div: ["BS"]
       include_name_patterns: ["차입금", "사채", "유동성장기부채"]
-      exclude_name_patterns: ["할인발행차금", "상환할증금", "리스", "전환권조정", "신주인수권조정", "충당", "이자"]
+      exclude_name_patterns: ["할인발행차금", "상환할증금", "리스", "전환권조정", "신주인수권조정", "충당", "이자", "계약부채"]
       exclude_detail_rows: true         # account_detail이 '-'가 아닌 세부행 제외 (이중계산 방지)
       # 계정명으로 하나도 못 찾을 때만 IFRS 표준 account_id로 2차 매칭 (플래그 total_debt:id_fallback). ASSUMPTION(verify)
       #   점검: python -m src.data_fetch.dart --debt-candidates 267260 (로컬 원자료, API 호출 없음)
+      # 회사별 대용치: 계정명·표준 id로 차입금을 못 찾는 회사만. 계약부채(선수금 성격)는 포함하지 않는다. 보고서에는 "주석 확인 전 대용치"
+      company_overrides:
+        "267260":                       # HD현대일렉트릭 — --debt-candidates 결과 '차입금' 계정명 없음, 기타금융부채에 포함된 것으로 판단
+          account_ids: ["ifrs-full_OtherCurrentFinancialLiabilities", "ifrs-full_OtherNoncurrentFinancialLiabilities"]
+          note: "주석 확인 전 대용치: 단기·장기 기타금융부채"
       fallback_account_ids: ["ifrs-full_ShorttermBorrowings", "ifrs-full_LongtermBorrowings", "ifrs-full_CurrentPortionOfLongtermBorrowings",
                              "ifrs-full_CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings", "ifrs-full_NoncurrentPortionOfNoncurrentBorrowings",
                              "ifrs-full_Borrowings", "ifrs-full_BondsIssued", "ifrs-full_NoncurrentPortionOfNoncurrentBondsIssued",
@@ -686,6 +691,8 @@ research:
       peer_manual: "data/manual/vol03_peer_manual.csv"                # 수기 입력 양식 (D&A 등)
       sec_debt: "data/processed/sec_debt_components.csv"              # 총차입금 구성 태그 (장기차입금 태그 보고 여부 점검)
       ipo_discounts: "data/processed/vol03_ipo_discounts.csv"         # research.vol03.ipo_discounts (로컬 실행, DART 증권신고서)
+      ipo_log: "data/processed/vol03_ipo_filings_log.csv"             # 같은 실행의 신고서별 처리 기록 (사용·중복·제외 사유)
+      debt_proxy: "data/manual/vol03_debt_proxy.csv"                  # 총차입금 대용치 (DART 재수집 전 임시, 주석 확인 전)
       overseas_manual: "data/manual/overseas_financials_manual.csv"   # Schneider Electric (SEC 비대상)
       fx: "data/processed/ecos_fx_daily.csv"
     fetch_extra:                        # research.vol03.fetch_extra (로컬 실행 전용)
@@ -796,8 +803,21 @@ research:
       pblntf_detail_ty: "C001"          # ASSUMPTION(verify): 증권신고서(지분증권)
       report_nm_contains: ["증권신고서(지분증권)"]
       corp_cls: ["E"]                   # 신청 시점 비상장(기타법인) = 신규 상장 후보. 상장사의 유상증자 신고서 제외
+      window_months: 1                  # 공시검색 구간 (월 단위). 구간마다 total_page 끝까지 순회
+      max_pages: 100                    # 구간당 페이지 상한 (100건 × 100쪽 — 넉넉히, 초과 시 기록)
+      page_count: 100
       exclude_name_patterns: ["스팩", "기업인수목적", "리츠", "부동산투자회사", "인프라"]
       markets: {"유가증권시장": "KOSPI", "코스닥시장": "KOSDAQ"}
       max_documents: 400                # 원문 다운로드 상한 (호출 간격은 data_fetch.dart.request_delay_sec)
       min_n: 10                         # 이 이상이면 band_discount = 분포 중앙값(sourced), 아니면 몬테카를로 밴드 유지
+      target_n: 40                      # 표본 목표 (미달이면 요약에 사유)
       use_confidence: ["high", "medium"]
+      # 하위 표본: Target Co.(공모금액 약 2,000억원대)와 비슷한 딜 — 코스피 또는 공모금액(밴드 하단 기준) ≥ 1,000억원. n ≥ sub_min_n이면 밴드에 사용
+      sub_markets: ["KOSPI"]
+      sub_min_offer: 1000               # 억원
+      sub_min_n: 10
+      size_buckets: [300, 1000]         # 공모금액 규모 구간 경계 (억원): <300 · 300~1,000 · ≥1,000
+      # 이상치(원문 확인 필요 플래그): 할인율 상단 > 50% 또는 하단 < 10%. 기본 분포에 남기고, 제외 결과를 민감도로 병기
+      outlier_high: 0.50
+      outlier_low: 0.10
+      qa_report: docs/qa/vol03_ipo_discounts.md   # 구간·시장·규모별 표본 요약 (ipo_discounts 실행 시 갱신)

@@ -108,10 +108,11 @@ def _debt_base_rows(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
             and not (debt_cfg.get("exclude_detail_rows", True) and _is_detail_row(r))]
 
 
-def select_debt_lines(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
+def select_debt_lines(rows: list[dict], debt_cfg: Mapping, ticker: str | None = None) -> list[dict]:
     """총차입금 구성 행 선택 (ASSUMPTION: config dart.total_debt).
 
-    1차: 계정명 패턴. 이름으로 하나도 못 찾으면 2차: IFRS account_id(fallback_account_ids) — 계정명이 회사 고유 표기인 경우.
+    1차: 계정명 패턴. 이름으로 하나도 못 찾으면 2차: 회사별 대용 계정(company_overrides[ticker], 플래그 proxy),
+    없으면 3차: IFRS account_id(fallback_account_ids) — 계정명이 회사 고유 표기인 경우.
     """
     inc = [re.compile(p) for p in debt_cfg.get("include_name_patterns", [])]
     exc = [re.compile(p) for p in debt_cfg.get("exclude_name_patterns", [])]
@@ -120,6 +121,12 @@ def select_debt_lines(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
            and not any(p.search(_norm(r.get("account_nm"))) for p in exc)]
     if out:
         return out
+    ov = (debt_cfg.get("company_overrides") or {}).get(str(ticker).zfill(6) if ticker else "")
+    if ov:
+        pid = set(ov.get("account_ids", []))
+        hit = [dict(r, _proxy=True) for r in base if r.get("account_id") in pid and not any(p.search(_norm(r.get("account_nm"))) for p in exc)]
+        if hit:
+            return hit
     ids = set(debt_cfg.get("fallback_account_ids", []))
     return [dict(r, _id_fallback=True) for r in base if r.get("account_id") in ids
             and not any(p.search(_norm(r.get("account_nm"))) for p in exc)]
@@ -128,10 +135,10 @@ def select_debt_lines(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
 DEBT_HINT = re.compile(r"차입|사채|금융부채|부채|Borrow|Bond|Debt|Loan", re.I)
 
 
-def debt_candidates(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
+def debt_candidates(rows: list[dict], debt_cfg: Mapping, ticker: str | None = None) -> list[dict]:
     """총차입금 매핑 점검용: 재무상태표에서 차입금처럼 보이는 모든 계정과 선택 여부·사유 (네트워크 없음)."""
-    chosen = {id(r) for r in select_debt_lines(rows, debt_cfg)}
-    chosen_ids = {(r.get("account_id"), r.get("account_nm")) for r in select_debt_lines(rows, debt_cfg)}
+    chosen = {id(r) for r in select_debt_lines(rows, debt_cfg, ticker)}
+    chosen_ids = {(r.get("account_id"), r.get("account_nm")) for r in select_debt_lines(rows, debt_cfg, ticker)}
     inc = [re.compile(p) for p in debt_cfg.get("include_name_patterns", [])]
     exc = [re.compile(p) for p in debt_cfg.get("exclude_name_patterns", [])]
     out = []
@@ -157,7 +164,27 @@ def debt_candidates(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
     return out
 
 
-def extract_dart_metrics(rows: list[dict], dart_cfg: Mapping) -> tuple[dict, list[dict], list[str]]:
+DA_HINT = re.compile(r"상각|Depreciation|Amortis|Amortiz", re.I)
+
+
+def da_candidates(rows: list[dict], spec: Mapping) -> list[dict]:
+    """D&A 점검용: 손익·현금흐름표에서 '상각'이 들어간 계정과 Vol.3 D&A 규칙(spec) 기준 선택 여부 (네트워크 없음)."""
+    inc = [re.compile(p) for p in spec.get("include_name_patterns", [])]
+    exc = [re.compile(p) for p in spec.get("exclude_name_patterns", [])]
+    out = []
+    for r in rows:
+        nm = _norm(r.get("account_nm"))
+        if not (DA_HINT.search(nm) or DA_HINT.search(str(r.get("account_id", "")))):
+            continue
+        sel = (r.get("sj_div") in spec.get("sj_div", ["CF"]) and not _is_detail_row(r)
+               and any(p.search(nm) for p in inc) and not any(p.search(nm) for p in exc))
+        out.append({"sj_div": r.get("sj_div"), "account_id": r.get("account_id"), "account_nm": r.get("account_nm"),
+                    "account_detail": r.get("account_detail"), "amount_krw_100m": to_number(r.get("thstrm_amount")) / KRW_PER_100M,
+                    "selected": sel})
+    return out
+
+
+def extract_dart_metrics(rows: list[dict], dart_cfg: Mapping, ticker: str | None = None) -> tuple[dict, list[dict], list[str]]:
     """fnlttSinglAcntAll list → (지표 dict[KRW 억원], 차입금 구성행, 플래그).
 
     thstrm_amount(당기) 기준. 금액은 원 → 억원.
@@ -178,9 +205,11 @@ def extract_dart_metrics(rows: list[dict], dart_cfg: Mapping) -> tuple[dict, lis
         else:
             metrics[metric] = to_number(hit.get("thstrm_amount")) / KRW_PER_100M
 
-    debt_rows = select_debt_lines(rows, dart_cfg["total_debt"])
+    debt_rows = select_debt_lines(rows, dart_cfg["total_debt"], ticker)
     if any(r.get("_id_fallback") for r in debt_rows):
         flags.append("total_debt:id_fallback")
+    if any(r.get("_proxy") for r in debt_rows):
+        flags.append("total_debt:proxy(주석 확인 전 대용치)")
     if debt_rows:
         metrics["total_debt"] = sum(
             v for v in (to_number(r.get("thstrm_amount")) for r in debt_rows) if v == v
@@ -416,7 +445,7 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: DartClient 
             if not rows:
                 errors.append(f"{peer['name']} FY{year}: 사업보고서 재무제표 없음 (TODO(data))")
                 continue
-            metrics, debt_detail, flags = extract_dart_metrics(rows, dcfg)
+            metrics, debt_detail, flags = extract_dart_metrics(rows, dcfg, ticker)
             fin_rows.append({
                 "company": peer["name"], "ticker": ticker, "corp_code": corp_code,
                 "fiscal_year": f"FY{year}A", "fs_div": fs_div, "rcept_no": rows[0].get("rcept_no"),
@@ -455,15 +484,18 @@ def main(argv: list[str] | None = None) -> int:
     import json
 
     from .base import load_config, markdown_table
-    p = argparse.ArgumentParser(description="DART 총차입금 계정 매핑 점검 (로컬 원자료)")
-    p.add_argument("--debt-candidates", required=True, metavar="TICKER")
+    p = argparse.ArgumentParser(description="DART 총차입금·D&A 계정 매핑 점검 (로컬 원자료)")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--debt-candidates", metavar="TICKER")
+    g.add_argument("--da-candidates", metavar="TICKER")
     p.add_argument("--year", type=int, nargs="*", default=None)
     p.add_argument("--config", default=None)
     args = p.parse_args(argv)
     cfg = load_config(args.config)
     dcfg = cfg["data_fetch"]["dart"]
     raw = resolve_path(cfg["paths"]["raw"]) / "dart"
-    t = str(args.debt_candidates).zfill(6)
+    kind = "debt" if args.debt_candidates else "da"
+    t = str(args.debt_candidates or args.da_candidates).zfill(6)
     found = False
     for y in args.year or cfg["data_fetch"]["fiscal_years"]:
         for fs in dcfg["fs_div_priority"]:
@@ -472,9 +504,15 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             found = True
             rows = json.loads(f.read_text(encoding="utf-8")).get("list", [])
-            cand = debt_candidates(rows, dcfg["total_debt"])
-            print(f"\n## {t} FY{y} {fs} — 차입금 후보 {len(cand)}개, 선택 {sum(c['selected'] for c in cand)}개")
-            print(markdown_table(cand) if cand else "- 후보 없음 (재무상태표에 차입금·사채 계정 없음 → 무차입 가능성, 주석 확인)")
+            if kind == "debt":
+                cand = debt_candidates(rows, dcfg["total_debt"], t)
+                print(f"\n## {t} FY{y} {fs} — 차입금 후보 {len(cand)}개, 선택 {sum(c['selected'] for c in cand)}개")
+                print(markdown_table(cand) if cand else "- 후보 없음 (재무상태표에 차입금·사채 계정 없음 → 무차입 가능성, 주석 확인)")
+            else:
+                spec = cfg["research"]["vol03"]["fetch_extra"]["dart_da"]
+                cand = da_candidates(rows, spec)
+                print(f"\n## {t} FY{y} {fs} — 상각 계정 후보 {len(cand)}개, 선택 {sum(c['selected'] for c in cand)}개")
+                print(markdown_table(cand) if cand else "- 후보 없음 (현금흐름표 조정 항목이 주석에만 있음 → 주석 값을 data/manual/vol03_peer_manual.csv에 입력)")
             break
     if not found:
         print(f"원자료 없음: {raw}/fnltt_{t}_<year>_<CFS|OFS>.json — python -m src.data_fetch.fetch_all --source dart 로 먼저 수집")
