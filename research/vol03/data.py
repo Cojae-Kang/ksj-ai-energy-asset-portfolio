@@ -833,8 +833,14 @@ def ipo_evidence(cfg: Mapping) -> IPOEvidence | Unavailable:
     df = _read(path) if path is not None else None
     if df is None:
         return Unavailable("국내 IPO 할인율 실증 미수집", "Korean IPO discount evidence not collected", ["vol03_ipo_discounts.csv"])
-    for c in ("discount_low", "discount_high", "value_per_share", "band_low", "band_high", "offer_amount_low"):
+    for c in ("discount_low", "discount_high", "discount_implied_low", "discount_implied_high",
+              "value_per_share", "band_low", "band_high", "offer_amount_low"):
         df[c] = df[c].map(num) if c in df else float("nan")
+    # 할인율 정의(1 − 밴드 ÷ 평가가액)로 통일: 평가가액·밴드가 있으면 계산값을 쓰고, 본문 할인율은 신뢰도 확인용으로만 쓴다
+    # (본문 숫자가 다른 할인율·배당수익률 등으로 잘못 잡힌 사례 방지 — 예: 서울보증보험 본문 7.1~9.1% vs 계산 29.4~42.2%)
+    for k in ("low", "high"):
+        imp = df[f"discount_implied_{k}"]
+        df[f"discount_{k}"] = imp.where(imp.notna(), df[f"discount_{k}"])
     use = set(icfg.get("use_confidence", ["high", "medium"]))
     t = df[df["confidence"].isin(use) & df["discount_low"].notna() & df["discount_high"].notna()].copy()
     t["discount_mid"] = (t["discount_low"] + t["discount_high"]) / 2

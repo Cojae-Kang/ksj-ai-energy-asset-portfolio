@@ -154,7 +154,7 @@ def parse_prospectus(text: str) -> dict:
         out["discount_implied_low"], out["discount_implied_high"] = 1 - hi / v, 1 - lo / v
     if have_core and parsed:
         ok_ = abs(parsed[0] - out["discount_implied_low"]) <= TOL_PP and abs(parsed[1] - out["discount_implied_high"]) <= TOL_PP
-        out["discount_low"], out["discount_high"] = parsed
+        out["discount_low"], out["discount_high"] = out["discount_implied_low"], out["discount_implied_high"]   # 정의값 사용, 본문은 검증용
         out["confidence"] = "high" if ok_ and not notes else "medium"
         if not ok_:
             notes.append("본문 할인율 ≠ 1 − 밴드 ÷ 평가가액")

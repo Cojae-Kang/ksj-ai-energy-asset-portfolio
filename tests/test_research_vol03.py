@@ -467,14 +467,15 @@ def test_parse_prospectus_fixtures():
     from research.vol03 import ipo_discounts as ip
     h = ip.parse_prospectus(ip.zip_text(_zip(DOC_HIGH, "cp949")))
     assert (h["value_per_share"], h["band_low"], h["band_high"]) == (32145, 21000, 25000)
-    assert h["discount_low"] == pytest.approx(0.2223) and h["discount_high"] == pytest.approx(0.3467)
+    assert h["discount_low"] == pytest.approx(1 - 25000 / 32145) and h["discount_high"] == pytest.approx(1 - 21000 / 32145)  # 정의값(본문 22.23~34.67%와 ±1.5%p 일치)
     assert h["discount_implied_low"] == pytest.approx(1 - 25000 / 32145) and h["confidence"] == "high" and not h["needs_review"]
     assert h["multiples"].startswith("PER") and h["market"] == "유가증권시장"
     m = ip.parse_prospectus(ip.to_text(DOC_IMPLIED))
     assert m["confidence"] == "medium" and m["needs_review"] and m["discount_low"] == pytest.approx(0.2) and m["discount_high"] == pytest.approx(0.3)
     assert "EV/EBITDA" in m["multiples"] and m["market"] == "코스닥시장"
     x = ip.parse_prospectus(ip.to_text(DOC_MISMATCH))
-    assert x["confidence"] == "medium" and "≠" in x["notes"] and x["discount_low"] == pytest.approx(0.15)
+    assert x["confidence"] == "medium" and "≠" in x["notes"]
+    assert x["discount_low"] == pytest.approx(x["discount_implied_low"]) and x["discount_high"] == pytest.approx(x["discount_implied_high"])  # 불일치면 정의값
     lo = ip.parse_prospectus(ip.to_text(DOC_LOW))
     assert lo["confidence"] == "low" and math.isnan(lo["value_per_share"])
 
@@ -641,7 +642,7 @@ def test_ipo_evidence_switches_band(real_cfg, tmp_path, n):
 
 def test_ipo_sub_sample_and_outliers(real_cfg):
     t = _ipo_rows(30, n_sub=12)
-    t.loc[29, ["discount_low", "discount_high"]] = [0.49, 0.575]       # 크리에이츠형 이상치 (원문 확인 필요)
+    t.loc[29, ["discount_low", "discount_high", "discount_implied_low", "discount_implied_high"]] = [0.49, 0.575, 0.49, 0.575]   # 크리에이츠형 이상치
     t.loc[28, "offer_amount_low"] = 1500.0                             # 코스닥이지만 공모금액 1,000억원 이상 → 하위 표본
     t.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
     ev = D.ipo_evidence(real_cfg)
@@ -789,3 +790,13 @@ def test_write_extra_no_future_warning(cfg, recwarn):
         fx.write_extra(cfg, "2026-10-20", [])
     df = pd.read_csv(cfg["research"]["vol03"]["inputs"]["peer_extra"])
     assert len(df) == 1
+
+
+def test_ipo_evidence_uses_definitional_discount(real_cfg):
+    """본문 할인율이 잘못 잡혀도(서울보증보험형) 분포에는 1 − 밴드 ÷ 평가가액을 쓴다."""
+    t = _ipo_rows(12)
+    t.loc[0, ["discount_low", "discount_high"]] = [0.071, 0.091]        # 본문 오인식
+    t.loc[0, ["discount_implied_low", "discount_implied_high"]] = [0.294, 0.422]
+    t.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
+    ev = D.ipo_evidence(real_cfg)
+    assert ev.full.n == 12 and ev.full.n_outlier == 0                   # 정의값이면 범위(10~50%) 안
