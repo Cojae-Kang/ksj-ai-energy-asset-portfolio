@@ -4,7 +4,7 @@
 
 B-1) EIA: 버지니아(VA)·미국(US) 상업용(COM) 전력 소매판매량·평균 가격, 연간 2015~최신
      → data/processed/vol02_eia_va_com.csv (+ .meta.json), raw: data/raw/eia/vol02_retail_sales_com_va_price.json
-     케이스 B의 전력비 민감도 단가(버지니아 상업용 평균 요금). 수집 전에는 미국 상업용 평균을 대용치로 쓴다.
+     케이스 B의 전력비 민감도 단가(버지니아 상업용 평균 요금). 파일이 없으면 케이스 B는 미입력(TODO(data))으로 멈춘다(미국 평균으로 대체하지 않음).
 키가 없으면 SKIPPED. 원자료(data/raw)는 커밋하지 않는다.
 """
 from __future__ import annotations
