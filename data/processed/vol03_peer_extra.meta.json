@@ -2,7 +2,7 @@
   "source": "SEC EDGAR companyfacts, Open DART fnlttSinglAcntAll",
   "endpoint": "(processed)",
   "params": {},
-  "fetched_at": "2026-10-22T14:09:39+00:00",
+  "fetched_at": "2026-10-22T14:58:58+00:00",
   "as_of": "2026-10-20",
   "license_note": "da = 감가상각비 + 무형자산상각비(KR 억원, 사용권자산 제외) / DepreciationDepletionAndAmortization 등(US USD mn). net_income = 보수 시나리오 분모(FY2022A, US)"
 }

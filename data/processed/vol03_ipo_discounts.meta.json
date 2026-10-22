@@ -1,0 +1,8 @@
+{
+  "source": "Open DART list.json · document.xml (증권신고서(지분증권))",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-22T14:47:13+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "20250101~20261020 신규 상장 증권신고서. 할인율 = 1 − 희망공모가 ÷ 주당 평가가액(소수). confidence high = 본문 할인율과 계산값 일치(±1.5%p), medium = 계산값만/불일치, low = 추출 실패. needs_review = high 아님"
+}
