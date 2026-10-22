@@ -52,7 +52,7 @@ def npv_at(o: OptionInputs, year: int, rent: float, scen: str) -> float:
     """결정 연도 year에 착공할 때 2단계 무차입 NPV (그 시점 가치). 임대료 = 그 시점 시장 임대료.
 
     2단계 사전 임대율 = 같은 시나리오의 1단계 가동률(결정 연도). OPEX 기준은 1단계 계획 비용을 OPEX 인상률로 키운 값
-    (임대료 경로와 무관한 고정비).
+    (임대료 경로와 무관한 고정비). 전력단가도 결정 연도까지 전력단가 인상률로 키운다.
     """
     ov = dict(o.scenarios[scen])
     p1 = replace(o.phase2, prelease=o.phase1_prelease, **ov)
@@ -61,7 +61,8 @@ def npv_at(o: OptionInputs, year: int, rent: float, scen: str) -> float:
     if p1.opex_ratio is not None:
         fixed += p1.opex_ratio * p1.stabilized_occupancy * p1.rent_per_kw_month * 12
     fixed *= (1 + p1.opex_escalation) ** year
-    inp = replace(p1, rent_per_kw_month=rent, prelease=occ1, opex_ratio=None, opex_per_kw_year=fixed)
+    price = p1.power_price * (1 + p1.power_escalation) ** year if p1.power_price is not None else None
+    inp = replace(p1, rent_per_kw_month=rent, prelease=occ1, opex_ratio=None, opex_per_kw_year=fixed, power_price=price)
     return project_npv(inp)
 
 

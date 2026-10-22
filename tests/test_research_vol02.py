@@ -31,7 +31,7 @@ SYNTH = {
     "B": dict(capex_per_mw=11, power_equipment_share=0.4, construction_quarters=8, rent_per_kw_month=130, rent_escalation=0.03,
               prelease=0.6, stabilized_occupancy=0.95, opex_per_kw_year=150, opex_escalation=0.025, dep_years=20,
               operating_years=20, margin_bp=225, target_dscr=1.35, max_gearing=0.65, tenor_years=15, grace_years=1,
-              dsra_months=6, discount_rate=0.1, pue=1.3, it_load_factor=0.7),
+              dsra_months=6, discount_rate=0.1, pue=1.3, it_load_factor=0.7, capex_yoy_change=0.2, lease_term_years=15),
 }
 
 
@@ -265,7 +265,7 @@ def test_story_public_text_and_numbers(cfg, fill):
     for lang in ("kr", "en"):
         st = Story(c, f, lang)
         pages = st.pages()
-        assert len(pages) == 17
+        assert len(pages) == 18
         texts = [t for t in _texts(pages) + list(st.sources().values()) + [st.footer()] if t]
         joined = "\n".join(texts)
         bad = [w for w in PUBLIC_FORBIDDEN if w in joined]
@@ -306,12 +306,13 @@ def test_build_pdfs(cfg, tmp_path, fill):
         raw = (out / f"KSJ_Research_Vol02_{lang.upper()}.pdf").read_bytes()
         n = len(re.findall(rb"/Type\s*/Page[^s]", raw))
         boxes = [tuple(float(x) for x in m.groups()) for m in re.finditer(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", raw)]
-        assert n == r["pages"][lang] == 17 and all(bx == (960, 720) for bx in boxes[:n])
+        assert n == r["pages"][lang] == 18 and all(bx == (960, 720) for bx in boxes[:n])
     assert bool(r["pending"]["kr"]) != fill
     summary = (out / "build_summary.md").read_text(encoding="utf-8")
     assert "Vol.1 데이터 연결" in summary and "계통 승인률 건수" in summary and "불일치 아님" in summary
     assert ("검산 (회계 항등식" in summary) == fill
     assert "## 가정 집계" in summary and "근거 있는 가정" in summary and "저자 판단" in summary
+    assert "## 범위 점검" in summary and ("범위 내" in summary or "⚠" in summary) == fill
 
 
 def test_vol01_roadmap_wording():
@@ -375,15 +376,57 @@ def test_committed_assumptions_tags_and_counts():
     cfg = base.load_config()
     a = D.load_assumptions(cfg)
     A, B = a["A"], a["B"]
-    assert (A["capex_per_mw"].value, A["capex_per_mw"].low, A["capex_per_mw"].high) == (100.0, 86.0, 145.0)
+    assert (A["capex_per_mw"].value, A["capex_per_mw"].low, A["capex_per_mw"].high) == (120.0, 86.0, 145.0)
     assert A["capex_per_mw"].status == "judgment" and A["rent_per_kw_month"].status == "sourced"
     assert A["prelease"].value == pytest.approx((0.16 + 0.235) / 2) and A["prelease"].status == "sourced"
     assert A["margin_bp"].value == 150 and A["target_dscr"].value == 1.45 and A["max_gearing"].value == pytest.approx(0.65)
     assert D.parse_brackets(A["tax_brackets"].value) == ((2, 0.10), (200, 0.20), (3000, 0.22), (math.inf, 0.25))
+    # 램프업 구조: 거치 3년 이자만 + 이자유보계좌(부족분 + 10%), 저자 판단
+    assert A["grace_years"].value == 3 and A["grace_interest"].value == "reserve"
+    assert A["interest_reserve_buffer"].value == pytest.approx(0.10)
+    assert {A[k].status for k in ("grace_years", "grace_interest", "interest_reserve_buffer")} == {"judgment"}
+    # 전력비: 전력 포함 임대(SPC 부담, 판단) · 한전 판매단가(근거) · 연 2% 인상(판단)
+    assert A["power_passthrough"].value == 0 and A["power_passthrough"].status == "judgment"
+    assert A["power_price"].value == pytest.approx(181.9) and A["power_price"].status == "sourced" and A["power_price"].published == "2026-08-27"
+    assert A["power_escalation"].value == pytest.approx(0.02) and A["power_escalation"].status == "judgment"
     assert B["capex_per_mw"].value == pytest.approx(17.6 + 0.584) and B["capex_per_mw"].status == "sourced"
+    assert B["capex_yoy_change"].value == pytest.approx(0.21) and B["capex_yoy_change"].status == "sourced"
     assert (B["rent_per_kw_month"].value, B["rent_per_kw_month"].high) == (190.0, 235.0)
     assert B["margin_bp"].value is None and B["target_dscr"].status == "sourced"
-    for x in (A["pue"], A["dep_years"], A["exit_cap_rate"], B["it_load_factor"], B["dep_years"]):
-        assert x.value is None                                                           # null 유지 항목
+    # 이전 null 항목: 제안값을 저자 판단으로 입력
+    for case, k, v in (("A", "pue", 1.3), ("B", "pue", 1.3), ("A", "it_load_factor", 0.7), ("B", "it_load_factor", 0.7),
+                       ("A", "dep_years", 20), ("B", "dep_years", 20), ("A", "exit_cap_rate", 0.07), ("B", "exit_cap_rate", 0.06),
+                       ("A", "discount_rate", 0.10), ("A", "option_window_years", 2)):
+        x = a[case][k]
+        assert x.value == pytest.approx(v) and x.status == "judgment", (case, k)
     keys_a = D.table_keys("A", A)
     assert "opex_per_kw_year" not in keys_a and "ramp_elasticity" not in keys_a and "tax_brackets" in keys_a
+    assert "power_price" in keys_a and "interest_reserve_buffer" in keys_a and "discount_rate" not in D.table_keys("B", B)
+
+
+def test_committed_case_results_and_checks():
+    """커밋 가정으로 계산: 램프업 유보계좌로 마이너스 상환 해소, 대안 sizing, 범위 점검 표."""
+    from research.vol02.build import check_rows
+    from src.analysis import pf_model as pf
+    cfg = copy.deepcopy(base.load_config())
+    cfg["research"]["vol02"]["real_option"].update(n_paths=400, grid_paths=200, convergence_paths=[200, 400])
+    f = D.load_facts(cfg)
+    a, b = f.cases["A"], f.cases["B"]
+    assert D.ok(a) and D.ok(b)
+    assert not a.negative_amort and a.base.cons.reserve_initial > 0
+    assert a.base.min_dscr >= a.inp.target_dscr - 1e-6 and b.base.min_dscr >= b.inp.target_dscr - 1e-6
+    assert set(a.alts) == {"passthrough", "power_cut"} and set(b.alts) == {"contracted"}
+    assert a.alts["passthrough"].debt > a.base.debt and pf.yield_on_cost(a.alts["passthrough"]) > a.yoc
+    assert a.alts["power_cut"].inp.power_price == pytest.approx(181.9 - 10)
+    assert b.alts["contracted"].debt < b.base.debt
+    assert b.alts["contracted"].min_dscr_contracted == pytest.approx(b.inp.target_dscr)
+    assert pf.yield_on_cost(b.cost_counterfactual) > b.yoc                                 # 공사비 상승 전 수익률이 더 높다
+    for k, v in a.checks.items():
+        assert abs(v) < 1e-6 * a.base.cons.uses, (k, v)
+    op = f.option
+    assert not op.discount_pending and not op.window_pending
+    assert op.inputs.phase2.discount_rate == pytest.approx(0.10) and op.inputs.window_years == 2
+    assert len(op.grid) == 9                                                              # 격자 유지 (3 × 3)
+    rows = check_rows(f)
+    assert {r["케이스"].split("(")[0].strip() for r in rows} >= {"A 기준", "A 전력비 별도 청구", "B 계약 매출 sizing"}
+    assert all(r["마이너스 상환"] == "없음" for r in rows)

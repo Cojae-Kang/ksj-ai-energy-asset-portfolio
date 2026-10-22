@@ -21,7 +21,7 @@ from matplotlib.ticker import FuncFormatter, NullLocator  # noqa: E402
 def structure(nodes: Mapping[str, tuple[str, str]], edges: Sequence[tuple[str, str, str]], c: Mapping) -> Draw:
     """nodes: 키 → (제목, 부제). 위치는 고정 배치(SPC 중심). edges: (from, to, 라벨)."""
     pos = {"sponsor": (50, 88), "spc": (50, 52), "lenders": (12, 52), "tenant": (88, 52),
-           "epc": (20, 14), "power": (80, 14), "om": (50, 14)}
+           "epc": (20, 14), "power": (80, 14), "om": (50, 14), "reserve": (14, 88)}
 
     def draw(path: Path, w: float, h: float) -> None:
         fig = _fig(w, h)
@@ -34,7 +34,7 @@ def structure(nodes: Mapping[str, tuple[str, str]], edges: Sequence[tuple[str, s
             x, y = pos[k]
             main = k == "spc"
             ax.add_patch(FancyBboxPatch((x - bw / 2, y - bh / 2), bw, bh, boxstyle="round,pad=0.4,rounding_size=1.5",
-                                        fc=c["charcoal"] if main else (c["panel"] if k in ("lenders", "tenant") else "white"),
+                                        fc=c["charcoal"] if main else (c["panel"] if k in ("lenders", "tenant", "reserve") else "white"),
                                         ec=c["charcoal"] if main else c["gold"], lw=1.2))
             ax.text(x, y + 2.4, title, ha="center", va="center", fontsize=FS + 2.2, fontweight="bold",
                     color=c["gold"] if main else c["brown_dark"])
@@ -53,6 +53,41 @@ def structure(nodes: Mapping[str, tuple[str, str]], edges: Sequence[tuple[str, s
             mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
             ax.text(mx, my + (2.2 if dy == 0 else 0), lab, ha="center", va="bottom" if dy == 0 else "center",
                     fontsize=FS - 0.4, color=c["note"], bbox=dict(fc="white", ec="none", pad=0.6))
+        _save(fig, path)
+    return draw
+
+
+def yield_bars(labels: Sequence[str], values: Sequence[float], colors: Sequence[str], c: Mapping,
+               fmt: Callable[[float], str], band: tuple[float, float] | None = None, band_label: str = "",
+               marks: Sequence[float | None] | None = None, mark_label: str = "") -> Draw:
+    """막대(원가 대비 수익률 등, %) + 점검 범위 음영(band) + 막대별 비교 표식(marks, 예: 대출금리)."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        ax = fig.add_axes([0.06, 0.14, 0.92, 0.80])
+        x = np.arange(len(labels))
+        top = max(list(values) + [band[1] if band else 0] + [m for m in (marks or []) if m is not None])
+        if band:
+            ax.axhspan(band[0], band[1], color=c["gold"], alpha=0.16, lw=0, zorder=0)
+            for yv in band:
+                ax.axhline(yv, color=c["gold"], lw=0.6, ls=":", zorder=1)
+            ax.text(len(labels) - 0.45, band[1], f"{band_label} {fmt(band[0])}~{fmt(band[1])}", ha="right", va="bottom",
+                    fontsize=FS - 0.4, color=c["note"])
+        b = ax.bar(x, values, color=colors, width=0.5, zorder=2)
+        for bar, v in zip(b, values):
+            ax.text(bar.get_x() + bar.get_width() / 2, v + top * 0.02, fmt(v), ha="center", va="bottom",
+                    fontsize=FS + 1.2, fontweight="bold", color=c["text"], zorder=3)
+        if marks:
+            for i, m in enumerate(marks):
+                if m is None:
+                    continue
+                ax.plot([i - 0.32, i + 0.32], [m, m], color=c["brick"], lw=1.8, zorder=4)
+                ax.text(i + 0.34, m, fmt(m), ha="left", va="center", fontsize=FS - 0.8, color=c["brick"], zorder=4)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=FS - 0.2)
+        ax.set_xlim(-0.6, len(labels) - 0.4)
+        ax.set_ylim(0, top * 1.2)
+        ax.yaxis.set_major_locator(NullLocator())
+        _style(ax, c)
         _save(fig, path)
     return draw
 

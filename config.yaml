@@ -535,6 +535,7 @@ research:
           it_load_factor: {value: null, unit: "%", todo: "TODO(source): 임차 IT 용량 대비 실제 사용률"}
           power_price: {value: null, unit: "원/kWh", todo: "TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가"}
           power_passthrough: {value: 1.0, unit: "%", tag: "ASSUMPTION(design)", source: "전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)"}
+          power_escalation: {value: null, unit: "%/년", todo: "TODO(source): 전력단가 연 인상률 — 한전 판매단가 시계열"}
           tax_brackets: {value: null, unit: "억원:%", todo: "TODO(source): 법인세법 제55조 누진세율 '상한:세율' (예: 2:10,200:20,3000:22,inf:25)"}
           tax_rate_local: {value: 0.10, unit: "법인세 대비 %", tag: "ASSUMPTION(verify)", source: "지방세법 — 법인지방소득세(법인세율의 10% 수준)", todo: "TODO(source): 조문 확인"}
           dep_years: {value: null, unit: "년", todo: "TODO(source): 감가상각 내용연수 — 법인세법 시행규칙 별표5(건축물)·별표6(업종별 설비) 가중"}
@@ -545,7 +546,8 @@ research:
           max_gearing: {value: null, unit: "%", todo: "TODO(source): 최대 대출 비율(LTC) — PF 제도·대주 관행 자료"}
           tenor_years: {value: null, unit: "년", todo: "TODO(source): 대출 만기 (COD 기준)"}
           grace_years: {value: null, unit: "년", todo: "TODO(source): 원금 거치기간"}
-          grace_interest: {value: "paid", unit: "-", tag: "ASSUMPTION(design)", source: "거치기간 이자 현금 지급(paid). 램프업 이자 자본화는 capitalized"}
+          grace_interest: {value: "paid", unit: "-", tag: "ASSUMPTION(design)", source: "거치기간 이자 현금 지급(paid). 램프업 이자 자본화는 capitalized, 이자유보계좌는 reserve"}
+          interest_reserve_buffer: {value: null, unit: "%", todo: "램프업 이자유보계좌 여유율 (reserve 모드: 기준 시나리오 거치기간 이자 부족분 합계 × (1 + 여유율))"}
           dsra_months: {value: null, unit: "개월", todo: "TODO(source): DSRA 적립 개월 수 — 대출 약정 관행"}
           discount_rate: {value: null, unit: "%", todo: "TODO(source): 자기자본 할인율 — 무위험(국고채 10년, DATA) + 위험 프리미엄 근거"}
           # 실물옵션 (2단계 20MW)
@@ -566,6 +568,7 @@ research:
           phase1_mw: {value: 100, unit: "MW", tag: "ASSUMPTION(design)", source: "가상 케이스: 단일 단계 개발"}
           phase2_mw: {value: 0, unit: "MW", tag: "ASSUMPTION(design)", source: "증설 옵션 없음"}
           capex_per_mw: {value: null, unit: "USD mn/MW", todo: "TODO(source): 미국 하이퍼스케일 MW당 개발비 — 업계 공사비 지수·상장 REIT 10-K 개발 공시"}
+          capex_yoy_change: {value: null, unit: "%", todo: "TODO(source): AI 사양 공사비 1년 상승률 — 업계 공사비 보고서 (서술용, 모델 입력 아님)"}
           power_equipment_share: {value: null, unit: "%", todo: "TODO(source): 총사업비 중 전력설비 비중"}
           construction_quarters: {value: null, unit: "분기", todo: "TODO(source): 착공~준공 기간"}
           rent_per_kw_month: {value: null, unit: "USD/kW·월", todo: "TODO(source): 북버지니아 도매(wholesale) 임대료 — 시장 보고서"}
@@ -601,6 +604,12 @@ research:
       rent_pct: 0.10                    # 임대료 ±10%
       rent_extra: {B: [-0.20]}          # 케이스 B 추가: 임대료 −20% (100MW 하이퍼스케일 계약은 250~500kW 시세보다 낮을 수 있음)
       opex_pct: 0.20                    # OPEX ±20% (출처 없는 저자 판단 → 민감도 필수)
+      power_pct: 0.10                   # 전력단가 ±10% (SPC가 전력비를 부담하는 케이스만)
+      # 전력단가 인하 제안 (확정 전 → 민감도로만): 수도권 북부(인천·경기 북부) 최대 10원/kWh 인하 제안
+      power_price_cut:
+        A: {value: -10, unit: "원/kWh", note: "수도권 북부(인천·경기 북부) 최대 10원/kWh 인하 제안(확정 전)",
+            todo: "TODO(source): 인하 제안 원문(기관·발표일)"}
+      contracted_sizing: ["B"]          # 계약 매출(사전 임대분) CFADS만으로 sculpting한 결과를 나란히 표시
       margin_scenarios_bp: {B: [150, 250, 350]}   # 가산금리 미확정 케이스: 시나리오별 계산, 가운데를 대표값
       pue_grid: [1.2, 1.3, 1.4, 1.5]    # 케이스 B 전력비 민감도 축 (PUE 가정 아님)
       occupancy_pct: 0.10               # 가동률 ±10%
@@ -612,6 +621,7 @@ research:
         prelease: [0.01, 1.0]
         capex_mult: [0.5, 3.0]
         opex_mult: [0.3, 5.0]
+        power_mult: [0.3, 3.0]
         rate_shift: [-0.04, 0.15]
         delay_quarters: [0, 24]
       heatmap:
@@ -622,7 +632,7 @@ research:
       seed: 42                          # = monte_carlo.seed
       convergence_paths: [1000, 2000, 5000, 10000, 20000]
       grid_paths: 8000                  # 할인율 × 대기 기간 격자 셀별 경로 수
-      # 할인율·대기 기간이 null이면 아래 격자(민감도 축, 저자 설정)로 계산하고 가운데 셀을 대표값으로 표기('미확정')
+      # 할인율 × 대기 기간 격자(민감도 축, 저자 설정)는 항상 계산. 대표 셀 = 가정값(없으면 격자 가운데, '미확정' 표기)
       discount_grid: [0.08, 0.10, 0.12]
       window_grid: [0, 2, 4]
       prob_grid: [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]

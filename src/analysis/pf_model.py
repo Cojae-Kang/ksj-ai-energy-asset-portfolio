@@ -6,13 +6,17 @@
 흐름
   1) 운영: 가동률(사전 임대율에서 수요 성장률로 램프업, 안정화 가동률 상한) × 임대료(kW·월) → 매출
      − 고정 OPEX(설치 kW 기준) + 전력비 순액(패스스루 비율 < 100%일 때만 발생) = EBITDA
+     전력비 = IT 용량 × 가동률 × IT 부하율 × PUE × 8,760시간 × 전력단가 × (1 + 전력단가 인상률)^t
      − 법인세(감가상각·이자 공제, 결손금 이월) = CFADS
   2) 대출 한도(Debt sizing) = min(목표 DSCR 기반 sculpting 한도, 최대 대출 비율 × 총사업비)
-     sculpting: 상환기간 원리금 = CFADS ÷ 목표 DSCR, 거치기간(이자만)에도 DSCR ≥ 목표
+     sculpting: 상환기간 원리금 = CFADS ÷ 목표 DSCR (sizing_basis = contracted면 계약 임대료 CFADS로 sculpting)
+     거치기간 이자: paid(현금, 거치기간에도 DSCR ≥ 목표) | capitalized(원금 가산) |
+       reserve(이자만 납부, CFADS가 이자에 못 미치는 금액은 FC에 사업비로 적립한 램프업 이자유보계좌에서 지급.
+               적립액 = 기준 시나리오 거치기간 부족분 합계 × (1 + 여유율), 최소·평균 DSCR은 원금 상환 기간 기준)
      최대 대출 비율이 묶이면 같은 모양으로 축소(유효 DSCR > 목표)
-  3) 건설 자금: 분기별 CAPEX(S-curve) + 건설이자(IDC, 자본화) + 초기 DSRA를 대출·자기자본 비율대로 조달
-  4) Waterfall: CFADS → 이자 → 원금 → DSRA 적립(다음 해 원리금 × 개월/12) → 배당
-     (거치기간 이자를 자본화하면 그 기간 배당은 잠그고 거치 종료 다음 해에 해제)
+  3) 건설 자금: 분기별 CAPEX(S-curve) + 건설이자(IDC, 자본화) + 초기 DSRA [+ 이자유보계좌]를 대출·자기자본 비율대로 조달
+  4) Waterfall: CFADS → 이자 → 원금 (부족 시 이자유보계좌 → DSRA 순서로 인출) → DSRA 적립(다음 해 원리금 × 개월/12) → 배당
+     (이자유보계좌 잔액은 거치 종료 해에 배당으로 해제. 거치기간 이자를 자본화하면 그 기간 배당은 잠그고 거치 종료 다음 해에 해제)
   5) 지표: 최소·평균 DSCR, LLCR(COD), Project IRR(무차입 세후), Equity IRR, 회수기간, 계약 현금흐름만의 DSCR
 
 스트레스(fixed 모드): 대출은 기준 케이스에서 정해진 금액·원금 스케줄을 유지하고(대주가 FC에 확정),
@@ -66,7 +70,10 @@ class PFInputs:
     it_load_factor: float | None = None
     exit_cap_rate: float | None = None  # 잔존가치 = 마지막 다음 해 EBITDA ÷ cap rate (없으면 잔존가치 제외)
     drawdown: str = "s_curve"
-    grace_interest: str = "paid"       # 거치기간 이자: paid(현금 지급, DSCR 검사) | capitalized(원금 가산, 램프업 구간)
+    grace_interest: str = "paid"       # 거치기간 이자: paid | capitalized | reserve (모듈 설명 참고)
+    reserve_buffer: float = 0.10       # 이자유보계좌 여유율 (reserve 모드: 부족분 합계 × (1 + 여유율))
+    power_escalation: float = 0.0      # 전력단가 연 인상률
+    sizing_basis: str = "total"        # total(전체 CFADS) | contracted(사전 임대 계약분 CFADS)로 sculpting
     opex_ratio: float | None = None    # OPEX = 비율 × 안정화 매출(1년차 임대료 기준), 이후 opex_escalation으로 증가
     ramp_years: float | None = None    # 선형 램프업: 1년차 사전 임대율 → (ramp_years+1)년차 안정화 가동률
     lease_term_years: int | None = None   # 사전 임대 계약 기간 (None = 운영기간 전체)
@@ -82,8 +89,10 @@ class PFInputs:
             raise ValueError("대출 만기는 운영기간 이내")
         if self.target_dscr <= 0 or not 0 < self.max_gearing < 1:
             raise ValueError("목표 DSCR > 0, 최대 대출 비율은 0~1")
-        if self.grace_interest not in ("paid", "capitalized"):
-            raise ValueError("grace_interest = paid | capitalized")
+        if self.grace_interest not in ("paid", "capitalized", "reserve"):
+            raise ValueError("grace_interest = paid | capitalized | reserve")
+        if self.sizing_basis not in ("total", "contracted"):
+            raise ValueError("sizing_basis = total | contracted")
 
     @property
     def kw(self) -> float:
@@ -115,6 +124,7 @@ class Stress:
     delay_quarters: int = 0            # 준공 지연 (CAPEX 집행 완료 후 COD까지 추가 분기)
     passthrough: float | None = None   # 전력비 패스스루 비율 대체값
     opex_mult: float = 1.0
+    power_mult: float = 1.0            # 전력단가 배수
 
     def label(self) -> str:
         parts = [f"{k}={v}" for k, v in self.__dict__.items() if v not in (None, 1.0, 0.0, 0)]
@@ -187,9 +197,10 @@ def operations(inp: PFInputs, st: Stress = BASE) -> pd.DataFrame:
     opex = np.full(n, opex0) * (1 + inp.opex_escalation) ** t / inp.money_scale * st.opex_mult
     pt = inp.power_passthrough if st.passthrough is None else st.passthrough
     if inp.power_modeled():
+        price = inp.power_price * st.power_mult * (1 + inp.power_escalation) ** t
         kwh = occ * inp.kw * inp.it_load_factor * 8760 * inp.pue
-        power_cost = kwh * inp.power_price / inp.money_scale
-        power_cost_c = contracted_occ * inp.kw * inp.it_load_factor * 8760 * inp.pue * inp.power_price / inp.money_scale
+        power_cost = kwh * price / inp.money_scale
+        power_cost_c = contracted_occ * inp.kw * inp.it_load_factor * 8760 * inp.pue * price / inp.money_scale
     else:
         power_cost = power_cost_c = np.zeros(n)
     net_power = -(1 - pt) * power_cost                       # 패스스루 100%면 0
@@ -250,52 +261,55 @@ class Construction:
     equity: float
     debt_share: float
     cod_quarter: int
+    reserve_initial: float = 0.0    # 램프업 이자유보계좌 적립액
 
 
-def _construction_arrays(inp: PFInputs, st: Stress, debt_share: float, dsra_initial: float) -> dict[str, np.ndarray]:
+def _construction_arrays(inp: PFInputs, st: Stress, debt_share: float, dsra_initial: float,
+                         reserve: float = 0.0) -> dict[str, np.ndarray]:
     q = inp.construction_quarters
     cod = q + st.delay_quarters
     capex_q = np.zeros(cod)
     capex_q[:q] = drawdown_weights(q, inp.drawdown) * inp.capex_total * st.capex_mult
     r = (inp.construction_rate + st.rate_shift) / QUARTERS_PER_YEAR
-    idc, dsra, draw, bal = np.zeros(cod), np.zeros(cod), np.zeros(cod), np.zeros(cod)
+    idc, dsra, ires, draw, bal = np.zeros(cod), np.zeros(cod), np.zeros(cod), np.zeros(cod), np.zeros(cod)
     dsra[-1] = dsra_initial
+    ires[-1] = reserve                                       # 램프업 이자유보계좌: COD 직전 분기에 적립
     b = 0.0
     for i in range(cod):
         idc[i] = b * r
-        draw[i] = debt_share * (capex_q[i] + idc[i] + dsra[i])
+        draw[i] = debt_share * (capex_q[i] + idc[i] + dsra[i] + ires[i])
         b += draw[i]
         bal[i] = b
-    uses = capex_q + idc + dsra
-    return {"capex": capex_q, "idc": idc, "dsra": dsra, "uses": uses, "debt_draw": draw, "equity": uses - draw,
-            "debt_balance": bal}
+    uses = capex_q + idc + dsra + ires
+    return {"capex": capex_q, "idc": idc, "dsra": dsra, "reserve": ires, "uses": uses, "debt_draw": draw,
+            "equity": uses - draw, "debt_balance": bal}
 
 
-def construction(inp: PFInputs, st: Stress, debt_share: float, dsra_initial: float) -> Construction:
-    """분기별 건설 자금. 각 분기 소요(CAPEX + IDC [+ COD에 초기 DSRA])를 대출 debt_share, 나머지 자기자본으로 조달.
+def construction(inp: PFInputs, st: Stress, debt_share: float, dsra_initial: float, reserve: float = 0.0) -> Construction:
+    """분기별 건설 자금. 각 분기 소요(CAPEX + IDC [+ COD에 초기 DSRA·이자유보계좌])를 대출 debt_share, 나머지 자기자본으로 조달.
 
     IDC = 분기 초 대출 잔액 × (기준금리 + 가산금리) ÷ 4, 자본화. 지연 분기는 CAPEX 없이 IDC만 발생.
     """
-    a = _construction_arrays(inp, st, debt_share, dsra_initial)
+    a = _construction_arrays(inp, st, debt_share, dsra_initial, reserve)
     df = pd.DataFrame({"quarter": np.arange(len(a["capex"])), **a})
     return Construction(df, float(a["capex"].sum()), float(a["idc"].sum()), dsra_initial, float(a["uses"].sum()),
-                        float(a["debt_draw"].sum()), float(a["equity"].sum()), debt_share, len(a["capex"]))
+                        float(a["debt_draw"].sum()), float(a["equity"].sum()), debt_share, len(a["capex"]), reserve)
 
 
-def _solve_share(inp: PFInputs, st: Stress, debt_target: float, dsra0: float) -> Construction:
+def _solve_share(inp: PFInputs, st: Stress, debt_target: float, dsra0: float, reserve: float = 0.0) -> Construction:
     """대출 총액(= Σ draw)이 debt_target이 되는 조달 비율을 이분법으로 찾는다 (IDC가 비율에 따라 변하므로)."""
     lo, hi = 0.0, 0.999
-    if _construction_arrays(inp, st, hi, dsra0)["debt_draw"].sum() < debt_target:
-        return construction(inp, st, hi, dsra0)
+    if _construction_arrays(inp, st, hi, dsra0, reserve)["debt_draw"].sum() < debt_target:
+        return construction(inp, st, hi, dsra0, reserve)
     for _ in range(80):
         mid = (lo + hi) / 2
-        if _construction_arrays(inp, st, mid, dsra0)["debt_draw"].sum() < debt_target:
+        if _construction_arrays(inp, st, mid, dsra0, reserve)["debt_draw"].sum() < debt_target:
             lo = mid
         else:
             hi = mid
         if hi - lo < 1e-13:
             break
-    return construction(inp, st, (lo + hi) / 2, dsra0)
+    return construction(inp, st, (lo + hi) / 2, dsra0, reserve)
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +322,7 @@ def sculpt(cfads: np.ndarray, rate: float, dscr: float, tenor: int, grace: int,
     상환기간(grace+1..tenor) 원리금 = CFADS ÷ DSCR → 거치 종료 시점 잔액 = 그 현재가치(B).
     paid: 거치기간 이자를 현금으로 내므로 대출 = min(B, min(CFADS_거치) ÷ (DSCR × 금리)).
     capitalized: 거치기간 이자를 원금에 가산(원리금 0) → 대출 = B ÷ (1 + 금리)^거치.
+    reserve: 거치기간 이자는 현금 지급하되 부족분은 이자유보계좌가 메우므로 거치기간 DSCR 제약 없음 → 대출 = B.
     """
     cf = np.asarray(cfads[:tenor], dtype=float)
     amort = np.arange(grace, tenor)
@@ -321,7 +336,7 @@ def sculpt(cfads: np.ndarray, rate: float, dscr: float, tenor: int, grace: int,
             ds[grace:] = w
         return debt, ds
     cap = math.inf
-    if grace > 0:
+    if grace > 0 and grace_interest == "paid":
         cap = float(np.min(np.maximum(cf[:grace], 0.0))) / (dscr * rate) if rate > 0 else math.inf
     debt = max(min(b_grace, cap), 0.0)
     ds[:grace] = debt * rate
@@ -358,7 +373,7 @@ class PFResult:
     gearing_debt: float
     binding: str                      # "dscr" | "gearing" | "fixed"
     effective_dscr: float
-    min_dscr: float
+    min_dscr: float                   # 원금 상환 기간 기준 (reserve 모드는 거치 이후, 그 밖에는 만기 전체)
     avg_dscr: float
     llcr: float
     min_dscr_contracted: float
@@ -369,6 +384,7 @@ class PFResult:
     equity_flows: pd.DataFrame        # quarter, flow
     project_flows: pd.DataFrame
     warnings: list[str] = field(default_factory=list)
+    min_icr_grace: float = float("nan")   # 거치기간 최소 CFADS ÷ 이자 (이자유보계좌 인출 전)
 
     @property
     def gearing(self) -> float:
@@ -378,11 +394,24 @@ class PFResult:
     def debt_per_mw(self) -> float:
         return self.debt / self.inp.mw
 
+    @property
+    def reserve_used(self) -> float:
+        """이자유보계좌 인출 합계."""
+        return float(self.ops["reserve_draw"].sum())
+
+    @property
+    def grace_shortfall(self) -> float:
+        """거치기간 원리금 부족분(이자유보계좌·DSRA 소진 후) 합계 — 자기자본 추가 투입."""
+        g = self.inp.grace_years
+        return float(self.ops["shortfall"].iloc[:g].sum())
+
     def summary(self) -> dict:
         return {"debt": self.debt, "gearing": self.gearing, "binding": self.binding, "min_dscr": self.min_dscr,
                 "avg_dscr": self.avg_dscr, "llcr": self.llcr, "project_irr": self.project_irr,
                 "equity_irr": self.equity_irr, "payback_years": self.payback_years, "uses": self.cons.uses,
-                "equity": self.cons.equity, "idc": self.cons.idc, "min_dscr_contracted": self.min_dscr_contracted}
+                "equity": self.cons.equity, "idc": self.cons.idc, "reserve": self.cons.reserve_initial,
+                "reserve_used": self.reserve_used, "min_icr_grace": self.min_icr_grace,
+                "min_dscr_contracted": self.min_dscr_contracted}
 
 
 def irr(flows: np.ndarray, periods_per_year: int = QUARTERS_PER_YEAR) -> float | None:
@@ -431,33 +460,52 @@ def _pad(x: np.ndarray, n: int) -> np.ndarray:
     return out
 
 
+def reserve_need(inp: PFInputs, cfads: np.ndarray, interest: np.ndarray) -> float:
+    """램프업 이자유보계좌 적립액 = 거치기간 Σ max(0, 이자 − CFADS) × (1 + 여유율). reserve 모드가 아니면 0."""
+    if inp.grace_interest != "reserve" or inp.grace_years <= 0:
+        return 0.0
+    g = inp.grace_years
+    gap = np.maximum(np.asarray(interest[:g]) - np.asarray(cfads[:g]), 0.0)
+    return float(gap.sum()) * (1 + inp.reserve_buffer)
+
+
+def test_from(inp: PFInputs) -> int:
+    """최소·평균 DSCR 산정 시작 연차(0 기준): reserve 모드 = 거치 종료 후(원금 상환 기간), 그 밖에는 COD."""
+    return inp.grace_years if inp.grace_interest == "reserve" else 0
+
+
 def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_iter: int = 60) -> PFResult:
-    """기준(sizing) 모드: fixed=None → 대출 한도 산정. 스트레스 모드: fixed=기준 결과 → 대출 스케줄 고정."""
+    """기준(sizing) 모드: fixed=None → 대출 한도 산정. 스트레스 모드: fixed=기준 결과 → 대출 스케줄·유보계좌 고정."""
     n, tenor, grace = inp.operating_years, inp.tenor_years, inp.grace_years
     rate = inp.term_rate + st.rate_shift
     ops = operations(inp, st)
     warnings: list[str] = []
+    size_col = "ebitda_contracted" if inp.sizing_basis == "contracted" else "ebitda"
     if fixed is None:
         interest = np.zeros(n)
         debt = sculpt_debt = gearing_debt = 0.0
         ds = np.zeros(tenor)
-        dsra0 = 0.0
+        dsra0 = res0 = 0.0
         cons = construction(inp, st, 0.0, 0.0)
         for _ in range(max_iter):
             dep = depreciation(cons.capex + cons.idc, inp.dep_years, n)
-            cf = _cfads(inp, ops, dep, interest)
+            cf = _cfads(inp, ops, dep, interest, size_col)
             sculpt_debt, ds_s = sculpt(cf, rate, inp.target_dscr, tenor, grace, inp.grace_interest)
-            # 최대 대출 비율 한도: 조달 비율 = max_gearing일 때의 대출 총액 (초기 DSRA는 직전 반복값)
-            cons_g = construction(inp, st, inp.max_gearing, dsra0)
+            # 최대 대출 비율 한도: 조달 비율 = max_gearing일 때의 대출 총액 (초기 DSRA·유보계좌는 직전 반복값)
+            cons_g = construction(inp, st, inp.max_gearing, dsra0, res0)
             gearing_debt = cons_g.debt
             new_debt = min(sculpt_debt, gearing_debt)
             ds = ds_s * (new_debt / sculpt_debt) if sculpt_debt > 0 else np.zeros(tenor)
             dsra_new = inp.dsra_months / 12 * (ds[0] if tenor else 0.0)
-            cons = _solve_share(inp, st, new_debt, dsra_new)
+            cons = _solve_share(inp, st, new_debt, dsra_new, res0)
             sched = amortize(cons.debt, ds * (cons.debt / new_debt) if new_debt > 0 else ds, rate)
             new_interest = _pad(sched["interest"].to_numpy(), n)
-            done = abs(new_debt - debt) <= 1e-9 * max(1.0, abs(new_debt)) and abs(dsra_new - dsra0) <= 1e-9 * max(1.0, dsra_new)
-            debt, interest, dsra0 = new_debt, new_interest, dsra_new
+            dep = depreciation(cons.capex + cons.idc, inp.dep_years, n)
+            res_new = reserve_need(inp, _cfads(inp, ops, dep, new_interest), new_interest)
+            tol = 1e-9
+            done = (abs(new_debt - debt) <= tol * max(1.0, abs(new_debt)) and abs(dsra_new - dsra0) <= tol * max(1.0, dsra_new)
+                    and abs(res_new - res0) <= tol * max(1.0, res_new))
+            debt, interest, dsra0, res0 = new_debt, new_interest, dsra_new, res_new
             if done:
                 break
         else:
@@ -471,8 +519,8 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
         eff_dscr = inp.target_dscr * (sculpt_debt / debt) if debt > 0 else float("inf")
     else:
         base = fixed
-        # 추가 자금(CAPEX 증가·지연 IDC)은 기준 조달 비율대로 → 대출 금액·원금 스케줄 비례 확대
-        cons = construction(inp, st, base.cons.debt_share, base.cons.dsra_initial)
+        # 추가 자금(CAPEX 증가·지연 IDC)은 기준 조달 비율대로 → 대출 금액·원금 스케줄 비례 확대. 유보계좌는 FC 적립액 그대로
+        cons = construction(inp, st, base.cons.debt_share, base.cons.dsra_initial, base.cons.reserve_initial)
         factor = cons.debt / base.debt if base.debt else 0.0
         principal = base.ops["principal"].to_numpy()[:tenor] * factor
         bal, rows = cons.debt, []
@@ -499,8 +547,10 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
     if (principal[neg_from:tenor] < -1e-9).any():
         warnings.append("일부 연도 원금 음수(원리금 < 이자) — sculpting 결과 잔액 증가 구간 존재")
 
-    # waterfall (이자 자본화 거치기간에는 배당 잠금 → 거치 종료 다음 해에 해제)
+    # waterfall: 부족 시 이자유보계좌 → DSRA 순 인출. 유보계좌 잔액은 거치 마지막 해에 해제
+    # (이자 자본화 거치기간에는 배당 잠금 → 거치 종료 다음 해에 해제)
     dsra_open = cons.dsra_initial
+    res_bal = cons.reserve_initial
     lock_bal = 0.0
     lock_years = grace if inp.grace_interest == "capitalized" else 0
     wf = []
@@ -508,19 +558,23 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
         nxt = dsv[t + 1] if t + 1 < n else 0.0
         target = inp.dsra_months / 12 * nxt
         cash = cfads[t] - dsv[t]
-        draw = topup = release = shortfall = 0.0
+        draw = topup = release = shortfall = r_draw = r_rel = 0.0
         if cash < 0:
-            draw = min(dsra_open, -cash)
-            shortfall = -cash - draw
+            r_draw = min(res_bal, -cash)
+            res_bal -= r_draw
+            draw = min(dsra_open, -cash - r_draw)
+            shortfall = -cash - r_draw - draw
             cash = 0.0
         else:
             topup = min(cash, max(0.0, target - (dsra_open - draw)))
             cash -= topup
+        if res_bal > 0 and t >= grace - 1:
+            r_rel, res_bal = res_bal, 0.0
         bal_after = dsra_open - draw + topup
         if bal_after > target:
             release = bal_after - target
             bal_after = target
-        dist = cash + release
+        dist = cash + release + r_rel
         lock_in = lock_out = 0.0
         if t < lock_years:
             lock_in, dist = dist, 0.0
@@ -529,8 +583,8 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
             dist += lock_out
         lock_bal += lock_in - lock_out
         wf.append({"dsra_open": dsra_open, "dsra_draw": draw, "dsra_topup": topup, "dsra_release": release,
-                   "dsra_close": bal_after, "shortfall": shortfall, "lockup_in": lock_in, "lockup_release": lock_out,
-                   "distribution": dist})
+                   "dsra_close": bal_after, "reserve_draw": r_draw, "reserve_release": r_rel, "reserve_close": res_bal,
+                   "shortfall": shortfall, "lockup_in": lock_in, "lockup_release": lock_out, "distribution": dist})
         dsra_open = bal_after
     wf = pd.DataFrame(wf)
     ops = ops.assign(depreciation=dep, interest=interest, principal=principal, debt_service=dsv, tax=tax,
@@ -541,13 +595,18 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
         dscr_c = np.where(dsv[:tenor] > 0, cfads_c[:tenor] / dsv[:tenor], np.nan)
     ops["dscr"] = _pad(dscr, n)
     ops.loc[ops["year"] > tenor, "dscr"] = np.nan
-    min_dscr = float(np.nanmin(dscr)) if np.isfinite(dscr).any() else float("nan")
-    avg_dscr = float(np.nanmean(dscr)) if np.isfinite(dscr).any() else float("nan")
-    min_dscr_c = float(np.nanmin(dscr_c)) if np.isfinite(dscr_c).any() else float("nan")
+    t0 = test_from(inp)
+    dt, dct = dscr[t0:], dscr_c[t0:]
+
+    def _min(x):
+        return float(np.nanmin(x)) if np.isfinite(x).any() else float("nan")
+    min_dscr, min_dscr_c = _min(dt), _min(dct)
+    avg_dscr = float(np.nanmean(dt)) if np.isfinite(dt).any() else float("nan")
+    icr_g = _min(dscr[:grace]) if grace > 0 else float("nan")
     disc = (1 + rate) ** -np.arange(1, tenor + 1)
     llcr = float((cfads[:tenor] * disc).sum() / debt) if debt > 0 else float("nan")
     if ops["shortfall"].sum() > 1e-9:
-        warnings.append(f"원리금 부족(DSRA 소진 후) 합계 {ops['shortfall'].sum():,.2f}")
+        warnings.append(f"원리금 부족(유보계좌·DSRA 소진 후) 합계 {ops['shortfall'].sum():,.2f}")
 
     # 분기 타임라인: 건설 0..cod-1, 운영 t년차 현금흐름 = cod − 1 + 4t 분기 말
     cod = cons.cod_quarter
@@ -566,14 +625,25 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
         qi = cod - 1 + QUARTERS_PER_YEAR * (t + 1)
         eq[qi] += ops["distribution"].iloc[t] - ops["shortfall"].iloc[t]
         pj[qi] += ops["ebitda"].iloc[t] - tax_u[t]
-    eq[-1] += float(ops["dsra_close"].iloc[-1]) + tv - float(ops["debt_closing"].iloc[-1])
+    eq[-1] += float(ops["dsra_close"].iloc[-1]) + float(ops["reserve_close"].iloc[-1]) + tv - float(ops["debt_closing"].iloc[-1])
     pj[-1] += tv
     eq_df = pd.DataFrame({"quarter": np.arange(horizon), "flow": eq})
     pj_df = pd.DataFrame({"quarter": np.arange(horizon), "flow": pj})
     return PFResult(inp, st, ops, cons, debt, sculpt_debt, gearing_debt, binding, eff_dscr, min_dscr, avg_dscr, llcr,
                     min_dscr_c, irr(pj), irr(eq),
                     npv_annual_rate(eq, inp.discount_rate) if inp.discount_rate is not None else float("nan"), payback(eq), eq_df, pj_df,
-                    warnings)
+                    warnings, icr_g)
+
+
+def yield_on_cost(r: PFResult) -> float:
+    """원가 대비 수익률 = 안정화 첫해 EBITDA ÷ 총사업비. 안정화 첫해 = 램프업 종료 다음 해(선형 램프업), 없으면 가동률 최고 첫해."""
+    o = r.ops
+    if r.inp.ramp_years is not None:
+        i = int(math.ceil(r.inp.ramp_years))
+    else:
+        i = int(np.argmax(o["occupancy"].to_numpy()))
+    i = min(i, len(o) - 1)
+    return float(o["ebitda"].iloc[i]) / r.cons.uses if r.cons.uses else float("nan")
 
 
 def interest_cover_cap(r: PFResult) -> float:
@@ -612,8 +682,10 @@ def identity_checks(r: PFResult, tol: float = 1e-6) -> dict[str, float]:
 
     sources_uses: 대출 + 자기자본 − 총사업비
     debt_rollforward: 대출 − Σ원금 − 만기 잔액
-    cash_waterfall: CFADS + DSRA 인출 + 부족분 + DSRA 해제 + 잠금 해제 − (원리금 + DSRA 적립 + 배당 + 잠금)
+    cash_waterfall: CFADS + DSRA 인출 + 유보계좌 인출 + 부족분 + DSRA 해제 + 유보계좌 해제 + 잠금 해제
+                    − (원리금 + DSRA 적립 + 배당 + 잠금)
     dsra_rollforward: 초기 DSRA + Σ적립 − Σ인출 − Σ해제 − 기말 DSRA
+    reserve_rollforward: 이자유보계좌 적립액 − Σ인출 − Σ해제 − 기말 잔액
     dscr_definition: max |DSCR − CFADS ÷ 원리금|
     """
     o = r.ops
@@ -623,11 +695,14 @@ def identity_checks(r: PFResult, tol: float = 1e-6) -> dict[str, float]:
     return {
         "sources_uses": r.cons.debt + r.cons.equity - r.cons.uses,
         "debt_rollforward": r.debt - float(o["principal"].sum()) - float(o["debt_closing"].iloc[-1]),
-        "cash_waterfall": float((o["cfads"] + o["dsra_draw"] + o["shortfall"] + o["dsra_release"] + o["lockup_release"]
+        "cash_waterfall": float((o["cfads"] + o["dsra_draw"] + o["reserve_draw"] + o["shortfall"] + o["dsra_release"]
+                                 + o["reserve_release"] + o["lockup_release"]
                                  - (o["debt_service"] + o["dsra_topup"] + o["distribution"] + o["lockup_in"])).abs().max()),
         "lockup_rollforward": float(o["lockup_in"].sum() - o["lockup_release"].sum()),
         "dsra_rollforward": r.cons.dsra_initial + float(o["dsra_topup"].sum() - o["dsra_draw"].sum()
                                                        - o["dsra_release"].sum()) - float(o["dsra_close"].iloc[-1]),
+        "reserve_rollforward": r.cons.reserve_initial - float(o["reserve_draw"].sum() + o["reserve_release"].sum())
+                               - float(o["reserve_close"].iloc[-1]),
         "dscr_definition": dscr_err,
     }
 
@@ -635,7 +710,7 @@ def identity_checks(r: PFResult, tol: float = 1e-6) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 # 민감도·손익분기
 # ---------------------------------------------------------------------------
-STRESS_FIELDS = ("rent_mult", "occ_mult", "prelease", "capex_mult", "rate_shift", "delay_quarters", "opex_mult")
+STRESS_FIELDS = ("rent_mult", "occ_mult", "prelease", "capex_mult", "rate_shift", "delay_quarters", "opex_mult", "power_mult")
 
 
 def stressed_metric(base: PFResult, field_: str, value: float, metric: str = "min_dscr") -> float:

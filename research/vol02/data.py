@@ -37,11 +37,14 @@ LABELS: dict[str, tuple[str, str]] = {
     "lease_term_years": ("임대 계약 기간", "Lease term"), "tenor_basis": ("만기 기준", "Tenor basis"),
     "tax_brackets": ("법인세 누진세율(국세)", "Corporate tax brackets (national)"),
     "pue": ("PUE", "PUE"), "it_load_factor": ("IT 부하율", "IT load factor"), "power_price": ("전력 단가", "Power price"),
-    "power_passthrough": ("전력비 패스스루 비율", "Power pass-through"), "tax_rate_national": ("법인세율(국세·연방)", "Corporate tax (national/federal)"),
+    "power_passthrough": ("전력비 패스스루 비율", "Power pass-through"),
+    "power_escalation": ("전력단가 연 인상률", "Power price escalation"),
+    "capex_yoy_change": ("AI 사양 공사비 1년 상승률", "AI-spec build cost, 1-yr change"), "tax_rate_national": ("법인세율(국세·연방)", "Corporate tax (national/federal)"),
     "tax_rate_local": ("지방세(지방소득세·주세)", "Local/state tax"), "tax_rate": ("법인세율(합산)", "Combined tax rate"), "dep_years": ("감가상각 기간", "Depreciation life"),
     "operating_years": ("운영기간", "Operating period"), "exit_cap_rate": ("잔존가치 cap rate", "Exit cap rate"),
     "margin_bp": ("가산금리", "Credit margin"), "target_dscr": ("목표 DSCR", "Target DSCR"), "max_gearing": ("최대 대출 비율", "Maximum gearing"),
-    "tenor_years": ("대출 만기", "Loan tenor"), "grace_years": ("거치기간", "Grace period"), "grace_interest": ("거치기간 이자", "Grace-period interest"),
+    "tenor_years": ("대출 만기", "Loan tenor"), "grace_years": ("거치기간(COD 후)", "Grace period (after COD)"), "grace_interest": ("거치기간 이자", "Grace-period interest"),
+    "interest_reserve_buffer": ("이자유보계좌 여유율", "Interest-reserve buffer"),
     "dsra_months": ("DSRA 개월 수", "DSRA months"), "discount_rate": ("할인율(자기자본)", "Discount rate (equity)"),
     "grid_approval_prob": ("추가 계통 승인 확률", "Grid-approval probability"), "approval_decision_year": ("승인 결정 시점", "Approval decision year"),
     "option_window_years": ("착공 대기 가능 기간", "Option window"), "rent_volatility": ("임대료 변동성", "Rent volatility"),
@@ -549,9 +552,11 @@ def pf_inputs(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | U
             target_dscr=float(v["target_dscr"]), max_gearing=float(v["max_gearing"]),
             tenor_years=int(round(tenor)), grace_years=int(v["grace_years"]), dsra_months=float(v["dsra_months"]),
             discount_rate=float(v["discount_rate"]) if opt("discount_rate") is not None else None,
-            power_passthrough=float(opt("power_passthrough") or 1.0),
+            power_passthrough=1.0 if opt("power_passthrough") is None else float(opt("power_passthrough")),
             power_price=opt("power_price"), pue=opt("pue"), it_load_factor=opt("it_load_factor"),
+            power_escalation=float(opt("power_escalation") or 0.0),
             exit_cap_rate=opt("exit_cap_rate"), grace_interest=str(opt("grace_interest") or "paid"),
+            reserve_buffer=float(opt("interest_reserve_buffer") or 0.0),
             opex_ratio=float(v["opex_ratio"]) if opt("opex_ratio") is not None else None,
             ramp_years=float(v["ramp_years"]) if opt("ramp_years") is not None else None,
             lease_term_years=int(v["lease_term_years"]) if opt("lease_term_years") else None,
@@ -587,6 +592,12 @@ class CaseResult:
     margin_scenarios: dict = field(default_factory=dict)   # bp → CaseResult (가산금리 미확정 시 3개 시나리오)
     interest_cover_debt: float = float("nan")  # 진단: 매년 이자 현금 지급 제약 시 대출 한도
     negative_amort: list[int] = field(default_factory=list)   # 원리금 < 이자인 연차
+    alts: dict = field(default_factory=dict)    # 대안 sizing: passthrough(전력비 별도 청구) · power_cut(단가 인하 제안) · contracted(계약 매출 sizing)
+    cost_counterfactual: pf.PFResult | None = None   # 공사비 1년 상승 전(÷(1+상승률))·임대료 1년 전(÷(1+인상률)) 재계산
+
+    @property
+    def yoc(self) -> float:
+        return pf.yield_on_cost(self.base)
 
 
 def capex_multipliers(a: Mapping[str, Assumption], pp: PeerPricing | Unavailable) -> dict[str, float] | Unavailable:
@@ -619,6 +630,10 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
         "rate_up": pf.Stress(rate_shift=bp), "rate_down": pf.Stress(rate_shift=-bp),
         "opex_up": pf.Stress(opex_mult=1 + xp), "opex_down": pf.Stress(opex_mult=1 - xp),
     }
+    spc_power = inp.power_modeled() and inp.power_passthrough < 1     # SPC가 전력비를 부담하는 케이스
+    if spc_power:
+        pw = float(sc.get("power_pct", 0.1))
+        st["power_up"], st["power_down"] = pf.Stress(power_mult=1 + pw), pf.Stress(power_mult=1 - pw)
     for q in sc["delay_quarters"]:
         st[f"delay_{q}"] = pf.Stress(delay_quarters=int(q))
     for x in (sc.get("rent_extra") or {}).get(case, []):
@@ -635,6 +650,8 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
     torn_cases = {"rent": (st["rent_down"], st["rent_up"]), "occupancy": (st["occ_down"], st["occ_up"]),
                   "rate": (st["rate_up"], st["rate_down"]), "opex": (st["opex_up"], st["opex_down"]),
                   "delay": (st[f"delay_{max(sc['delay_quarters'])}"], pf.BASE)}
+    if spc_power:
+        torn_cases["power"] = (st["power_up"], st["power_down"])
     for x in (sc.get("rent_extra") or {}).get(case, []):
         torn_cases[f"rent_extra"] = (st[f"rent_{int(round(x * 100)):+d}"], pf.BASE)
     if "prelease_low" in st:
@@ -648,6 +665,8 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
     be_rows = []
     near = {"rent_mult": 1.0, "occ_mult": 1.0, "prelease": inp.prelease, "capex_mult": 1.0, "opex_mult": 1.0,
             "rate_shift": 0.0, "delay_quarters": 0.0}
+    if spc_power:
+        near["power_mult"] = 1.0
     at_target = abs(base.min_dscr - inp.target_dscr) < 1e-6      # sculpting으로 기준 = 목표 → 목표 손익분기는 기준값
     for var in near:
         lo, hi = rng[var]
@@ -665,8 +684,12 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
     power = None
     if inp.power_modeled():
         o = base.ops
+        si = min(int(math.ceil(inp.ramp_years or 0)), len(o) - 1)       # 안정화 첫해
         power = {"power_cost_y1": float(o["power_cost"].iloc[0]), "rent_y1": float(o["revenue"].iloc[0]),
-                 "share_of_tenant_cost": float(o["power_cost"].iloc[0] / (o["power_cost"].iloc[0] + o["revenue"].iloc[0]))}
+                 "share_of_tenant_cost": float(o["power_cost"].iloc[0] / (o["power_cost"].iloc[0] + o["revenue"].iloc[0])),
+                 "stab_year": si + 1, "power_cost_stab": float(o["power_cost"].iloc[si]), "revenue_stab": float(o["revenue"].iloc[si]),
+                 "net_power_stab": float(o["net_power"].iloc[si]),
+                 "share_of_revenue_stab": float(o["power_cost"].iloc[si] / o["revenue"].iloc[si]) if o["revenue"].iloc[si] else float("nan")}
     # 유리한 스트레스가 최소 DSCR을 낮추는 경우: 세율 0으로 다시 계산해 법인세 시점 효과인지 확인
     no_tax = replace(inp, tax_rate=0.0, tax_brackets=None)
     tax_timing = []
@@ -685,15 +708,28 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
             b0 = pf.run(no_tax)
             r_, c_ = odd[0]
             hm_tt = pf.stress(b0, pf.Stress(rent_mult=r_, capex_mult=c_)).min_dscr >= b0.min_dscr - 1e-6
+    alts = {}
+    if spc_power:                                       # 전력비 별도 청구(pass-through) 시 다시 sizing
+        alts["passthrough"] = pf.run(replace(inp, power_passthrough=1.0))
+        cut = (sc.get("power_price_cut") or {}).get(case)
+        if cut and cut.get("value") is not None:        # 확정 전 인하 제안 → 민감도
+            alts["power_cut"] = pf.run(replace(inp, power_price=inp.power_price + float(cut["value"])))
+    if case in (sc.get("contracted_sizing") or []):     # 계약 매출(사전 임대분) CFADS로 sculpting
+        alts["contracted"] = pf.run(replace(inp, sizing_basis="contracted"))
+    cf_ = None
+    chg = a.get("capex_yoy_change")
+    if chg is not None and chg.value:                   # 공사비 1년 상승 전·임대료 1년 전 수준으로 재계산
+        cf_ = pf.run(replace(inp, capex_per_mw=inp.capex_per_mw / (1 + chg.value),
+                             rent_per_kw_month=inp.rent_per_kw_month / (1 + inp.rent_escalation)))
     return CaseResult(case, inp, base, scen, stresses, torn, be, hm, cm, power, pf.identity_checks(base), tax_timing, hm_tt,
                       margin_bp=margin_bp, interest_cover_debt=pf.interest_cover_cap(base),
-                      negative_amort=pf.negative_amortization_years(base))
+                      negative_amort=pf.negative_amortization_years(base), alts=alts, cost_counterfactual=cf_)
 
 
-def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float]) -> pd.DataFrame | None:
-    """버지니아 상업용 요금 × PUE 격자 → IT kW·월당 전력비(USD, IT 부하율 100%)와 임대료 대비 비율.
+def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float], load: float = 1.0) -> pd.DataFrame | None:
+    """버지니아 상업용 요금 × PUE 격자 → 임차 IT kW·월당 전력비(USD, IT 부하율 load)와 임대료 대비 비율.
 
-    요금 열: 최근 연도, 최근 연도 × (1 + 2015년 이후 최대 연간 상승률). PUE는 민감도 축(가정 아님).
+    요금 열: 최근 연도, 최근 연도 × (1 + 2015년 이후 최대 연간 상승률). PUE 격자는 민감도 축(기준 가정 PUE 포함).
     """
     if not ok(va):
         return None
@@ -702,7 +738,7 @@ def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float]) -> pd
     rows = []
     for pue in pues:
         for label, cents in ((f"{y}", p), (f"{y} +{mx * 100:.1f}%", p * (1 + mx))):
-            usd = 730 * pue * cents / 100
+            usd = 730 * load * pue * cents / 100
             rows.append({"pue": pue, "price_label": label, "cents": cents, "usd_per_kw_month": usd,
                          "share_of_rent": usd / rent if rent else float("nan")})
     return pd.DataFrame(rows)
@@ -727,8 +763,8 @@ def option_scenarios(inp: pf.PFInputs, d: "Demand") -> dict[str, dict]:
 
 def run_option(cfg: Mapping, a: Mapping[str, Assumption], r: Rates | Unavailable, d: Demand | Unavailable,
                case_res: CaseResult | Unavailable, gs: GridStats) -> OptionFacts | Unavailable:
-    """2단계 옵션. 결정 시점이 없으면 1단계 램프업 종료(수요 확인) 연도로 도출하고, 할인율·대기 기간이 없으면
-    config real_option의 격자(민감도 축)로 계산해 가운데 셀을 대표값으로 쓴다(보고서에 '미확정' 표기)."""
+    """2단계 옵션. 결정 시점이 없으면 1단계 램프업 종료(수요 확인) 연도로 도출한다. 할인율 × 대기 기간 격자(민감도 축)는
+    항상 계산하고, 대표 셀 = 가정값(없으면 격자 가운데 + 보고서에 '미확정' 표기)."""
     if not ok(case_res):
         return Unavailable("케이스 A 모델 입력 필요", "Case A model inputs needed", list(getattr(case_res, "missing", [])))
     miss = missing_items(a, OPTION_REQUIRED)
@@ -744,8 +780,8 @@ def run_option(cfg: Mapping, a: Mapping[str, Assumption], r: Rates | Unavailable
         return Unavailable("2단계 용량 0", "Phase 2 capacity is zero", ["phase2_mw"])
     roc = cfg["research"]["vol02"]["real_option"]
     dr_v, win_v = a["discount_rate"].value, a["option_window_years"].value
-    drs = [float(dr_v)] if dr_v is not None else [float(x) for x in roc["discount_grid"]]
-    wins = [int(win_v)] if win_v is not None else [int(x) for x in roc["window_grid"]]
+    drs = sorted({float(x) for x in roc["discount_grid"]} | ({float(dr_v)} if dr_v is not None else set()))
+    wins = sorted({int(x) for x in roc["window_grid"]} | ({int(win_v)} if win_v is not None else set()))
     pa = a["grid_approval_prob"]
     probs = sorted({x for x in (pa.low, pa.value, pa.high) if x is not None})
     w = cfg["research"]["vol02"]["demand_scenarios"]["weights"]
@@ -762,7 +798,8 @@ def run_option(cfg: Mapping, a: Mapping[str, Assumption], r: Rates | Unavailable
             rows.append({"discount_rate": dr, "window_years": win, "value_conditional": res.value_conditional,
                          "value": res.value, "build_now": res.build_now, "flexibility": res.flexibility,
                          "exercise_share": res.exercise_share})
-    oi = make(drs[len(drs) // 2], wins[len(wins) // 2], int(roc["n_paths"]))
+    oi = make(float(dr_v) if dr_v is not None else drs[len(drs) // 2], int(win_v) if win_v is not None else wins[len(wins) // 2],
+              int(roc["n_paths"]))
     res = ro.value(oi, sorted(set(roc["prob_grid"]) | set(probs)), roc["convergence_paths"])
     pv = {p: p * res.value_conditional for p in probs}
     return OptionFacts(res, oi, gs.ratio, pd.DataFrame(rows), pv, derived, dr_v is None, win_v is None)
@@ -863,8 +900,11 @@ def table_keys(case: str, d: Mapping[str, Assumption]) -> list[str]:
             hide.add("power_price")                       # 패스스루 100% — 한국 요금 미사용
         if d.get("lease_term_years") is not None and d["lease_term_years"].value is None:
             hide.add("lease_term_years")                  # 운영기간 전체 계약으로 처리
+    if d.get("grace_interest") is not None and d["grace_interest"].value != "reserve":
+        hide.add("interest_reserve_buffer")
     if case == "B":
-        hide |= {"grid_approval_prob", "approval_decision_year", "option_window_years", "rent_volatility", "phase2_mw"}
+        hide |= {"grid_approval_prob", "approval_decision_year", "option_window_years", "rent_volatility", "phase2_mw",
+                 "discount_rate"}                         # 할인율은 케이스 A 옵션에만 사용
     return [k for k in LABELS if k in d and k not in hide]
 
 

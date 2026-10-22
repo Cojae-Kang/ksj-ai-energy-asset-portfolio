@@ -1,7 +1,7 @@
 ﻿case,item,value,low,high,unit,tag,source_name,url,published,page,current,hint
 A,phase1_mw,,,,MW,,,,,,20,1단계 용량 / 가상 케이스: 1단계 확정 개발
 A,phase2_mw,,,,MW,,,,,,20,2단계(옵션) 용량 / 가상 케이스: 추가 계통 승인·임차 수요 확인 시 착공하는 증설 옵션
-A,capex_per_mw,100,86,145,억원/MW,judgment,"저자 판단: 공사비 86억원/MW(다올투자증권 리포트 인용, IT 용량 기준) + 부지·기타. 범위 상단 = 군산 60MW 총사업비 약 8,700억원(≈145억원/MW)",https://www.etoday.co.kr/news/view/2631186 ; https://en.edaily.co.kr/news/eda202610125649/,2026-10-01 ; 2026-10-12,,100,"MW당 CAPEX / TODO(source): 국내 데이터센터 MW당 총사업비 — DART 신규시설투자 공시(투자금액 ÷ 수전·IT 용량), 업계 공사비 보고서"
+A,capex_per_mw,120,86,145,억원/MW,judgment,"저자 판단: 중간값 — 공사비 86억원/MW(시공 계약 기준, 다올투자증권 리포트 인용)와 군산 60MW 약 145억원/MW(확장 기반시설·금융비용 포함 추정) 사이",https://www.etoday.co.kr/news/view/2631186 ; https://en.edaily.co.kr/news/eda202610125649/,2026-10-01 ; 2026-10-12,,120,"MW당 CAPEX / TODO(source): 국내 데이터센터 MW당 총사업비 — DART 신규시설투자 공시(투자금액 ÷ 수전·IT 용량), 업계 공사비 보고서"
 A,power_equipment_share,,,,%,,,,,,null,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비(변압기·배전반·UPS·발전기) 비중 — 공사비 보고서 항목별 분해
 A,construction_quarters,8,,,분기,judgment,저자 판단: 건설기간 24개월,,,,8,건설기간 / TODO(source): 착공~준공 기간 — 국내 준공 사례 공시·보도
 A,rent_per_kw_month,250000,,,원/kW·월,sourced,블록미디어(CBRE 인용): 코로케이션 임대료 kW당 월 약 25만원(2025),https://www.blockmedia.co.kr/archives/1141412,,,250000,"임대료(kW·월) / CBRE 인용 보도(2025) 코로케이션 임대료 kW당 월 약 25만원 / TODO(source): 보도 원문 URL·발행일, CBRE 보고서 쪽수"
@@ -15,30 +15,33 @@ A,ramp_years,3,,,년,judgment,저자 판단: 램프업 3년 (근거: 사전 임�
 A,lease_term_years,,,,년,,,,,,null,임대 계약 기간 / 선택: 사전 임대 계약 기간 (없으면 운영기간 전체 계약으로 봄)
 A,tenor_basis,,,,-,,,,,,fc,만기 기준 / 만기는 금융약정(FC)부터: COD 이후 상환 = 만기 − 건설기간
 A,opex_escalation,2.5,,,%/년,judgment,저자 판단,,,,2.5,OPEX 연 인상률 / TODO(source): 운영비 인상률 — 소비자물가·임금 상승률(ECOS) 등 근거 선택
-A,pue,,,,배,,,,,,null,"PUE / TODO(source): 설계 PUE — 사업 계획·공시 사례, Uptime Institute 조사"
-A,it_load_factor,,,,%,,,,,,null,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
-A,power_price,,,,원/kWh,,,,,,null,전력 단가 / TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가
-A,power_passthrough,,,,%,,,,,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
+A,pue,1.3,,,배,judgment,저자 판단: 신규 대형 데이터센터 설계값 범위의 중간 (사업 계획 공시로 확인 필요),,,,1.3,"PUE / TODO(source): 설계 PUE — 사업 계획·공시 사례, Uptime Institute 조사"
+A,it_load_factor,70,,,%,judgment,저자 판단: 임차 IT 용량 대비 실사용 70% (계약·운영 자료로 확인 필요),,,,70,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
+A,power_price,181.9,,,원/kWh,sourced,한전 2025년 평균 산업용 판매단가 181.9원/kWh (시대일보),https://www.sidae.com/article/2026082717032378136,2026-08-27,,181.9,전력 단가 / TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가
+A,power_passthrough,0,,,%,judgment,저자 판단(보수적 대주 관점): 임대료 25만원/kW·월을 전력 포함(gross) 임대료로 보고 SPC가 전력비 부담. 원문에서 전력 포함 여부 미확인 → 전력비 별도 청구(pass-through) 시나리오 병기,,,,0,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
+A,power_escalation,2,,,%/년,judgment,저자 판단: 전력단가 연 2% 인상,,,,2,전력단가 연 인상률 / TODO(source): 전력단가 연 인상률 — 한전 판매단가 시계열
 A,tax_brackets,"2:10,200:20,3000:22,inf:25",,,억원:%,sourced,"법인세법 제55조(2026 사업연도부터 1%p 인상, 국가법령정보센터 원문 확인), 택스가이드",https://taxguide.im/blog/corptax-rate,,,"2:10,200:20,3000:22,inf:25","법인세 누진세율(국세) / TODO(source): 법인세법 제55조 누진세율 '상한:세율' (예: 2:10,200:20,3000:22,inf:25)"
 A,tax_rate_local,10,,,법인세 대비 %,sourced,지방소득세 = 법인세의 10% (택스가이드),https://taxguide.im/blog/corptax-rate,,,10,지방세(지방소득세·주세) / 지방세법 — 법인지방소득세(법인세율의 10% 수준) / TODO(source): 조문 확인
-A,dep_years,,,,년,,,,,,null,감가상각 기간 / TODO(source): 감가상각 내용연수 — 법인세법 시행규칙 별표5(건축물)·별표6(업종별 설비) 가중
+A,dep_years,20,,,년,judgment,"저자 판단: 정액 20년 (건물 40년·전기·기계설비 15년 내외 가중, 비중 확인 필요)",,,,20,감가상각 기간 / TODO(source): 감가상각 내용연수 — 법인세법 시행규칙 별표5(건축물)·별표6(업종별 설비) 가중
 A,operating_years,25,,,년,judgment,저자 판단,,,,25,운영기간 / TODO(source): 운영 기간(임대 계약 기간·토지 사용 기간)
-A,exit_cap_rate,,,,%,,,,,,null,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+A,exit_cap_rate,7,,,%,judgment,저자 판단: 잔존가치 cap rate 7.0% (국내 데이터센터 거래 공개 사례 확인 필요),,,,7,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
 A,margin_bp,150,,,bp,judgment,"저자 판단 (비교: 전량 임차 군산 선순위 '5% 초반', 이데일리). 기준금리 = ECOS 국고채 3년",https://en.edaily.co.kr/news/eda202610125649/,2026-10-12,,150,가산금리 / TODO(source): 가산금리 — 국내 데이터센터·인프라 PF 대출 공시·보도
 A,target_dscr,1.45,,,배,judgment,"저자 판단 (근거: 소형·램프업형 1.45~1.60배, Gridlines 2026)",https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,1.45,목표 DSCR / TODO(source): 목표 DSCR — 대주 term sheet 관행 자료
 A,max_gearing,65,,,%,judgment,"저자 판단 (비교: 군산 본PF 6,576억 ÷ 사업비 8,700억 ≈ 76%, 이데일리)",https://en.edaily.co.kr/news/eda202610125649/,2026-10-12,,65,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC) — PF 제도·대주 관행 자료
 A,tenor_years,15,,,년,judgment,저자 판단: 대출 만기 15년(FC 기준) = 건설 2년 거치 + 운영 13년 상환,,,,15,대출 만기 / TODO(source): 대출 만기 (COD 기준)
-A,grace_years,0,,,년,judgment,저자 판단: 거치 = 건설기간 → COD 후 추가 거치 없음,,,,0,거치기간 / TODO(source): 원금 거치기간
-A,grace_interest,,,,-,,,,,,paid,거치기간 이자 / 거치기간 이자 현금 지급(paid). 램프업 이자 자본화는 capitalized
+A,grace_years,3,,,년,judgment,"저자 판단: 준공 후 램프업 3년 이자만 납부(원금 거치), 이후 sculpting. 근거: 램프업 의존 프로젝트는 초기 레버리지가 낮고 지분이 더 필요(Gridlines 2026)",https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,3,거치기간(COD 후) / TODO(source): 원금 거치기간
+A,grace_interest,reserve,,,-,judgment,저자 판단: 이자 원금 가산 대신 램프업 이자유보계좌 — CFADS가 이자에 못 미치는 금액을 FC에 사업비로 적립한 계좌에서 지급 (Gridlines 2026),https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,reserve,"거치기간 이자 / 거치기간 이자 현금 지급(paid). 램프업 이자 자본화는 capitalized, 이자유보계좌는 reserve"
+A,interest_reserve_buffer,10,,,%,judgment,저자 판단: 이자유보계좌 = 기준 시나리오 거치기간 부족분 합계 + 10% 여유,,,,10,이자유보계좌 여유율 / 램프업 이자유보계좌 여유율 (reserve 모드: 기준 시나리오 거치기간 이자 부족분 합계 × (1 + 여유율))
 A,dsra_months,6,,,개월,judgment,저자 판단,,,,6,DSRA 개월 수 / TODO(source): DSRA 적립 개월 수 — 대출 약정 관행
-A,discount_rate,,,,%,,,,,,null,"할인율(자기자본) / TODO(source): 자기자본 할인율 — 무위험(국고채 10년, DATA) + 위험 프리미엄 근거"
+A,discount_rate,10,,,%,judgment,저자 판단: 옵션 할인율 기준 10% (8/10/12% 격자 유지),,,,10,"할인율(자기자본) / TODO(source): 자기자본 할인율 — 무위험(국고채 10년, DATA) + 위험 프리미엄 근거"
 A,grid_approval_prob,30,10,50,%,judgment,저자 판단: 시나리오 10/30/50% (참고: 수도권 승인률 건수 1.9%·용량 3.0%),,,,30,추가 계통 승인 확률 / TODO(source): 추가 계통 승인 확률 — 참고 근거: 1단계 승인 비율(계산값)
 A,approval_decision_year,,,,년(1단계 COD 후),,,,,,null,승인 결정 시점 / TODO(source): 추가 계통 승인 결정 시점 — 전력계통영향평가 처리 기간
-A,option_window_years,,,,년,,,,,,null,착공 대기 가능 기간 / TODO(source): 승인 후 착공 가능 기간 — 승인 유효기간·부지 확보 기간
+A,option_window_years,2,,,년,judgment,저자 판단: 승인 후 착공 대기 2년 (0/2/4년 격자 유지),,,,2,착공 대기 가능 기간 / TODO(source): 승인 후 착공 가능 기간 — 승인 유효기간·부지 확보 기간
 A,rent_volatility,15,,,%/년,judgment,저자 판단 (참고: 임대료 2019 14만원 → 2025 25만원),,,,15,임대료 변동성 / TODO(source): 임대료 변동성 — 시장 임대료 시계열(시장 보고서)의 로그 변화 표준편차
 B,phase1_mw,,,,MW,,,,,,100,1단계 용량 / 가상 케이스: 단일 단계 개발
 B,phase2_mw,,,,MW,,,,,,0,2단계(옵션) 용량 / 증설 옵션 없음
 B,capex_per_mw,18.184,,,USD mn/MW,sourced,Cushman & Wakefield 2026 Data Center Development Cost Guide: 신축 USD 17.6mn/MW + 부지 0.584mn/MW (칩·GPU 제외),https://www.stocktitan.net/news/CWK/cushman-wakefield-releases-2026-data-center-development-cost-guide-xf33r13eb1oh.html,2026-09-03,,18.184,MW당 CAPEX / TODO(source): 미국 하이퍼스케일 MW당 개발비 — 업계 공사비 지수·상장 REIT 10-K 개발 공시
+B,capex_yoy_change,21,,,%,sourced,Cushman & Wakefield 2026 Data Center Development Cost Guide: AI 사양 공사비 1년 새 21% 상승,https://www.stocktitan.net/news/CWK/cushman-wakefield-releases-2026-data-center-development-cost-guide-xf33r13eb1oh.html,2026-09-03,,21,"AI 사양 공사비 1년 상승률 / TODO(source): AI 사양 공사비 1년 상승률 — 업계 공사비 보고서 (서술용, 모델 입력 아님)"
 B,power_equipment_share,,,,%,,,,,,null,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비 비중
 B,construction_quarters,8,,,분기,judgment,저자 판단: 건설기간 24개월,,,,8,건설기간 / TODO(source): 착공~준공 기간
 B,rent_per_kw_month,190,190,235,USD/kW·월,sourced,CBRE Global Data Center Trends 2026 (250~500kW 기준). 100MW 하이퍼스케일 계약은 더 낮을 수 있음 → 임대료 −20% 스트레스,https://www.cbre.com/insights/reports/global-data-center-trends-2026,2026-06-17,,190,임대료(kW·월) / TODO(source): 북버지니아 도매(wholesale) 임대료 — 시장 보고서
@@ -52,20 +55,20 @@ B,ramp_years,1,,,년,judgment,저자 판단,,,,1,램프업 기간 / TODO(source)
 B,lease_term_years,15,,,년,sourced,Gridlines 2026; 블록미디어: 10MW 이상 글로벌 계약 10년+,https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/ ; https://www.blockmedia.co.kr/archives/1141412,,,15,임대 계약 기간 / TODO(source): 임대 계약 기간
 B,tenor_basis,,,,-,,,,,,fc,만기 기준 / 만기는 금융약정(FC)부터: COD 이후 상환 = 만기 − 건설기간
 B,opex_escalation,3,,,%/년,judgment,저자 판단,,,,3,OPEX 연 인상률 / TODO(source): 운영비 인상률 — CPI(FRED) 등 근거 선택
-B,pue,,,,배,,,,,,null,PUE / TODO(source): 설계 PUE
-B,it_load_factor,,,,%,,,,,,null,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
+B,pue,1.3,,,배,judgment,저자 판단: 신규 대형 데이터센터 설계값 범위의 중간,,,,1.3,PUE / TODO(source): 설계 PUE
+B,it_load_factor,70,,,%,judgment,저자 판단: 임차 IT 용량 대비 실사용 70%,,,,70,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
 B,power_price,,,,USD/kWh,,,,,,null,전력 단가 / DATA: EIA 버지니아 상업용 평균 요금(없으면 미국 상업용) — 값을 넣으면 우선
 B,power_passthrough,,,,%,,,,,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
 B,tax_rate_national,,,,%,,,,,,21,법인세율(국세·연방) / U.S. federal corporate income tax 21% (26 U.S.C. §11(b)) / TODO(source): 원문 확인
 B,tax_rate_local,,,,%,,,,,,6,"지방세(지방소득세·주세) / Virginia corporate income tax 6% (Va. Code §58.1-400), 연방 과세소득에서 공제 / TODO(source): 원문 확인"
-B,dep_years,,,,년,,,,,,null,감가상각 기간 / TODO(source): 감가상각 기간 — 회계(정액) 기준 내용연수
+B,dep_years,20,,,년,judgment,저자 판단: 정액 20년,,,,20,감가상각 기간 / TODO(source): 감가상각 기간 — 회계(정액) 기준 내용연수
 B,operating_years,25,,,년,judgment,저자 판단,,,,25,운영기간 / TODO(source): 운영 기간(임대 계약 기간)
-B,exit_cap_rate,,,,%,,,,,,null,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
+B,exit_cap_rate,6,,,%,judgment,저자 판단: 잔존가치 cap rate 6.0% (북미 데이터센터 거래 cap rate 보고서 확인 필요),,,,6,잔존가치 cap rate / 선택: 잔존가치 cap rate — 없으면 잔존가치 제외(보수적)
 B,margin_bp,,,,bp,,,,,,null,가산금리 / TODO(source): 가산금리 — 미국 데이터센터 건설·영구 대출 보도
 B,target_dscr,1.30,,,배,sourced,Gridlines 2026: 투자등급 임차인 하이퍼스케일 1.20~1.40배,https://www.gridlines.com/blog/data-centre-financing-developments-and-trends-in-project-finance/,,,1.3,목표 DSCR / TODO(source): 목표 DSCR
 B,max_gearing,75,,,%,sourced,Lev 2026: 데이터센터 LTC 60~80%,https://www.lev.com/blog/data-center-financing-2026,2026-08-20,,75,최대 대출 비율 / TODO(source): 최대 대출 비율(LTC)
 B,tenor_years,15,,,년,judgment,저자 판단: 만기 15년(FC 기준),,,,15,대출 만기 / TODO(source): 대출 만기 (COD 기준)
-B,grace_years,0,,,년,judgment,저자 판단: 거치 = 건설기간 (케이스 A와 같은 구조),,,,0,거치기간 / TODO(source): 원금 거치기간
+B,grace_years,0,,,년,judgment,저자 판단: 거치 = 건설기간 (케이스 A와 같은 구조),,,,0,거치기간(COD 후) / TODO(source): 원금 거치기간
 B,grace_interest,,,,-,,,,,,paid,거치기간 이자 / 거치기간 이자 현금 지급(paid)
 B,dsra_months,6,,,개월,judgment,저자 판단,,,,6,DSRA 개월 수 / TODO(source): DSRA 적립 개월 수
 B,discount_rate,,,,%,,,,,,null,할인율(자기자본) / TODO(source): 자기자본 할인율 — DGS10(DATA) + 위험 프리미엄 근거

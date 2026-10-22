@@ -41,8 +41,18 @@ pytest -q tests/test_pf_model.py tests/test_research_vol02.py
 - tag: `sourced` = 출처가 있는 값 → ASSUMPTION(sourced), 보고서 가정표에 **근거 있음**(골드) / `judgment` = 저자 판단 → ASSUMPTION(judgment),
   **저자 판단**(음영·브라운). 빌드 요약에 "근거 있는 가정 n개 / 저자 판단 n개 / 미입력 n개"를 집계합니다.
 - 미확정 처리: 가산금리 null(케이스 B) → 150/250/350bp 시나리오, 옵션 할인율·대기 기간 null → `real_option.discount_grid`·`window_grid` 격자,
-  승인 결정 시점 null → 1단계 램프업 종료 연도로 도출. 감가상각 null → 미반영(법인세 보수적), PUE·IT 부하율 null → 전력비 순액 0(패스스루 100%).
+  승인 결정 시점 null → 1단계 램프업 종료 연도로 도출. 감가상각 null → 미반영(법인세 보수적), PUE·IT 부하율 null → 전력비 미산정.
+  할인율·대기 기간을 입력해도 격자는 유지하고, 입력값 셀을 대표값으로 씁니다.
 - 진단: 램프업 초기 원리금이 이자보다 작으면(음수 원금) "매년 이자 현금 지급 제약 시 한도"를 함께 표시하고 빌드 요약의 '점검 필요 수치'에 기록합니다.
+- 램프업 상환 구조(`grace_interest`): `paid`(거치기간 이자 현금, 거치기간에도 DSCR ≥ 목표) · `capitalized`(이자 원금 가산) ·
+  `reserve`(케이스 A 기준: COD 후 거치 n년 이자만 납부, CFADS가 이자에 못 미치는 금액은 FC에 사업비로 적립한 이자유보계좌에서 지급.
+  적립액 = 기준 시나리오 부족분 합계 × (1 + `interest_reserve_buffer`), 최소·평균 DSCR은 원금 상환 기간 기준, 잔액은 거치 마지막 해 해제).
+  스트레스는 유보계좌를 FC 적립액 그대로 두고 부족하면 DSRA → 자기자본 순으로 메웁니다.
+- 전력비: SPC 부담분 = (1 − `power_passthrough`) × IT 용량 × 가동률 × IT 부하율 × PUE × 8,760시간 × 전력단가 × (1 + `power_escalation`)^t.
+  케이스 A는 전력 포함(gross) 임대를 기준(패스스루 0%)으로 두고 별도 청구(패스스루 100%)·단가 인하 제안(`sensitivity.power_price_cut`)을 다시 sizing해 비교합니다.
+- 대안 sizing: `sensitivity.contracted_sizing`에 든 케이스는 사전 임대 계약분 CFADS만으로 sculpting한 결과를 나란히 보입니다(케이스 B).
+  `capex_yoy_change`가 있으면 공사비 상승 전(÷(1+상승률))·임대료 1년 전 수준으로 다시 계산해 원가 대비 수익률을 비교합니다.
+- 범위 점검: 빌드 요약 '범위 점검' 표 = 원가 대비 수익률(안정화 첫해 EBITDA ÷ 총사업비) 8~14%, Equity IRR 10~25%, 최소 DSCR ≥ 목표, 마이너스 상환 없음.
 - Vol.1 데이터 연결: IEA 2024→2035 성장률(하단·기준·상단) → 가동률 램프업, ECOS 국고채 3·10년·FRED DGS10(기준일 2026-10-20 이전 최근값)
   → 기준금리, DART 피어 3사 영업이익률 FY2022A→FY2025A → 함의 가격 상승률(상한값) × 전력설비 비중 → CAPEX 스트레스,
   EIA 버지니아 상업용 판매·요금(`data/processed/vol02_eia_va_com.csv`, 2015~2025) → 케이스 B 수요 근거·전력 단가·전력비 민감도(PUE 축 × 요금).

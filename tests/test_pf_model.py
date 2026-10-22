@@ -24,6 +24,10 @@ VARIANTS = {
     "grace_capitalized": replace(BASE_INP, prelease=0.2, grace_years=2, grace_interest="capitalized"),
     "power_partial": replace(BASE_INP, power_price=170, pue=1.3, it_load_factor=0.7, power_passthrough=0.9),
     "exit_value": replace(BASE_INP, exit_cap_rate=0.07),
+    "grace_reserve": replace(BASE_INP, prelease=0.15, ramp_years=3, grace_years=3, grace_interest="reserve", reserve_buffer=0.1,
+                             max_gearing=0.95),
+    "power_gross": replace(BASE_INP, power_price=180, pue=1.3, it_load_factor=0.7, power_passthrough=0.0, power_escalation=0.02),
+    "contracted_sizing": replace(BASE_INP, lease_term_years=15, sizing_basis="contracted"),
 }
 
 
@@ -302,3 +306,59 @@ def test_interest_cover_cap_and_negative_amortization():
 def test_opex_stress_direction():
     b = pf.run(replace(BASE_INP, tax_rate=0.0, opex_ratio=0.2))
     assert pf.stress(b, pf.Stress(opex_mult=1.2)).min_dscr < b.min_dscr < pf.stress(b, pf.Stress(opex_mult=0.8)).min_dscr
+
+
+# ---------------------------------------------------------------------------
+# 램프업 이자유보계좌 · 전력단가 인상 · 계약 매출 sizing · 원가 대비 수익률
+# ---------------------------------------------------------------------------
+def test_ramp_up_interest_reserve():
+    inp = VARIANTS["grace_reserve"]
+    r = pf.run(inp)
+    o, g = r.ops, inp.grace_years
+    gap = float(np.maximum(o["interest"][:g] - o["cfads"][:g], 0).sum())
+    assert gap > 0 and r.cons.reserve_initial == pytest.approx(gap * 1.1, rel=1e-6)   # 부족분 합계 + 10%
+    assert r.cons.uses == pytest.approx(r.cons.capex + r.cons.idc + r.cons.dsra_initial + r.cons.reserve_initial)
+    assert (o["principal"][:g].abs() < 1e-9).all() and np.allclose(o["debt_service"][:g], o["interest"][:g])  # 이자만
+    assert r.reserve_used == pytest.approx(gap) and o["shortfall"].sum() == pytest.approx(0.0)   # 기준 시나리오: 유보계좌로 충당
+    assert o["reserve_release"].sum() == pytest.approx(r.cons.reserve_initial - gap)        # 남은 10%는 거치 마지막 해 해제
+    assert not pf.negative_amortization_years(r)                                            # 이자 원금 가산 없음
+    assert r.min_icr_grace < 1 and r.min_dscr >= inp.target_dscr - 1e-9                     # DSCR = 상환 기간 기준
+    assert r.avg_dscr == pytest.approx(r.min_dscr)                                          # sculpting: 상환 기간 DSCR 일정
+    assert r.min_dscr == pytest.approx(np.nanmin(o["dscr"][g:inp.tenor_years]))
+    for k, v in pf.identity_checks(r).items():
+        assert abs(v) < 1e-6 * r.cons.uses, (k, v)
+    # 같은 조건에서 거치기간 이자를 현금으로만 내면(paid) 거치기간 DSCR 제약 때문에 대출이 0에 가깝다
+    assert pf.run(replace(inp, grace_interest="paid")).debt < r.debt
+    # 스트레스: 유보계좌는 FC 적립액 그대로 → 사전 임대율이 더 낮으면 소진 후 DSRA 인출
+    lo = pf.stress(r, pf.Stress(prelease=0.05))
+    assert lo.cons.reserve_initial == r.cons.reserve_initial and lo.reserve_used == pytest.approx(r.cons.reserve_initial)
+    assert lo.ops["dsra_draw"].sum() > 0
+
+
+def test_power_escalation_and_gross_rent():
+    inp = replace(VARIANTS["power_gross"], prelease=0.9, ramp_years=0)
+    o = pf.operations(inp)
+    base_kwh = 0.9 * inp.kw * 0.7 * 8760 * 1.3
+    assert o["power_cost"].iloc[0] == pytest.approx(base_kwh * 180 / 1e8)
+    assert o["power_cost"].iloc[5] == pytest.approx(base_kwh * 180 * 1.02 ** 5 / 1e8)
+    assert o["net_power"].iloc[0] == pytest.approx(-o["power_cost"].iloc[0])                 # 패스스루 0% → SPC 전액 부담
+    pt = pf.run(replace(inp, power_passthrough=1.0))
+    assert pt.debt > pf.run(inp).debt and pf.yield_on_cost(pt) > pf.yield_on_cost(pf.run(inp))
+    cut = pf.operations(inp, pf.Stress(power_mult=0.9))
+    assert cut["power_cost"].iloc[0] == pytest.approx(0.9 * o["power_cost"].iloc[0])
+
+
+def test_contracted_sizing_lowers_debt_and_hits_target_on_contracted():
+    inp = replace(VARIANTS["contracted_sizing"], max_gearing=0.95)
+    r_c, r_t = pf.run(inp), pf.run(replace(inp, sizing_basis="total"))
+    assert r_c.binding == "dscr" and r_c.debt < r_t.debt
+    assert r_c.min_dscr_contracted == pytest.approx(inp.target_dscr)
+    assert r_c.min_dscr > inp.target_dscr
+    with pytest.raises(ValueError):
+        replace(inp, sizing_basis="bogus")
+
+
+def test_yield_on_cost_definition():
+    inp = replace(BASE_INP, ramp_years=3, prelease=0.3)
+    r = pf.run(inp)
+    assert pf.yield_on_cost(r) == pytest.approx(float(r.ops["ebitda"].iloc[3]) / r.cons.uses)  # 램프업 3년 → 4년차
