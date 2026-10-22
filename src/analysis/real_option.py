@@ -15,14 +15,14 @@ from typing import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from .pf_model import PFInputs, occupancy_path, project_npv
+from .pf_model import BASE, PFInputs, occupancy, project_npv
 
 
 @dataclass(frozen=True)
 class OptionInputs:
     phase2: PFInputs                       # 2단계 PF 입력 (용량 = 2단계 MW). rent_per_kw_month = 1단계 COD 시점 임대료
     phase1_prelease: float
-    scenarios: Mapping[str, float]         # 시나리오 → 수요 성장률
+    scenarios: Mapping[str, Mapping[str, float]]   # 시나리오 → PFInputs 덮어쓰기 (예: {"ramp_years": 2.2})
     weights: Mapping[str, float]           # 시나리오 → 확률 (합 1)
     approval_prob: float
     decision_year: int                     # T_a (1단계 COD 후 연수)
@@ -49,11 +49,19 @@ class OptionResult:
 
 
 def npv_at(o: OptionInputs, year: int, rent: float, scen: str) -> float:
-    """결정 연도 year에 착공할 때 2단계 무차입 NPV (그 시점 가치). 임대료 = 그 시점 시장 임대료."""
-    g = o.scenarios[scen]
-    p1 = o.phase2
-    occ1 = occupancy_path(o.phase1_prelease, p1.stabilized_occupancy, g, p1.ramp_elasticity, year + 1)[-1]
-    inp = replace(p1, rent_per_kw_month=rent, prelease=float(occ1), ramp_growth=g)
+    """결정 연도 year에 착공할 때 2단계 무차입 NPV (그 시점 가치). 임대료 = 그 시점 시장 임대료.
+
+    2단계 사전 임대율 = 같은 시나리오의 1단계 가동률(결정 연도). OPEX 기준은 1단계 계획 비용을 OPEX 인상률로 키운 값
+    (임대료 경로와 무관한 고정비).
+    """
+    ov = dict(o.scenarios[scen])
+    p1 = replace(o.phase2, prelease=o.phase1_prelease, **ov)
+    occ1 = float(occupancy(p1, BASE, year + 1)[-1])
+    fixed = p1.opex_per_kw_year
+    if p1.opex_ratio is not None:
+        fixed += p1.opex_ratio * p1.stabilized_occupancy * p1.rent_per_kw_month * 12
+    fixed *= (1 + p1.opex_escalation) ** year
+    inp = replace(p1, rent_per_kw_month=rent, prelease=occ1, opex_ratio=None, opex_per_kw_year=fixed)
     return project_npv(inp)
 
 

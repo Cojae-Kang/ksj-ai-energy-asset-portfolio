@@ -35,11 +35,17 @@ pytest -q tests/test_pf_model.py tests/test_research_vol02.py
   최소·평균 DSCR, LLCR, Project/Equity IRR, 회수기간), `src/analysis/real_option.py` (2단계 증설 옵션, LSM 몬테카를로, seed 고정).
 - 가정: `config.yaml` → `research.vol02.cases.{A,B}.params`. 모든 항목에 tag(ASSUMPTION(design/verify/neutral))와 근거 칸이 있고,
   근거를 모르는 값은 `null` + `TODO(source)`입니다. **null이 있으면 그 계산만 건너뛰고 해당 Exhibit을 회색 박스로 둡니다.**
-- 사용자 입력: `data/manual/vol02_assumptions.csv`(case, item, value, unit, source_name, url, published, page, current, hint).
-  value가 있으면 config보다 우선하고, 출처 칸만 채우면 config 값에 출처가 붙습니다. % 단위는 퍼센트 숫자(2.5 = 2.5%), 가산금리는 bp.
+- 사용자 입력: `data/manual/vol02_assumptions.csv`(case, item, value, low, high, unit, tag, source_name, url, published, page, current, hint).
+  value가 있으면 config보다 우선하고, 출처 칸만 채우면 config 값에 출처가 붙습니다. % 단위는 퍼센트 숫자(2.5 = 2.5%), 가산금리는 bp,
+  누진세율은 `상한:세율` 목록(예: `2:10,200:20,3000:22,inf:25`, 억원·%). low·high는 스트레스 범위(CAPEX·임대료·사전 임대율·승인 확률).
+- tag: `sourced` = 출처가 있는 값 → ASSUMPTION(sourced), 보고서 가정표에 **근거 있음**(골드) / `judgment` = 저자 판단 → ASSUMPTION(judgment),
+  **저자 판단**(음영·브라운). 빌드 요약에 "근거 있는 가정 n개 / 저자 판단 n개 / 미입력 n개"를 집계합니다.
+- 미확정 처리: 가산금리 null(케이스 B) → 150/250/350bp 시나리오, 옵션 할인율·대기 기간 null → `real_option.discount_grid`·`window_grid` 격자,
+  승인 결정 시점 null → 1단계 램프업 종료 연도로 도출. 감가상각 null → 미반영(법인세 보수적), PUE·IT 부하율 null → 전력비 순액 0(패스스루 100%).
+- 진단: 램프업 초기 원리금이 이자보다 작으면(음수 원금) "매년 이자 현금 지급 제약 시 한도"를 함께 표시하고 빌드 요약의 '점검 필요 수치'에 기록합니다.
 - Vol.1 데이터 연결: IEA 2024→2035 성장률(하단·기준·상단) → 가동률 램프업, ECOS 국고채 3·10년·FRED DGS10(기준일 2026-10-20 이전 최근값)
   → 기준금리, DART 피어 3사 영업이익률 FY2022A→FY2025A → 함의 가격 상승률(상한값) × 전력설비 비중 → CAPEX 스트레스,
-  EIA 버지니아 상업용 판매·요금 → 케이스 B 수요·전력비(버지니아 요금 수집 전에는 미국 상업용 평균 대용).
+  EIA 버지니아 상업용 판매·요금(`data/processed/vol02_eia_va_com.csv`, 2015~2025) → 케이스 B 수요 근거·전력 단가·전력비 민감도(PUE 축 × 요금).
 - 검산: 회계 항등식(조달=사용, 대출 잔액, waterfall, DSRA·배당 잠금), DSCR = CFADS ÷ 원리금, IRR, 환율 환산(USD mn × 원/달러 ÷ 100 = 억원)을
   테스트와 `build_summary.md`에 기록합니다.
 - 커밋 대상: `research/vol02/*.pdf`, `build_summary.md`, `data/manual/vol02_assumptions.csv`. 차트 중간 산출물 `research/vol02/_build/`는 제외.
@@ -247,6 +253,10 @@ SEC 데이터는 Vol.3(IPO·해외 피어)에서 사용합니다.
    - 판정: ① CIK 일치 ② 법인명 완전일치(법인격 표기 제외) ③ 보통주 발행주식수(dei) 보고 ④ EPS 보고.
      `same_consolidated` = yes(같은 법인) / likely(같은 CIK·보통주·EPS, 이름 표기만 다름) / no(다른 CIK) / unknown(보통주·EPS 미보고).
    - yes가 아니면 validate가 해당 피어를 **WARN + 사유**로 표기하고 Vol.3 데이터 노트에 기록합니다. Vol.3 배수 계산에서는 제외합니다.
+   - **수동 확인 override**: 사람이 원문(10-K 표지 registrant 등)으로 확인하면 `config.yaml` → `data_fetch.sec.entity_check.manual_overrides`에
+     `{cik, verdict, note, detail, url, verified_on}`을 적습니다. 상장사·재무 법인 CIK가 모두 `cik`와 같고 url·확인일이 있을 때만 적용되며,
+     자동 판정은 `auto_verdict`로 남고 `peer_validation.md`·`research/vol03/data_notes.md`에 근거 URL·확인일이 기록됩니다.
+     (2026-10-22: VST — CIK 0001692819 10-K registrant = Vistra Corp., entityName 'Vistra Operations Company LLC'는 표기 차이 → OK)
    - 예: `CIK0001692819.json`의 entityName이 `Vistra Oper...`(운영 자회사로 보임)로 시작하면, company_tickers상 VST(Vistra Corp.)와
      법인명이 달라 WARN. 보통주·EPS도 없으면 `unknown`(자회사 재무 가능성), 다른 CIK면 `no`(상장사 CIK 파일로 교체).
 

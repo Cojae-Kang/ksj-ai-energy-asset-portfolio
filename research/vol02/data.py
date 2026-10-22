@@ -21,7 +21,8 @@ from src.data_fetch.base import meta_path_for, resolve_path, to_number
 
 CASES = ("A", "B")
 SCENARIOS = ("downside", "base", "upside")
-CSV_COLUMNS = ["case", "item", "value", "unit", "source_name", "url", "published", "page", "current", "hint"]
+CSV_COLUMNS = ["case", "item", "value", "low", "high", "unit", "tag", "source_name", "url", "published", "page", "current", "hint"]
+TAG_SOURCED, TAG_JUDGMENT = "ASSUMPTION(sourced)", "ASSUMPTION(judgment)"
 
 # 항목 이름 (국문, 영문) — 보고서 가정표·회색 박스 문구
 LABELS: dict[str, tuple[str, str]] = {
@@ -30,7 +31,11 @@ LABELS: dict[str, tuple[str, str]] = {
     "construction_quarters": ("건설기간", "Construction period"), "rent_per_kw_month": ("임대료(kW·월)", "Rent (per kW-month)"),
     "rent_escalation": ("임대료 연 인상률", "Rent escalation"), "prelease": ("사전 임대율", "Pre-lease ratio"),
     "stabilized_occupancy": ("안정화 가동률", "Stabilised occupancy"), "ramp_elasticity": ("램프업 탄력성", "Ramp-up elasticity"),
-    "opex_per_kw_year": ("OPEX(kW·년, 전력비 제외)", "OPEX (per kW-year, ex power)"), "opex_escalation": ("OPEX 연 인상률", "OPEX escalation"),
+    "opex_per_kw_year": ("OPEX 고정분(kW·년, 전력비 제외)", "Fixed OPEX (per kW-year, ex power)"),
+    "opex_ratio": ("OPEX(안정화 매출 대비, 전력비 제외)", "OPEX (% of stabilised revenue, ex power)"),
+    "opex_escalation": ("OPEX 연 인상률", "OPEX escalation"), "ramp_years": ("램프업 기간", "Ramp-up period"),
+    "lease_term_years": ("임대 계약 기간", "Lease term"), "tenor_basis": ("만기 기준", "Tenor basis"),
+    "tax_brackets": ("법인세 누진세율(국세)", "Corporate tax brackets (national)"),
     "pue": ("PUE", "PUE"), "it_load_factor": ("IT 부하율", "IT load factor"), "power_price": ("전력 단가", "Power price"),
     "power_passthrough": ("전력비 패스스루 비율", "Power pass-through"), "tax_rate_national": ("법인세율(국세·연방)", "Corporate tax (national/federal)"),
     "tax_rate_local": ("지방세(지방소득세·주세)", "Local/state tax"), "tax_rate": ("법인세율(합산)", "Combined tax rate"), "dep_years": ("감가상각 기간", "Depreciation life"),
@@ -43,11 +48,11 @@ LABELS: dict[str, tuple[str, str]] = {
 }
 
 # PF 엔진에 반드시 필요한 항목
+# (감가상각 기간·할인율은 없어도 계산: 감가상각 미반영(법인세 보수적), 할인율은 NPV·옵션에서 민감도 격자)
 REQUIRED = ["phase1_mw", "capex_per_mw", "construction_quarters", "rent_per_kw_month", "rent_escalation", "prelease",
-            "stabilized_occupancy", "ramp_elasticity", "opex_per_kw_year", "opex_escalation", "tax_rate", "dep_years",
-            "operating_years", "margin_bp", "target_dscr", "max_gearing", "tenor_years", "grace_years", "dsra_months",
-            "discount_rate"]
-OPTION_REQUIRED = ["phase2_mw", "grid_approval_prob", "approval_decision_year", "option_window_years", "rent_volatility"]
+            "stabilized_occupancy", "ramp_elasticity", "opex_escalation", "tax_rate", "operating_years", "margin_bp",
+            "target_dscr", "max_gearing", "tenor_years", "grace_years", "dsra_months"]
+OPTION_REQUIRED = ["phase2_mw", "grid_approval_prob", "rent_volatility"]
 PCT_UNITS = ("%", "%/년", "법인세 대비 %")
 
 
@@ -88,14 +93,19 @@ class Assumption:
 
     @property
     def status(self) -> str:
-        """보고서 표기용 상태: input(입력 필요) | sourced(출처 기재) | verify(원문 확인 필요) | data | design"""
+        """보고서 표기용 상태: input | sourced(근거 있음) | judgment(저자 판단) | verify(원문 확인) | data | design | neutral | derived"""
         if self.value is None:
             return "input"
         if self.origin == "data":
             return "data"
-        if self.url or self.page:
+        t = self.tag or ""
+        if "judgment" in t:
+            return "judgment"
+        if "sourced" in t or self.url or self.page:
             return "sourced"
-        if self.tag and "design" in self.tag:
+        if self.origin == "derived":
+            return "derived"
+        if "design" in t:
             return "design"
         if self.tag and "neutral" in self.tag:
             return "neutral"
@@ -111,6 +121,8 @@ def csv_to_value(raw: str, unit: str) -> Any:
     s = str(raw or "").strip()
     if s == "":
         return None
+    if ":" in s:                                   # 누진세율 등 텍스트 구조값
+        return s
     n = to_number(s)
     if n != n:
         return s
@@ -137,6 +149,29 @@ def config_assumptions(cfg: Mapping) -> dict[str, dict[str, Assumption]]:
     return out
 
 
+def norm_tag(t: str | None) -> str | None:
+    """CSV tag 칸: sourced / judgment (또는 ASSUMPTION(sourced) …) → ASSUMPTION(…)."""
+    t = (t or "").strip()
+    if not t:
+        return None
+    low = t.lower()
+    for key in ("sourced", "judgment", "verify", "design", "neutral"):
+        if key in low:
+            return f"ASSUMPTION({key})"
+    return t
+
+
+def parse_brackets(text: str | None) -> tuple | None:
+    """'2:10,200:20,3000:22,inf:25' (상한:세율%) → ((2, 0.10), (200, 0.20), (3000, 0.22), (inf, 0.25))."""
+    if not text:
+        return None
+    out = []
+    for part in str(text).split(","):
+        hi, rate = part.split(":")
+        out.append((math.inf if hi.strip().lower() in ("inf", "∞") else float(hi), float(rate) / 100.0))
+    return tuple(out)
+
+
 def read_csv_overrides(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -156,6 +191,12 @@ def load_assumptions(cfg: Mapping) -> dict[str, dict[str, Assumption]]:
         if v is not None:
             cur.value, cur.origin = v, "csv"
             cur.tag = "user"
+        for bound in ("low", "high"):
+            b = csv_to_value(r.get(bound), cur.unit)
+            if b is not None:
+                setattr(cur, bound, b)
+        if norm_tag(r.get("tag")):
+            cur.tag = norm_tag(r.get("tag"))
         for k_csv, k_attr in (("source_name", "source"), ("url", "url"), ("published", "published"), ("page", "page")):
             if (r.get(k_csv) or "").strip():
                 setattr(cur, k_attr, r[k_csv].strip())
@@ -168,8 +209,13 @@ def load_assumptions(cfg: Mapping) -> dict[str, dict[str, Assumption]]:
 
 
 def combined_tax(case: str, d: Mapping[str, Assumption]) -> Assumption:
-    """A: 법인세 × (1 + 지방소득세 비율). B: 연방 + 주 × (1 − 연방) (주세는 연방 과세소득에서 공제)."""
+    """A: 법인세(누진 또는 단일) × (1 + 지방소득세 비율). B: 연방 + 주 × (1 − 연방) (주세는 연방 과세소득에서 공제)."""
     n, l = d.get("tax_rate_national"), d.get("tax_rate_local")
+    br = d.get("tax_brackets")
+    if br is not None and br.value and l is not None and l.value is not None:
+        top = parse_brackets(br.value)[-1][1]
+        return Assumption(case, "tax_rate", top * (1 + l.value), "%", tag=br.tag, origin="derived",
+                          source="누진세율 × (1 + 지방소득세) — 표시값은 최고 한계세율")
     if n is None or l is None or n.value is None or l.value is None:
         return Assumption(case, "tax_rate", None, "%", todo="법인세율 입력 필요", origin="derived")
     v = n.value * (1 + l.value) if case == "A" else n.value + l.value * (1 - n.value)
@@ -187,7 +233,8 @@ def write_template(cfg: Mapping, path: Path | None = None) -> Path:
             prev = old.get((case, key), {})
             cur = eff[case][key]
             rows.append({
-                "case": case, "item": key, "value": prev.get("value", ""), "unit": a.unit,
+                "case": case, "item": key, "value": prev.get("value", ""), "low": prev.get("low", ""),
+                "high": prev.get("high", ""), "unit": a.unit, "tag": prev.get("tag", ""),
                 "source_name": prev.get("source_name", ""), "url": prev.get("url", ""),
                 "published": prev.get("published", ""), "page": prev.get("page", ""),
                 "current": value_to_csv(cur.value, a.unit) if cur.value is not None else "null",
@@ -361,78 +408,87 @@ def peer_pricing(cfg: Mapping) -> PeerPricing | Unavailable:
 
 @dataclass
 class Virginia:
-    index: pd.DataFrame                 # period, VA, US (기준연도 = 100)
+    index: pd.DataFrame                 # period, VA, US 판매량 지수 (기준연도 = 100)
     base_year: int
     last_year: int
     va_cagr: float
     us_cagr: float
     va_yoy_last: float
-    us_price: pd.Series                 # 미국 상업용 평균 요금 (cents/kWh)
-    va_price: pd.Series | None          # 버지니아 상업용 요금 (수집 시)
-    price_source: str                   # "VA" | "US"
+    us_price: pd.Series | None          # 미국 상업용 평균 요금 (cents/kWh, 비교용)
+    va_price: pd.Series                 # 버지니아 상업용 평균 요금 (cents/kWh) — 케이스 B 전력 단가
+    sales_file: str
 
     @property
     def price_latest(self) -> tuple[int, float]:
-        s = self.va_price if self.va_price is not None else self.us_price
-        return int(s.index.max()), float(s.iloc[-1])
+        return int(self.va_price.index.max()), float(self.va_price.iloc[-1])
+
+    def price_cagr(self, y0: int | None = None) -> float:
+        y0 = y0 or int(self.va_price.index.min())
+        y1 = int(self.va_price.index.max())
+        return cagr(float(self.va_price.loc[y0]), float(self.va_price.loc[y1]), y1 - y0)
+
+    @property
+    def price_max_yoy(self) -> tuple[int, float]:
+        y = self.va_price.pct_change().dropna()
+        return int(y.idxmax()), float(y.max())
 
 
 def virginia(cfg: Mapping) -> Virginia | Unavailable:
-    df = _read(_inp(cfg, "eia_state")[0])
-    if df is None:
-        return Unavailable("EIA 버지니아 판매량 없음", "EIA Virginia sales missing")
-    df = df[df["sectorid"] == "COM"].copy()
-    df["period"] = df["period"].astype(int)
-    df["sales"] = df["sales"].map(to_number)
-    w = df.pivot_table(index="period", columns="stateid", values="sales", aggfunc="first")[["VA", "US"]].dropna()
+    """케이스 B 수요·전력비 근거: EIA 버지니아·미국 상업용 판매량과 요금 (vol02_eia_va_com.csv 우선)."""
+    vp = _read(_inp(cfg, "eia_va_price")[0])
+    if vp is None or "price" not in vp or "VA" not in set(vp["stateid"]):
+        return Unavailable("EIA 버지니아 상업용 요금 없음", "EIA Virginia commercial price missing", ["eia_va_price"])
+    vp = vp[vp["sectorid"] == "COM"].copy()
+    vp["period"] = vp["period"].astype(int)
+    for c in ("sales", "price"):
+        if c in vp:
+            vp[c] = vp[c].map(to_number)
+    sales_src = _inp(cfg, "eia_va_price")[0].name
+    if "sales" in vp and {"VA", "US"} <= set(vp["stateid"]):
+        w = vp.pivot_table(index="period", columns="stateid", values="sales", aggfunc="first")[["VA", "US"]].dropna()
+    else:
+        st = _read(_inp(cfg, "eia_state")[0])
+        if st is None:
+            return Unavailable("EIA 버지니아 판매량 없음", "EIA Virginia sales missing")
+        st = st[st["sectorid"] == "COM"].copy()
+        st["period"] = st["period"].astype(int)
+        st["sales"] = st["sales"].map(to_number)
+        w = st.pivot_table(index="period", columns="stateid", values="sales", aggfunc="first")[["VA", "US"]].dropna()
+        sales_src = _inp(cfg, "eia_state")[0].name
     y0, y1 = int(w.index.min()), int(w.index.max())
     idx = w.div(w.loc[y0]).mul(100).reset_index()
-    us_price = None
-    for p in _inp(cfg, "eia_sectors"):
-        s = _read(p)
-        if s is None or "price" not in s:
-            continue
-        s = s[(s.get("stateid", "US") == "US") & (s["sectorid"] == "COM")].copy()
-        s["period"] = s["period"].astype(int)
-        s = s[s["period"] >= y0]
-        if len(s) >= 3:
-            us_price = s.set_index("period")["price"].map(to_number).sort_index()
-            break
-    if us_price is None:
-        return Unavailable("EIA 미국 상업용 요금 없음", "EIA U.S. commercial price missing")
-    va_price, src = None, "US"
-    vp = _read(_inp(cfg, "eia_va_price")[0])
-    if vp is not None and "price" in vp:
-        vp = vp[(vp["stateid"] == "VA") & (vp["sectorid"] == "COM")].copy()
-        if len(vp):
-            vp["period"] = vp["period"].astype(int)
-            va_price, src = vp.set_index("period")["price"].map(to_number).sort_index(), "VA"
+    prices = vp.pivot_table(index="period", columns="stateid", values="price", aggfunc="first").sort_index()
     yoy = w.pct_change().iloc[-1]
     return Virginia(idx, y0, y1, cagr(w.loc[y0, "VA"], w.loc[y1, "VA"], y1 - y0), cagr(w.loc[y0, "US"], w.loc[y1, "US"], y1 - y0),
-                    float(yoy["VA"]), us_price, va_price, src)
+                    float(yoy["VA"]), prices["US"].dropna() if "US" in prices else None, prices["VA"].dropna(), sales_src)
 
 
 @dataclass
 class GridStats:
-    applied: float | None
+    applied: float | None              # MW
     approved: float | None
-    memo_pct: float | None
+    applied_n: float | None            # 건수
+    approved_n: float | None
     threshold_mw: float | None
     period: str
+    basis_note: str
 
     @property
     def ratio(self) -> float | None:
+        """용량 기준 승인률."""
         return self.approved / self.applied if self.applied and self.approved is not None else None
 
     @property
-    def memo_mismatch(self) -> bool:
-        return self.ratio is not None and self.memo_pct is not None and abs(self.ratio * 100 - self.memo_pct) > 0.15
+    def ratio_n(self) -> float | None:
+        """건수 기준 승인률."""
+        return self.approved_n / self.applied_n if self.applied_n and self.approved_n is not None else None
 
 
 def grid_stats(cfg: Mapping) -> GridStats:
     g = cfg["research"]["vol02"]["grid_stats"]
-    return GridStats(g["applied_mw"]["value"], g["approved_mw"]["value"], g.get("memo_ratio_pct"),
-                     g["review_threshold_mw"]["value"], g["period"])
+    gv = lambda k: (g.get(k) or {}).get("value")  # noqa: E731
+    return GridStats(gv("applied_mw"), gv("approved_mw"), gv("applied_count"), gv("approved_count"),
+                     gv("review_threshold_mw"), g["period"], g.get("basis_note", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -443,19 +499,26 @@ def missing_items(a: Mapping[str, Assumption], keys: list[str]) -> list[str]:
 
 
 def case_power_price(case: str, a: Mapping[str, Assumption], va: Virginia | Unavailable) -> Assumption:
-    """B: 사용자 값이 없으면 EIA 상업용 평균 요금(버지니아, 없으면 미국)을 USD/kWh로 사용."""
+    """B: 사용자 값이 없으면 EIA 버지니아 상업용 평균 요금(최근 연도)을 USD/kWh로 사용."""
     p = a["power_price"]
     if p.value is not None or case != "B" or not ok(va):
         return p
     year, cents = va.price_latest
-    who = "Virginia" if va.price_source == "VA" else "U.S. (proxy)"
     return replace(p, value=cents / 100.0, origin="data", tag="DATA",
-                   source=f"EIA commercial average price, {who}, {year}")
+                   source=f"EIA commercial average price, Virginia, {year}")
 
 
 def pf_inputs(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Unavailable, growth: float,
-              mw_key: str = "phase1_mw") -> pf.PFInputs | Unavailable:
-    miss = missing_items(a, REQUIRED + ([mw_key] if mw_key != "phase1_mw" else []))
+              mw_key: str = "phase1_mw", margin_bp: float | None = None) -> pf.PFInputs | Unavailable:
+    """가정 → 엔진 입력. margin_bp를 주면 가산금리 가정 대신 그 값(시나리오)을 쓴다.
+
+    만기 기준(tenor_basis) = fc이면 만기는 금융약정(FC)부터 → COD 이후 상환 기간 = 만기 − 건설기간.
+    OPEX는 고정분(kW·년)과 안정화 매출 비율 중 하나 이상 필요.
+    """
+    keys = [k for k in REQUIRED if not (k == "margin_bp" and margin_bp is not None)]
+    miss = missing_items(a, keys + ([mw_key] if mw_key != "phase1_mw" else []))
+    if (a.get("opex_ratio") is None or a["opex_ratio"].value is None) and a["opex_per_kw_year"].value is None:
+        miss.append("opex_ratio")
     if not ok(r):
         return Unavailable("기준금리 데이터 없음", "Base-rate data missing", ["base_rate"])
     rc, rt = r.base(case, "construction", cfg), r.base(case, "term", cfg)
@@ -468,22 +531,41 @@ def pf_inputs(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | U
 
     def opt(k):
         return v.get(k)
+    q = int(v["construction_quarters"])
+    tenor = float(v["tenor_years"])
+    if str(opt("tenor_basis") or "cod") == "fc":
+        tenor -= q / 4
     try:
         return pf.PFInputs(
-            mw=float(v[mw_key]), capex_per_mw=float(v["capex_per_mw"]), construction_quarters=int(v["construction_quarters"]),
+            mw=float(v[mw_key]), capex_per_mw=float(v["capex_per_mw"]), construction_quarters=q,
             rent_per_kw_month=float(v["rent_per_kw_month"]), money_scale=float(spec["money_scale"]),
             rent_escalation=float(v["rent_escalation"]), prelease=float(v["prelease"]),
             stabilized_occupancy=float(v["stabilized_occupancy"]), ramp_growth=growth,
-            ramp_elasticity=float(v["ramp_elasticity"]), opex_per_kw_year=float(v["opex_per_kw_year"]),
-            opex_escalation=float(v["opex_escalation"]), tax_rate=float(v["tax_rate"]), dep_years=int(v["dep_years"]),
+            ramp_elasticity=float(v["ramp_elasticity"]), opex_per_kw_year=float(opt("opex_per_kw_year") or 0.0),
+            opex_escalation=float(v["opex_escalation"]), tax_rate=float(v["tax_rate"]),
+            dep_years=int(v["dep_years"]) if opt("dep_years") else None,
             operating_years=int(v["operating_years"]), base_rate_construction=rc, base_rate_term=rt,
-            margin=float(v["margin_bp"]) / 10000.0, target_dscr=float(v["target_dscr"]), max_gearing=float(v["max_gearing"]),
-            tenor_years=int(v["tenor_years"]), grace_years=int(v["grace_years"]), dsra_months=float(v["dsra_months"]),
-            discount_rate=float(v["discount_rate"]), power_passthrough=float(opt("power_passthrough") or 1.0),
+            margin=float(margin_bp if margin_bp is not None else v["margin_bp"]) / 10000.0,
+            target_dscr=float(v["target_dscr"]), max_gearing=float(v["max_gearing"]),
+            tenor_years=int(round(tenor)), grace_years=int(v["grace_years"]), dsra_months=float(v["dsra_months"]),
+            discount_rate=float(v["discount_rate"]) if opt("discount_rate") is not None else None,
+            power_passthrough=float(opt("power_passthrough") or 1.0),
             power_price=opt("power_price"), pue=opt("pue"), it_load_factor=opt("it_load_factor"),
-            exit_cap_rate=opt("exit_cap_rate"), grace_interest=str(opt("grace_interest") or "paid"))
+            exit_cap_rate=opt("exit_cap_rate"), grace_interest=str(opt("grace_interest") or "paid"),
+            opex_ratio=float(v["opex_ratio"]) if opt("opex_ratio") is not None else None,
+            ramp_years=float(v["ramp_years"]) if opt("ramp_years") is not None else None,
+            lease_term_years=int(v["lease_term_years"]) if opt("lease_term_years") else None,
+            tax_brackets=parse_brackets(opt("tax_brackets")),
+            tax_surcharge=float(v["tax_rate_local"]) if opt("tax_brackets") and opt("tax_rate_local") is not None else 0.0)
     except ValueError as e:
         return Unavailable(f"입력값 오류: {e}", f"Invalid inputs: {e}", [])
+
+
+def scenario_inputs(inp: pf.PFInputs, d: "Demand", s: str) -> pf.PFInputs:
+    """수요 시나리오: 선형 램프업이면 램프업 기간 × (기준 성장률 ÷ 시나리오 성장률), 아니면 성장률 교체."""
+    if inp.ramp_years is not None:
+        return replace(inp, ramp_years=inp.ramp_years * d.growth["base"] / d.growth[s], ramp_growth=d.growth[s])
+    return replace(inp, ramp_growth=d.growth[s])
 
 
 @dataclass
@@ -501,6 +583,10 @@ class CaseResult:
     checks: dict[str, float]
     tax_timing: list[str] = field(default_factory=list)   # 유리한 쪽 < 기준인 변수 중 세율 0 재계산으로 원인 확인된 것
     heatmap_tax_timing: bool = False            # 히트맵의 유리한 칸(임대료↑·CAPEX↓)이 기준보다 낮은 원인이 세금 시점인지
+    margin_bp: float | None = None              # 시나리오 가산금리 (가정 미확정일 때)
+    margin_scenarios: dict = field(default_factory=dict)   # bp → CaseResult (가산금리 미확정 시 3개 시나리오)
+    interest_cover_debt: float = float("nan")  # 진단: 매년 이자 현금 지급 제약 시 대출 한도
+    negative_amort: list[int] = field(default_factory=list)   # 원리금 < 이자인 연차
 
 
 def capex_multipliers(a: Mapping[str, Assumption], pp: PeerPricing | Unavailable) -> dict[str, float] | Unavailable:
@@ -514,43 +600,54 @@ def capex_multipliers(a: Mapping[str, Assumption], pp: PeerPricing | Unavailable
 
 
 def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Unavailable, d: Demand | Unavailable,
-             pp: PeerPricing | Unavailable) -> CaseResult | Unavailable:
+             pp: PeerPricing | Unavailable, margin_bp: float | None = None) -> CaseResult | Unavailable:
     if not ok(d):
         return Unavailable("수요 시나리오 없음", "Demand scenarios missing", ["iea"])
-    inp = pf_inputs(cfg, case, a, r, d.growth["base"])
+    inp = pf_inputs(cfg, case, a, r, d.growth["base"], margin_bp=margin_bp)
     if not ok(inp):
         return inp
     base = pf.run(inp)
-    scen = {s: (base if s == "base" else pf.run(replace(inp, ramp_growth=d.growth[s]))) for s in SCENARIOS}
+    scen = {s: (base if s == "base" else pf.run(scenario_inputs(inp, d, s))) for s in SCENARIOS}
     sc = cfg["research"]["vol02"]["sensitivity"]
     rp, op_, bp = float(sc["rent_pct"]), float(sc["occupancy_pct"]), float(sc["rate_bp"]) / 10000
-    pre = a["prelease"]
+    xp = float(sc.get("opex_pct", 0.2))
+    pre, cx = a["prelease"], a["capex_per_mw"]
     cm = capex_multipliers(a, pp)
     st = {
         "rent_down": pf.Stress(rent_mult=1 - rp), "rent_up": pf.Stress(rent_mult=1 + rp),
         "occ_down": pf.Stress(occ_mult=1 - op_), "occ_up": pf.Stress(occ_mult=1 + op_),
         "rate_up": pf.Stress(rate_shift=bp), "rate_down": pf.Stress(rate_shift=-bp),
+        "opex_up": pf.Stress(opex_mult=1 + xp), "opex_down": pf.Stress(opex_mult=1 - xp),
     }
     for q in sc["delay_quarters"]:
         st[f"delay_{q}"] = pf.Stress(delay_quarters=int(q))
+    for x in (sc.get("rent_extra") or {}).get(case, []):
+        st[f"rent_{int(round(x * 100)):+d}"] = pf.Stress(rent_mult=1 + float(x))
     if pre.low is not None and pre.high is not None:
         st["prelease_low"], st["prelease_high"] = pf.Stress(prelease=pre.low), pf.Stress(prelease=pre.high)
+    if cx.low is not None and cx.high is not None and cx.value:
+        st["capex_range_high"] = pf.Stress(capex_mult=cx.high / cx.value)
+        st["capex_range_low"] = pf.Stress(capex_mult=cx.low / cx.value)
     if ok(cm):
         for k, m in cm.items():
             st[f"capex_{k}"] = pf.Stress(capex_mult=m)
     stresses = {k: pf.stress(base, s) for k, s in st.items()}
     torn_cases = {"rent": (st["rent_down"], st["rent_up"]), "occupancy": (st["occ_down"], st["occ_up"]),
-                  "rate": (st["rate_up"], st["rate_down"]),
+                  "rate": (st["rate_up"], st["rate_down"]), "opex": (st["opex_up"], st["opex_down"]),
                   "delay": (st[f"delay_{max(sc['delay_quarters'])}"], pf.BASE)}
+    for x in (sc.get("rent_extra") or {}).get(case, []):
+        torn_cases[f"rent_extra"] = (st[f"rent_{int(round(x * 100)):+d}"], pf.BASE)
     if "prelease_low" in st:
         torn_cases["prelease"] = (st["prelease_low"], st["prelease_high"])
+    if "capex_range_high" in st:
+        torn_cases["capex_range"] = (st["capex_range_high"], st["capex_range_low"])
     if ok(cm):
         torn_cases["capex"] = (st["capex_high"], pf.BASE)
     torn = pf.tornado(base, torn_cases)
     rng = sc["breakeven_ranges"]
     be_rows = []
-    near = {"rent_mult": 1.0, "occ_mult": 1.0, "prelease": inp.prelease, "capex_mult": 1.0, "rate_shift": 0.0,
-            "delay_quarters": 0.0}
+    near = {"rent_mult": 1.0, "occ_mult": 1.0, "prelease": inp.prelease, "capex_mult": 1.0, "opex_mult": 1.0,
+            "rate_shift": 0.0, "delay_quarters": 0.0}
     at_target = abs(base.min_dscr - inp.target_dscr) < 1e-6      # sculpting으로 기준 = 목표 → 목표 손익분기는 기준값
     for var in near:
         lo, hi = rng[var]
@@ -561,57 +658,114 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
             be_rows.append({"variable": var, "level": level, "at_target": False,
                             "value": pf.breakeven(base, var, level, lo, hi, near=near[var])})
     be = pd.DataFrame(be_rows)
-    hm = pf.heatmap(base, sc["heatmap"]["rent_mult"], sc["heatmap"]["capex_mult"]) if case == "A" else None
+    hm_cm = sc["heatmap"]["capex_mult"]
+    if cx.low is not None and cx.high is not None and cx.value:   # CAPEX 축 = 가정 범위(하단~상단)
+        hm_cm = sorted({round(cx.low / cx.value, 4), 1.0, round((cx.value + cx.high) / 2 / cx.value, 4), round(cx.high / cx.value, 4)})
+    hm = pf.heatmap(base, sc["heatmap"]["rent_mult"], hm_cm) if case == "A" else None
     power = None
     if inp.power_modeled():
         o = base.ops
         power = {"power_cost_y1": float(o["power_cost"].iloc[0]), "rent_y1": float(o["revenue"].iloc[0]),
                  "share_of_tenant_cost": float(o["power_cost"].iloc[0] / (o["power_cost"].iloc[0] + o["revenue"].iloc[0]))}
     # 유리한 스트레스가 최소 DSCR을 낮추는 경우: 세율 0으로 다시 계산해 법인세 시점 효과인지 확인
+    no_tax = replace(inp, tax_rate=0.0, tax_brackets=None)
     tax_timing = []
     anomalies = [r_["variable"] for _, r_ in torn.iterrows() if r_["high"] < r_["base"] - 1e-6]
-    if anomalies and inp.tax_rate > 0:
-        b0 = pf.run(replace(inp, tax_rate=0.0))
+    if anomalies and (inp.tax_rate > 0 or inp.tax_brackets):
+        b0 = pf.run(no_tax)
         for var in anomalies:
             fav = torn_cases[var][1]
             if pf.stress(b0, fav).min_dscr >= b0.min_dscr - 1e-6:
                 tax_timing.append(var)
     hm_tt = False
-    if hm is not None and inp.tax_rate > 0:
+    if hm is not None and (inp.tax_rate > 0 or inp.tax_brackets):
         odd = [(r_, c_) for r_ in hm.index for c_ in hm.columns
                if r_ >= 1 and c_ <= 1 and (r_, c_) != (1.0, 1.0) and hm.loc[r_, c_] < base.min_dscr - 1e-6]
         if odd:
-            b0 = pf.run(replace(inp, tax_rate=0.0))
+            b0 = pf.run(no_tax)
             r_, c_ = odd[0]
             hm_tt = pf.stress(b0, pf.Stress(rent_mult=r_, capex_mult=c_)).min_dscr >= b0.min_dscr - 1e-6
-    return CaseResult(case, inp, base, scen, stresses, torn, be, hm, cm, power, pf.identity_checks(base), tax_timing, hm_tt)
+    return CaseResult(case, inp, base, scen, stresses, torn, be, hm, cm, power, pf.identity_checks(base), tax_timing, hm_tt,
+                      margin_bp=margin_bp, interest_cover_debt=pf.interest_cover_cap(base),
+                      negative_amort=pf.negative_amortization_years(base))
+
+
+def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float]) -> pd.DataFrame | None:
+    """버지니아 상업용 요금 × PUE 격자 → IT kW·월당 전력비(USD, IT 부하율 100%)와 임대료 대비 비율.
+
+    요금 열: 최근 연도, 최근 연도 × (1 + 2015년 이후 최대 연간 상승률). PUE는 민감도 축(가정 아님).
+    """
+    if not ok(va):
+        return None
+    y, p = va.price_latest
+    my, mx = va.price_max_yoy
+    rows = []
+    for pue in pues:
+        for label, cents in ((f"{y}", p), (f"{y} +{mx * 100:.1f}%", p * (1 + mx))):
+            usd = 730 * pue * cents / 100
+            rows.append({"pue": pue, "price_label": label, "cents": cents, "usd_per_kw_month": usd,
+                         "share_of_rent": usd / rent if rent else float("nan")})
+    return pd.DataFrame(rows)
 
 
 @dataclass
 class OptionFacts:
-    result: ro.OptionResult
+    result: ro.OptionResult                    # 대표 셀(할인율·대기기간 격자의 가운데) 결과
     inputs: ro.OptionInputs
     grid_ratio: float | None
+    grid: pd.DataFrame                          # discount_rate, window_years, value_conditional, value, build_now, flexibility, exercise_share
+    prob_values: dict[float, float]             # 승인 확률 시나리오 → 옵션 가치 (대표 셀)
+    decision_derived: bool                      # 결정 시점을 램프업 기간에서 도출했는지
+    discount_pending: bool                      # 할인율 미확정(격자)
+    window_pending: bool                        # 대기 기간 미확정(격자)
+
+
+def option_scenarios(inp: pf.PFInputs, d: "Demand") -> dict[str, dict]:
+    return {s: ({"ramp_years": inp.ramp_years * d.growth["base"] / d.growth[s], "ramp_growth": d.growth[s]}
+                if inp.ramp_years is not None else {"ramp_growth": d.growth[s]}) for s in SCENARIOS}
 
 
 def run_option(cfg: Mapping, a: Mapping[str, Assumption], r: Rates | Unavailable, d: Demand | Unavailable,
                case_res: CaseResult | Unavailable, gs: GridStats) -> OptionFacts | Unavailable:
+    """2단계 옵션. 결정 시점이 없으면 1단계 램프업 종료(수요 확인) 연도로 도출하고, 할인율·대기 기간이 없으면
+    config real_option의 격자(민감도 축)로 계산해 가운데 셀을 대표값으로 쓴다(보고서에 '미확정' 표기)."""
     if not ok(case_res):
         return Unavailable("케이스 A 모델 입력 필요", "Case A model inputs needed", list(getattr(case_res, "missing", [])))
     miss = missing_items(a, OPTION_REQUIRED)
+    dec = a["approval_decision_year"].value
+    derived = False
+    if dec is None and case_res.inp.ramp_years is not None:
+        dec, derived = int(math.ceil(case_res.inp.ramp_years)), True
+    if dec is None:
+        miss.append("approval_decision_year")
     if miss:
         return Unavailable("입력 필요", "Inputs needed", miss)
     if not a["phase2_mw"].value:
         return Unavailable("2단계 용량 0", "Phase 2 capacity is zero", ["phase2_mw"])
     roc = cfg["research"]["vol02"]["real_option"]
-    p2 = replace(case_res.inp, mw=float(a["phase2_mw"].value))
+    dr_v, win_v = a["discount_rate"].value, a["option_window_years"].value
+    drs = [float(dr_v)] if dr_v is not None else [float(x) for x in roc["discount_grid"]]
+    wins = [int(win_v)] if win_v is not None else [int(x) for x in roc["window_grid"]]
+    pa = a["grid_approval_prob"]
+    probs = sorted({x for x in (pa.low, pa.value, pa.high) if x is not None})
     w = cfg["research"]["vol02"]["demand_scenarios"]["weights"]
-    oi = ro.OptionInputs(p2, case_res.inp.prelease, dict(d.growth), {k: float(w[k]) for k in SCENARIOS},
-                         float(a["grid_approval_prob"].value), int(a["approval_decision_year"].value),
-                         int(a["option_window_years"].value), float(a["rent_volatility"].value),
-                         int(roc["n_paths"]), int(roc["seed"]), int(roc["basis_degree"]))
-    res = ro.value(oi, roc["prob_grid"], roc["convergence_paths"])
-    return OptionFacts(res, oi, gs.ratio)
+    scen = option_scenarios(case_res.inp, d)
+
+    def make(dr: float, win: int, n: int) -> ro.OptionInputs:
+        p2 = replace(case_res.inp, mw=float(a["phase2_mw"].value), discount_rate=dr)
+        return ro.OptionInputs(p2, case_res.inp.prelease, scen, {k: float(w[k]) for k in SCENARIOS}, float(pa.value),
+                               int(dec), win, float(a["rent_volatility"].value), n, int(roc["seed"]), int(roc["basis_degree"]))
+    rows = []
+    for dr in drs:
+        for win in wins:
+            res = ro.value(make(dr, win, int(roc.get("grid_paths", roc["n_paths"]))), [pa.value], [])
+            rows.append({"discount_rate": dr, "window_years": win, "value_conditional": res.value_conditional,
+                         "value": res.value, "build_now": res.build_now, "flexibility": res.flexibility,
+                         "exercise_share": res.exercise_share})
+    oi = make(drs[len(drs) // 2], wins[len(wins) // 2], int(roc["n_paths"]))
+    res = ro.value(oi, sorted(set(roc["prob_grid"]) | set(probs)), roc["convergence_paths"])
+    pv = {p: p * res.value_conditional for p in probs}
+    return OptionFacts(res, oi, gs.ratio, pd.DataFrame(rows), pv, derived, dr_v is None, win_v is None)
 
 
 # ---------------------------------------------------------------------------
@@ -673,9 +827,45 @@ def load_facts(cfg: Mapping, as_of: str | None = None) -> Facts:
     for case in a:
         a[case]["power_price"] = case_power_price(case, a[case], va)
     gs = grid_stats(cfg)
-    cases = {c: run_case(cfg, c, a[c], r, d, pp) for c in CASES if c in a}
+    cases = {}
+    for c in CASES:
+        if c not in a:
+            continue
+        ms = (v["sensitivity"].get("margin_scenarios_bp") or {}).get(c)
+        if a[c]["margin_bp"].value is None and ms:      # 가산금리 미확정 → 시나리오별 계산, 가운데를 대표값으로
+            runs = {float(m): run_case(cfg, c, a[c], r, d, pp, margin_bp=float(m)) for m in ms}
+            mid = runs[float(ms[len(ms) // 2])]
+            if ok(mid):
+                mid.margin_scenarios = runs
+            cases[c] = mid
+        else:
+            cases[c] = run_case(cfg, c, a[c], r, d, pp)
     opt = run_option(cfg, a["A"], r, d, cases.get("A", Unavailable("")), gs) if "A" in a else Unavailable("")
+    if ok(opt) and opt.decision_derived:
+        x = a["A"]["approval_decision_year"]
+        x.value, x.origin, x.tag = opt.inputs.decision_year, "derived", TAG_JUDGMENT
+        x.source = f"저자 판단(도출): 1단계 램프업 종료 = 수요 확인 시점 → COD 후 {opt.inputs.decision_year}년"
     return Facts(as_of, a, d, r, pp, va, gs, cases, opt, source_status(cfg, va))
+
+
+def table_keys(case: str, d: Mapping[str, Assumption]) -> list[str]:
+    """보고서 가정표·집계에 쓰는 항목: 쓰이지 않는 대체 항목은 뺀다."""
+    hide = {"tax_rate"}
+    if d.get("ramp_years") is not None and d["ramp_years"].value is not None:
+        hide.add("ramp_elasticity")                       # 선형 램프업이면 성장률 탄력성 미사용
+    if d.get("opex_ratio") is not None and d["opex_ratio"].value is not None and d["opex_per_kw_year"].value is None:
+        hide.add("opex_per_kw_year")                      # OPEX를 매출 비율로 입력
+    if d.get("power_equipment_share") is not None and d["power_equipment_share"].value is None \
+            and d.get("capex_per_mw") is not None and d["capex_per_mw"].high is not None:
+        hide.add("power_equipment_share")                 # CAPEX 스트레스를 가정 범위로 대체
+    if case == "A":
+        if d.get("power_price") is not None and d["power_price"].value is None:
+            hide.add("power_price")                       # 패스스루 100% — 한국 요금 미사용
+        if d.get("lease_term_years") is not None and d["lease_term_years"].value is None:
+            hide.add("lease_term_years")                  # 운영기간 전체 계약으로 처리
+    if case == "B":
+        hide |= {"grid_approval_prob", "approval_decision_year", "option_window_years", "rent_volatility", "phase2_mw"}
+    return [k for k in LABELS if k in d and k not in hide]
 
 
 def fmt_missing(keys: list[str], kr: bool = True) -> str:

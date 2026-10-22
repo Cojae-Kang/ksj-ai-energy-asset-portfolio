@@ -23,7 +23,7 @@
 | Vol | 제목 | 날짜 | 국문 | English | 게시물 |
 |---|---|---|---|---|---|
 | 1 | AI 전력 수요는 진짜인가, 시장은 이미 알고 있나 | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) | [LinkedIn](https://lnkd.in/p/g48PyHjZ) |
-| 2 | AI 데이터센터, 대출은 얼마까지 가능한가 — 대주의 눈으로 본 한국 40MW와 미국 100MW | 2026.10 (가정 근거 확인 중) | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | — |
+| 2 | AI 데이터센터, 대출은 얼마까지 가능한가 — 대주의 눈으로 본 한국 40MW와 미국 100MW | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | — |
 | 3 | IPO 공모가와 해외 피어 — 가상 기업 Target Co. 희망공모가 밴드 | 예정 | — | — | — |
 
 **시리즈 로드맵**: Vol.1 수요·시장 → Vol.2 데이터센터 PF(한국 40MW·미국 100MW) → Vol.3 IPO 공모가·해외 피어
@@ -106,7 +106,7 @@ Recalculated from official-source data each time the report is built.
 | Vol | Title | Date | Korean | English | Post |
 |---|---|---|---|---|---|
 | 1 | Is AI Power Demand Real, and Does the Market Already Know? | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) | [LinkedIn](https://lnkd.in/p/g48PyHjZ) |
-| 2 | How Much Can an AI Data Centre Borrow? A lender's view of a 40 MW Korean and a 100 MW U.S. project | 2026.10 (assumption sources in progress) | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | — |
+| 2 | How Much Can an AI Data Centre Borrow? A lender's view of a 40 MW Korean and a 100 MW U.S. project | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | — |
 | 3 | IPO pricing and overseas peers — indicative price range for a hypothetical Target Co. | Planned | — | — | — |
 
 **Series roadmap**: Vol.1 demand and market → Vol.2 data-centre PF (Korea 40 MW, U.S. 100 MW) → Vol.3 IPO pricing and overseas peers

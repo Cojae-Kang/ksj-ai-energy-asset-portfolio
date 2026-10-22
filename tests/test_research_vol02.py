@@ -24,7 +24,7 @@ PEERS = [("267260", "HD현대일렉트릭", (20000, 1300), (40000, 9700)), ("010
 # 테스트용 합성 가정 (사실 주장 아님 — 엔진·레이아웃 검증 전용)
 SYNTH = {
     "A": dict(capex_per_mw=150, power_equipment_share=0.4, construction_quarters=8, stabilized_occupancy=0.9,
-              opex_per_kw_year=300000, opex_escalation=0.02, tax_rate_national=0.24, dep_years=20, operating_years=20,
+              opex_per_kw_year=300000, opex_escalation=0.02, tax_brackets="2:10,200:20,3000:22,inf:25", dep_years=20, operating_years=20,
               margin_bp=200, target_dscr=1.3, max_gearing=0.7, tenor_years=15, grace_years=2, grace_interest="capitalized",
               dsra_months=6, discount_rate=0.09, grid_approval_prob=0.3, approval_decision_year=2, option_window_years=4,
               rent_volatility=0.15),
@@ -60,6 +60,11 @@ def write_inputs(cfg, tmp: Path):
     pd.DataFrame(st).to_csv(paths["eia_state"], index=False)
     pd.DataFrame([{"period": y, "stateid": "US", "sectorid": "COM", "sales": 1, "price": 10 + 0.3 * (y - 2015)}
                   for y in range(2015, 2026)]).to_csv(paths["eia_sectors"][1], index=False)   # 폴백 파일만 존재
+    va = []
+    for y in range(2015, 2026):                                                          # vol02_eia_va_com.csv 형식
+        va += [{"period": y, "stateid": "VA", "sectorid": "COM", "sales": 200 * 1.05 ** (y - 2015), "price": 8.0 + 0.1 * (y - 2015)},
+               {"period": y, "stateid": "US", "sectorid": "COM", "sales": 1000 * 1.02 ** (y - 2015), "price": 10 + 0.3 * (y - 2015)}]
+    pd.DataFrame(va).to_csv(paths["eia_va_price"], index=False)
     return paths
 
 
@@ -105,8 +110,10 @@ def test_assumption_defaults_and_derivations(cfg):
 
 
 def test_csv_overrides_values_and_sources(cfg):
-    rows = [{"case": "A", "item": "tax_rate_national", "value": "24", "unit": "%", "source_name": "법인세법 제55조",
-             "url": "https://law.go.kr", "published": "2025-12", "page": ""},
+    rows = [{"case": "A", "item": "tax_brackets", "value": "2:10,200:20,3000:22,inf:25", "unit": "억원:%", "tag": "sourced",
+             "source_name": "법인세법 제55조", "url": "https://taxguide.im/blog/corptax-rate", "published": "", "page": ""},
+            {"case": "A", "item": "capex_per_mw", "value": "100", "low": "86", "high": "145", "unit": "억원/MW", "tag": "judgment",
+             "source_name": "저자 판단", "url": "https://www.etoday.co.kr/news/view/2631186", "published": "2026-10-01", "page": ""},
             {"case": "A", "item": "rent_per_kw_month", "value": "", "unit": "원/kW·월", "source_name": "",
              "url": "https://example.org/news", "published": "2025-06-01", "page": "3"},
             {"case": "B", "item": "margin_bp", "value": "225", "unit": "bp", "source_name": "", "url": "", "published": "", "page": ""}]
@@ -115,8 +122,10 @@ def test_csv_overrides_values_and_sources(cfg):
         w.writeheader()
         w.writerows(rows)
     a = D.load_assumptions(cfg)
-    assert a["A"]["tax_rate_national"].value == pytest.approx(0.24) and a["A"]["tax_rate_national"].origin == "csv"
-    assert a["A"]["tax_rate"].value == pytest.approx(0.24 * 1.10)                         # 법인세 × (1 + 지방소득세 10%)
+    assert D.parse_brackets(a["A"]["tax_brackets"].value)[-1] == (math.inf, 0.25) and a["A"]["tax_brackets"].status == "sourced"
+    assert a["A"]["tax_rate"].value == pytest.approx(0.25 * 1.10)                         # 표시용 최고 한계세율 × (1 + 지방소득세)
+    cx = a["A"]["capex_per_mw"]
+    assert (cx.value, cx.low, cx.high, cx.status) == (100.0, 86.0, 145.0, "judgment")    # 출처 URL이 있어도 판단은 판단
     r = a["A"]["rent_per_kw_month"]
     assert r.value == 250000 and r.url == "https://example.org/news" and r.status == "sourced"   # 값 없이 출처만 보강
     assert a["B"]["margin_bp"].value == 225 and a["B"]["margin_bp"].source is None          # 출처 미기재 → 요약에 표시
@@ -157,18 +166,22 @@ def test_data_links(cfg):
     agg0 = (1300 + 1900 + 1400) / (20000 + 33000 + 35000)
     assert pp.agg_opm0 == pytest.approx(agg0) and pp.low <= pp.agg_implied <= pp.high
     va = D.virginia(cfg)
-    assert va.va_cagr == pytest.approx(0.06) and va.us_cagr == pytest.approx(0.01)
-    assert va.price_source == "US" and va.price_latest == (2025, pytest.approx(13.0))
-
-
-def test_virginia_price_used_when_collected(cfg):
-    pd.DataFrame([{"period": y, "stateid": "VA", "sectorid": "COM", "price": 9 + 0.2 * (y - 2015)} for y in range(2015, 2026)]
-                 ).to_csv(cfg["research"]["vol02"]["inputs"]["eia_va_price"], index=False)
-    va = D.virginia(cfg)
-    assert va.price_source == "VA" and va.price_latest[1] == pytest.approx(11.0)
+    assert va.va_cagr == pytest.approx(0.05) and va.us_cagr == pytest.approx(0.02)        # 수요 근거 = vol02 파일 판매량
+    assert va.price_latest == (2025, pytest.approx(9.0)) and va.sales_file.endswith("eia_va_price.csv")
+    assert va.price_cagr() == pytest.approx((9.0 / 8.0) ** 0.1 - 1)
+    assert va.price_max_yoy[0] == 2016 and va.price_max_yoy[1] == pytest.approx(0.1 / 8.0)
     a = D.load_assumptions(cfg)
     p = D.case_power_price("B", a["B"], va)
-    assert p.value == pytest.approx(0.11) and p.origin == "data" and "Virginia" in p.source
+    assert p.value == pytest.approx(0.09) and p.origin == "data" and "Virginia" in p.source
+    g = D.power_cost_grid(va, 190.0, [1.3])
+    assert g.iloc[0]["usd_per_kw_month"] == pytest.approx(730 * 1.3 * 0.09)
+    assert g.iloc[0]["share_of_rent"] == pytest.approx(730 * 1.3 * 0.09 / 190)
+
+
+def test_virginia_price_required(cfg):
+    Path(cfg["research"]["vol02"]["inputs"]["eia_va_price"]).unlink()
+    u = D.virginia(cfg)
+    assert not D.ok(u) and "eia_va_price" in u.missing                                    # 미국 평균 대체 없음
 
 
 def test_implied_price_rise_formula():
@@ -176,10 +189,11 @@ def test_implied_price_rise_formula():
     assert D.implied_price_rise(0.1, 0.1) == 0
 
 
-def test_grid_ratio_and_memo_mismatch(cfg):
+def test_grid_ratio_both_bases(cfg):
     g = D.grid_stats(cfg)
-    assert g.ratio == pytest.approx(1010 / 33592) and round(g.ratio * 100, 1) == 3.0
-    assert g.memo_mismatch                                                               # 메모상 1.9%와 다름 → 원문 확인
+    assert g.ratio == pytest.approx(1010 / 33592) and round(g.ratio * 100, 1) == 3.0      # 용량 기준
+    assert g.ratio_n == pytest.approx(10 / 522) and round(g.ratio_n * 100, 1) == 1.9      # 건수 기준
+    assert "신규" in g.basis_note
 
 
 # ---------------------------------------------------------------------------
@@ -203,14 +217,14 @@ def test_filled_cases_run_and_check(cfg):
             assert abs(v) < 1e-6 * cr.base.cons.uses, (c, k, v)
         assert set(cr.scenarios) == set(D.SCENARIOS)
         assert cr.scenarios["downside"].debt <= cr.scenarios["upside"].debt
-        assert cr.base.inp.base_rate_term == pytest.approx(0.04176 if c == "A" else 0.0509)
+        assert cr.base.inp.base_rate_term == pytest.approx(0.0384 if c == "A" else 0.0509)   # A = 국고채 3년, B = DGS10
     a = f.cases["A"]
     assert a.capex_stress["high"] == pytest.approx(1 + 0.4 * f.peers.high)
     assert a.heatmap is not None and f.cases["B"].heatmap is None
     be = a.breakeven
-    assert set(be["variable"]) == {"rent_mult", "occ_mult", "prelease", "capex_mult", "rate_shift", "delay_quarters"}
+    assert set(be["variable"]) == {"rent_mult", "occ_mult", "prelease", "capex_mult", "opex_mult", "rate_shift", "delay_quarters"}
     assert D.ok(f.option) and f.option.result.value == pytest.approx(0.3 * f.option.result.value_conditional)
-    assert f.assumptions["B"]["power_price"].value == pytest.approx(0.13)                  # EIA 미국 상업용 13¢ 대용
+    assert f.assumptions["B"]["power_price"].value == pytest.approx(0.09)                  # EIA 버지니아 상업용 9¢
 
 
 # ---------------------------------------------------------------------------
@@ -295,8 +309,9 @@ def test_build_pdfs(cfg, tmp_path, fill):
         assert n == r["pages"][lang] == 17 and all(bx == (960, 720) for bx in boxes[:n])
     assert bool(r["pending"]["kr"]) != fill
     summary = (out / "build_summary.md").read_text(encoding="utf-8")
-    assert "Vol.1 데이터 연결" in summary and "메모상 1.9%와 불일치" in summary
+    assert "Vol.1 데이터 연결" in summary and "계통 승인률 건수" in summary and "불일치 아님" in summary
     assert ("검산 (회계 항등식" in summary) == fill
+    assert "## 가정 집계" in summary and "근거 있는 가정" in summary and "저자 판단" in summary
 
 
 def test_vol01_roadmap_wording():
@@ -324,3 +339,51 @@ def test_fetch_extra_vol02_skips_without_key(cfg, monkeypatch, capsys):
 
 def test_finite_helper():
     assert D.finite(1.0) and not D.finite(math.nan) and not D.finite(None)
+
+
+# ---------------------------------------------------------------------------
+# 미확정 가정: 가산금리 시나리오(B), 옵션 할인율·대기 기간 격자(A), 결정 시점 도출
+# ---------------------------------------------------------------------------
+def test_margin_scenarios_and_option_grid(cfg):
+    c = filled(cfg)
+    pa, pb = c["research"]["vol02"]["cases"]["A"]["params"], c["research"]["vol02"]["cases"]["B"]["params"]
+    pb["margin_bp"]["value"] = None
+    for k in ("discount_rate", "approval_decision_year", "option_window_years"):
+        pa[k]["value"] = None
+    pa["ramp_years"]["value"] = 3
+    pa["grid_approval_prob"].update(low=0.1, high=0.5)
+    c["research"]["vol02"]["real_option"].update(grid_paths=200, discount_grid=[0.08, 0.10], window_grid=[0, 2])
+    f = D.load_facts(c)
+    b = f.cases["B"]
+    assert set(b.margin_scenarios) == {150.0, 250.0, 350.0} and b.margin_bp == 250.0
+    assert b.base.inp.margin == pytest.approx(0.025)
+    irrs = [b.margin_scenarios[m].base.equity_irr for m in (150.0, 250.0, 350.0)]
+    assert irrs[0] > irrs[1] > irrs[2]                                                   # 금리↑ → Equity IRR↓
+    op = f.option
+    assert D.ok(op) and op.decision_derived and op.inputs.decision_year == 3
+    assert op.discount_pending and op.window_pending and len(op.grid) == 4
+    assert op.inputs.phase2.discount_rate == 0.10 and op.inputs.window_years == 2         # 가운데(짝수면 뒤쪽) 셀
+    assert set(op.prob_values) == {0.1, 0.3, 0.5}
+    assert op.prob_values[0.5] == pytest.approx(0.5 * op.result.value_conditional)
+    assert f.assumptions["A"]["approval_decision_year"].status == "judgment"
+    sc = D.scenario_inputs(f.cases["A"].inp, f.demand, "downside")
+    assert sc.ramp_years == pytest.approx(3 * f.demand.growth["base"] / f.demand.growth["downside"])
+
+
+def test_committed_assumptions_tags_and_counts():
+    """커밋된 data/manual/vol02_assumptions.csv: 근거 있음·저자 판단 구분과 범위 값."""
+    cfg = base.load_config()
+    a = D.load_assumptions(cfg)
+    A, B = a["A"], a["B"]
+    assert (A["capex_per_mw"].value, A["capex_per_mw"].low, A["capex_per_mw"].high) == (100.0, 86.0, 145.0)
+    assert A["capex_per_mw"].status == "judgment" and A["rent_per_kw_month"].status == "sourced"
+    assert A["prelease"].value == pytest.approx((0.16 + 0.235) / 2) and A["prelease"].status == "sourced"
+    assert A["margin_bp"].value == 150 and A["target_dscr"].value == 1.45 and A["max_gearing"].value == pytest.approx(0.65)
+    assert D.parse_brackets(A["tax_brackets"].value) == ((2, 0.10), (200, 0.20), (3000, 0.22), (math.inf, 0.25))
+    assert B["capex_per_mw"].value == pytest.approx(17.6 + 0.584) and B["capex_per_mw"].status == "sourced"
+    assert (B["rent_per_kw_month"].value, B["rent_per_kw_month"].high) == (190.0, 235.0)
+    assert B["margin_bp"].value is None and B["target_dscr"].status == "sourced"
+    for x in (A["pue"], A["dep_years"], A["exit_cap_rate"], B["it_load_factor"], B["dep_years"]):
+        assert x.value is None                                                           # null 유지 항목
+    keys_a = D.table_keys("A", A)
+    assert "opex_per_kw_year" not in keys_a and "ramp_elasticity" not in keys_a and "tax_brackets" in keys_a

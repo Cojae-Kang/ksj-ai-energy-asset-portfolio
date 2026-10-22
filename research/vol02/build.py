@@ -14,6 +14,8 @@ import argparse
 import logging
 import math
 import sys
+
+import numpy as np
 from pathlib import Path
 from typing import Mapping
 
@@ -71,21 +73,80 @@ def key_conclusions(f: data.Facts) -> list[str]:
     g = f.grid
     if ok(a):
         out.append(f"케이스 A 대출 한도 {a.base.debt:,.0f}억원(총사업비의 {a.base.gearing * 100:.0f}%, 구속 조건 {a.base.binding}), "
-                   f"최소 DSCR {a.base.min_dscr:.2f}배, 계약 임대료만으로는 {a.base.min_dscr_contracted:.2f}배")
-    else:
-        out.append(f"케이스 A: 데이터로 보이는 병목은 계통 승인 비율 {g.ratio * 100:.1f}%·사전 임대율 {f.assumptions['A']['prelease'].low * 100:.0f}~"
-                   f"{f.assumptions['A']['prelease'].high * 100:.1f}%(원문 확인 중). 대출 한도는 가정 근거 확인 후 산출(필요 입력 {len(a.missing)}개)"
-                   if g.ratio is not None and not ok(a) else "케이스 A: 입력 대기")
+                   f"최소 DSCR {a.base.min_dscr:.2f}배, Equity IRR {_f(a.base.equity_irr, 1, True)}, 계약 임대료만으로는 최소 DSCR {a.base.min_dscr_contracted:.2f}배")
+    elif g.ratio is not None:
+        out.append(f"케이스 A: 계통 승인률 건수 {_f(g.ratio_n, 1, True)}·용량 {g.ratio * 100:.1f}%, 사전 임대율이 병목. 대출 한도는 가정 입력 후 산출")
     if ok(b):
-        out.append(f"케이스 B 대출 한도 USD {b.base.debt:,.0f}mn(총사업비의 {b.base.gearing * 100:.0f}%), 최소 DSCR {b.base.min_dscr:.2f}배")
+        ms = b.margin_scenarios
+        rng_ = (f" (가산금리 {min(ms):.0f}~{max(ms):.0f}bp: USD {ms[max(ms)].base.debt:,.0f}~{ms[min(ms)].base.debt:,.0f}mn)" if ms else "")
+        out.append(f"케이스 B 대출 한도 USD {b.base.debt:,.0f}mn(총사업비의 {b.base.gearing * 100:.0f}%, {b.base.binding}){rng_}, "
+                   f"최소 DSCR {b.base.min_dscr:.2f}배, Equity IRR {_f(b.base.equity_irr, 1, True)}")
     elif ok(f.rates):
-        out.append(f"케이스 B: 기준금리 DGS10 {f.rates.dgs10:.2f}%가 국고채 10년 {f.rates.ktb_10y:.2f}%보다 "
-                   f"{f.rates.dgs10 - f.rates.ktb_10y:.2f}%p 높다. 대출 한도는 가정 근거 확인 후 산출")
-    if ok(f.peers):
+        out.append(f"케이스 B: 기준금리 DGS10 {f.rates.dgs10:.2f}%. 대출 한도는 가정 입력 후 산출")
+    op = f.option
+    if ok(op):
+        out.append(f"2단계 20MW 옵션 가치 {op.result.value:,.0f}억원(승인 확률 30%, 할인율 {op.inputs.phase2.discount_rate * 100:.0f}%·대기 {op.inputs.window_years}년) "
+                   f"vs 지금 짓기 {op.result.build_now:,.0f}억원 — 승인 확률 10/50%면 {op.prob_values.get(0.1, float('nan')):,.0f}/{op.prob_values.get(0.5, float('nan')):,.0f}억원")
+    elif ok(f.peers):
         sc = f.peers.scenarios()
-        out.append(f"공사비 스트레스 근거: 피어 3사 영업이익률 {f.peers.agg_opm0 * 100:.1f}%→{f.peers.agg_opm1 * 100:.1f}% → "
-                   f"함의 가격 상승률 {sc['low'] * 100:.1f}~{sc['high'] * 100:.1f}%(상한값, 인과 아님)")
+        out.append(f"공사비 스트레스 근거: 피어 3사 함의 가격 상승률 {sc['low'] * 100:.1f}~{sc['high'] * 100:.1f}%(상한값, 인과 아님)")
     return out[:3]
+
+
+def assumption_counts(f: data.Facts) -> dict[str, dict[str, int]]:
+    """케이스별 근거 있음 / 저자 판단 / 미입력 / 기타 개수 (보고서 가정표와 같은 항목 기준)."""
+    out = {}
+    for c in data.CASES:
+        d = f.assumptions[c]
+        keys = data.table_keys(c, d)
+        st = [d[k].status for k in keys]
+        out[c] = {"근거 있음": st.count("sourced"), "저자 판단": st.count("judgment"), "미입력": st.count("input"),
+                  "기타(설계값·원문 확인·데이터·중립)": len(st) - st.count("sourced") - st.count("judgment") - st.count("input")}
+    return out
+
+
+def anomalies(f: data.Facts) -> list[str]:
+    """PF 실무 상식에서 벗어나 보이는 숫자 (자동 점검)."""
+    out = []
+    a, b = f.cases.get("A"), f.cases.get("B")
+    fx = f.fx()
+    if ok(a):
+        if a.negative_amort:
+            it1 = float(a.base.ops["interest"].iloc[0])
+            out.append(f"A: {', '.join(map(str, a.negative_amort))}년차 원리금 < 이자(1년차 원리금 {a.base.ops['debt_service'].iloc[0]:,.1f} vs 이자 {it1:,.1f}억원) — "
+                       f"음수 원금. 매년 이자 현금 지급 제약 시 한도 {a.interest_cover_debt:,.0f}억원(채택 {a.base.debt:,.0f}억원)")
+        if a.base.binding == "gearing" and a.base.min_dscr > a.inp.target_dscr * 1.3:
+            out.append(f"A: 최대 대출 비율이 묶여 최소 DSCR {a.base.min_dscr:.2f}배 = 목표 {a.inp.target_dscr:.2f}배의 {a.base.min_dscr / a.inp.target_dscr:.1f}배 (여유 큼)")
+        neg = [k for k, x in a.stresses.items() if x.min_dscr < 0]
+        if neg:
+            out.append(f"A: 스트레스 {', '.join(neg)}에서 최소 DSCR 음수 — 램프업 1년차 CFADS 적자(1년차 원리금이 작아 비율이 크게 흔들림)")
+    if ok(a) and ok(b) and fx:
+        ka, kb = a.inp.capex_per_mw, b.inp.capex_per_mw * fx / 100
+        if kb / ka > 1.8:
+            out.append(f"MW당 CAPEX: A {ka:,.0f}억원 vs B {kb:,.0f}억원(USD {b.inp.capex_per_mw:.2f}mn × {fx:,.1f}) = {kb / ka:.1f}배 차이 — A 공사비의 용량 기준(IT·수전)·포함 범위 확인 필요")
+        for c_, x in (("A", a), ("B", b)):
+            st_i = int(np.ceil(x.inp.ramp_years or 0))
+            y = float(x.base.ops["ebitda"].iloc[min(st_i, len(x.base.ops) - 1)]) / x.base.cons.uses
+            out.append(f"{c_}: 안정화 EBITDA ÷ 총사업비(yield on cost) {y * 100:.1f}%")
+    if ok(b):
+        allin = b.inp.term_rate
+        if b.base.project_irr is not None and b.base.project_irr < allin + 0.005:
+            out.append(f"B: Project IRR {b.base.project_irr * 100:.1f}% ≈ 대출 금리 {allin * 100:.2f}% — 레버리지 효과 거의 없음(Equity IRR {b.base.equity_irr * 100:.1f}%)")
+        out.append(f"B: 계약 임대료만의 최소 DSCR {b.base.min_dscr_contracted:.2f}배 (사전 임대율 {b.inp.prelease * 100:.0f}%, 임대 {b.inp.lease_term_years}년)")
+    for c_ in ("A", "B"):
+        x = f.cases.get(c_)
+        if ok(x) and not x.inp.dep_years:
+            out.append(f"{c_}: 감가상각 미반영(기간 null) → 법인세 과대·IRR 보수적")
+    return out
+
+
+PROPOSALS = [  # null 유지 항목의 저자 판단 제안값 (미반영 — 사용자 확인 후 CSV에 입력)
+    ("A·B", "dep_years", "20년", "건물 40년(법인세법 시행규칙 별표5)·전기·기계설비 15년 내외 가중 — 비중 확인 필요"),
+    ("A·B", "pue", "1.3", "신규 대형 데이터센터 설계값 범위의 중간 — 사업 계획 공시로 확인"),
+    ("A·B", "it_load_factor", "70%", "임차 용량 대비 실사용 — 계약·운영 자료로 확인"),
+    ("A", "exit_cap_rate", "7.0%", "국내 데이터센터 거래 cap rate 공개 사례 확인 필요"),
+    ("B", "exit_cap_rate", "6.0%", "북미 데이터센터 거래 cap rate 보고서 확인 필요"),
+]
 
 
 def write_summary(path: Path, r: dict, as_of: str) -> None:
@@ -117,12 +178,17 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
                      "근거": f"함의 가격 상승률 {f.peers.agg_implied * 100:.2f}%"})
     if ok(f.va):
         y, p = f.va.price_latest
-        rows += [{"항목": f"VA / US 상업용 판매 CAGR {f.va.base_year}→{f.va.last_year}", "값": f"{f.va.va_cagr * 100:.2f}% / {f.va.us_cagr * 100:.2f}%", "근거": "EIA"},
-                 {"항목": "상업용 평균 요금", "값": f"{p:.2f}¢/kWh ({y})", "근거": f"EIA {'Virginia' if f.va.price_source == 'VA' else 'U.S. (VA 수집 전 대용)'}"}]
+        my, mx = f.va.price_max_yoy
+        rows += [{"항목": f"VA / US 상업용 판매 CAGR {f.va.base_year}→{f.va.last_year}", "값": f"{f.va.va_cagr * 100:.2f}% / {f.va.us_cagr * 100:.2f}%",
+                  "근거": f"EIA ({f.va.sales_file})"},
+                 {"항목": "버지니아 상업용 평균 요금 (케이스 B 전력 단가)", "값": f"{p:.2f}¢/kWh ({y})", "근거": "EIA vol02_eia_va_com.csv"},
+                 {"항목": "버지니아 요금 최대 연간 상승", "값": f"{mx * 100:+.1f}% ({my})", "근거": "EIA (전력비 민감도)"}]
     g = f.grid
     if g.ratio is not None:
-        rows.append({"항목": f"계통 승인 비율 ({g.period})", "값": f"{g.approved:,.0f} ÷ {g.applied:,.0f} = {g.ratio * 100:.2f}%",
-                     "근거": "사용자 메모 수치(원문 확인 필요)" + (f" — 메모상 {g.memo_pct}%와 불일치" if g.memo_mismatch else "")})
+        if g.ratio_n is not None:
+            rows.append({"항목": f"계통 승인률 건수 ({g.period})", "값": f"{g.approved_n:,.0f} ÷ {g.applied_n:,.0f} = {g.ratio_n * 100:.2f}%", "근거": g.basis_note})
+        rows.append({"항목": f"계통 승인률 용량 ({g.period})", "값": f"{g.approved:,.0f} ÷ {g.applied:,.0f} = {g.ratio * 100:.2f}%",
+                     "근거": f"{g.basis_note} — 건수·용량 두 기준 병기(1.9% vs 3.0%는 기준 차이, 불일치 아님)"})
     L += [markdown_table(rows)]
     # 케이스 결과
     for c in data.CASES:
@@ -137,27 +203,49 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
         L += ["**검산 (회계 항등식, 0에 가까워야 함)**", "", markdown_table([{k: f"{v:.2e}" for k, v in cr.checks.items()}])]
         if b.warnings:
             L += ["**경고**", ""] + [f"- {w}" for w in b.warnings]
+        if cr.margin_scenarios:
+            L += ["", "**가산금리 시나리오 (가산금리 미확정)**", "",
+                  markdown_table([{"가산금리(bp)": f"{m:.0f}", "대출 한도": f"{x.base.debt:,.1f}", "대출 비율": f"{x.base.gearing * 100:.1f}%",
+                                   "구속": x.base.binding, "최소 DSCR": f"{x.base.min_dscr:.3f}", "평균 DSCR": f"{x.base.avg_dscr:.3f}",
+                                   "LLCR": f"{x.base.llcr:.3f}", "Project IRR": _f(x.base.project_irr, 2, True), "Equity IRR": _f(x.base.equity_irr, 2, True)}
+                                  for m, x in cr.margin_scenarios.items() if ok(x)])]
+        if cr.negative_amort:
+            L += [f"- 진단: 원리금 < 이자 연차 {cr.negative_amort} → 매년 이자 현금 지급 제약 시 한도 {cr.interest_cover_debt:,.1f}"]
     op = f.option
     L += ["", "## 실물옵션 (케이스 A 2단계)", ""]
     if ok(op):
         rr = op.result
-        L += [f"- 옵션 가치 {rr.value:,.2f} · 조건부 {rr.value_conditional:,.2f} (표준오차 {rr.stderr_conditional:,.2f}) · 지금 짓기 {rr.build_now:,.2f} · 유연성 {rr.flexibility:,.2f}",
-              "", markdown_table(rr.convergence.round(4).to_dict("records"))]
+        L += [f"- 대표 셀: 할인율 {op.inputs.phase2.discount_rate * 100:.0f}%, 대기 {op.inputs.window_years}년, 결정 시점 COD+{op.inputs.decision_year}년"
+              + (" (램프업 종료로 도출)" if op.decision_derived else "")
+              + (" — 할인율 미확정" if op.discount_pending else "") + (" — 대기 기간 미확정" if op.window_pending else ""),
+              f"- 옵션 가치 {rr.value:,.2f} · 조건부 {rr.value_conditional:,.2f} (표준오차 {rr.stderr_conditional:,.2f}) · 지금 짓기 {rr.build_now:,.2f} · 유연성 {rr.flexibility:,.2f}",
+              "- 승인 확률 시나리오: " + " · ".join(f"{p_ * 100:.0f}% → {v:,.1f}" for p_, v in op.prob_values.items()),
+              "", "**할인율 × 대기 기간 격자 (억원, p = 30%)**", "", markdown_table(op.grid.round(3).to_dict("records")),
+              "**수렴 (대표 셀)**", "", markdown_table(rr.convergence.round(4).to_dict("records"))]
     else:
         L += [f"- 계산 보류: {op.reason} — {data.fmt_missing(op.missing)}"]
+    # 점검 필요 수치
+    L += ["", "## 점검 필요 수치 (PF 실무 상식 대비, 자동 점검)", ""] + ([f"- {x}" for x in anomalies(f)] or ["- 없음"])
     # 한계
-    L += ["", "## 한계", "", "- 근거가 확인되지 않은 가정(null)은 계산하지 않음 → 해당 Exhibit은 회색 박스",
-          "- 가동률 램프업은 IEA 세계 데이터센터 전력 성장률 근사, 피어 이익률→가격은 상한값(인과 아님)",
-          "- 계통 승인 수치·임대료·사전 임대율은 사용자 메모·보도 인용값(원문 확인 필요)"]
-    # 가정 상태
-    L += ["", "## 가정 상태 (null = 근거 확인 후 입력)", ""]
+    L += ["", "## 한계", "", "- 미입력 가정: 감가상각 → 미반영(법인세 보수적), PUE·IT 부하율 → 전력비 순액 0(패스스루 100%), cap rate → 잔존가치 제외",
+          "- 가산금리(B)·할인율·대기 기간(옵션)은 미확정 → 시나리오·격자로 계산, 가운데 값을 대표로 표기",
+          "- 피어 이익률→가격은 상한값(인과 아님), 계통 승인 수치는 공개 보도 기준(원문 확인 필요)"]
+    # 가정 집계
+    L += ["", "## 가정 집계 (보고서 가정표 기준)", ""]
+    cnt = assumption_counts(f)
+    L += [markdown_table([{"케이스": c, **v} for c, v in cnt.items()])]
+    for c in data.CASES:
+        n = cnt[c]
+        L += [f"- 케이스 {c}: 근거 있는 가정 {n['근거 있음']}개 / 저자 판단 {n['저자 판단']}개 / 미입력 {n['미입력']}개"]
     for c in data.CASES:
         d = f.assumptions[c]
-        miss = [k for k in LABELS if k in d and d[k].value is None]
+        miss = [k for k in data.table_keys(c, d) if d[k].value is None]
         nosrc = [k for k in LABELS if k in d and d[k].origin == "csv" and not (d[k].source or d[k].url)]
-        L += [f"- 케이스 {c}: null {len(miss)}개 — {', '.join(miss) or '없음'}"]
+        L += [f"- 케이스 {c} 미입력: {', '.join(miss) or '없음'}"]
         if nosrc:
             L += [f"  - 출처 미기재(CSV 값만 입력): {', '.join(nosrc)}"]
+    L += ["", "**null 유지 항목의 저자 판단 제안값 (미반영)**", "",
+          markdown_table([{"케이스": c, "항목": k, "제안": v, "근거·확인할 것": why} for c, k, v, why in PROPOSALS])]
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
 
 

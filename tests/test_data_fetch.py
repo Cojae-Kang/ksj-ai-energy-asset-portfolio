@@ -1012,6 +1012,7 @@ def test_offline_uses_user_file_when_tickers_cik_differs_and_flags_it(cfg):
 
 
 def test_validate_marks_entity_warn_and_writes_vol03_notes(cfg):
+    cfg["data_fetch"]["sec"]["entity_check"]["manual_overrides"] = {}               # 자동 판정만
     facts = {c: _facts_for(t, c, "Vistra Operations Company LLC" if t == "VST" else None, shares=t != "VST",
                            eps=t != "VST") for t, (c, _) in LISTED.items()}
     _write_manual(cfg, facts)
@@ -1024,6 +1025,36 @@ def test_validate_marks_entity_warn_and_writes_vol03_notes(cfg):
     notes = Path(res.outputs[1]).read_text(encoding="utf-8")
     assert notes.startswith("# Vol.3 데이터 노트") and "WARN 1개" in notes
     assert "VST: 보통주·EPS 미보고 → 운영 자회사" in notes and "## 한계" in notes
+
+
+OV = {"VST": {"cik": 1692819, "verdict": "OK", "note": "수동 확인: 10-K registrant = Vistra Corp.", "detail": "표기 차이",
+              "url": "https://www.sec.gov/Archives/edgar/data/1692819/000169281922000005/vistra-20211231.htm", "verified_on": "2026-10-22"}}
+
+
+def test_apply_entity_override_requires_cik_url_and_date():
+    row = {"ticker": "VST", "listed_cik": "0001692819", "entity_cik": "0001692819", "verdict": "WARN",
+           "same_consolidated": "likely", "reason": "auto"}
+    out = sec.apply_entity_override(row, OV)
+    assert out["verdict"] == "OK" and out["auto_verdict"] == "WARN" and out["auto_same"] == "likely"
+    assert out["same_consolidated"] == "yes (manual)" and "2026-10-22" in out["reason"] and "sec.gov" in out["reason"]
+    other = sec.apply_entity_override({**row, "entity_cik": "0001999999"}, OV)            # 다른 법인이면 적용 안 함
+    assert other["verdict"] == "WARN" and other["manual_check"] == ""
+    no_url = sec.apply_entity_override(row, {"VST": {**OV["VST"], "url": ""}})
+    assert no_url["verdict"] == "WARN"
+
+
+def test_validate_applies_manual_override_and_records_source(cfg):
+    cfg["data_fetch"]["sec"]["entity_check"]["manual_overrides"] = OV
+    facts = {c: _facts_for(t, c, "Vistra Operations Company LLC" if t == "VST" else None) for t, (c, _) in LISTED.items()}
+    _write_manual(cfg, facts)
+    sec.run(cfg, "2026-10-20", offline=True, out=lambda s: None)
+    res = validate_peers.run(cfg, "2026-10-20")
+    report = Path(res.outputs[0]).read_text(encoding="utf-8")
+    assert "| 해외 | Vistra | VST | NYSE | CIK 0001692819 | Vistra Corp. | OK | OK(수동 확인: 10-K registrant = Vistra Corp.) |" in report
+    assert "**수동 확인 (자동 판정 override)**" in report and "2026-10-22" in report and "vistra-20211231.htm" in report
+    assert "WARN (likely)" in report and "재무 주체 WARN" not in res.message
+    notes = Path(res.outputs[1]).read_text(encoding="utf-8")
+    assert "WARN 0개" in notes and "VST: 수동 확인: 10-K registrant = Vistra Corp. (확인일 2026-10-22)" in notes
 
 
 def test_vol03_notes_show_watchlist_before_collection(cfg):

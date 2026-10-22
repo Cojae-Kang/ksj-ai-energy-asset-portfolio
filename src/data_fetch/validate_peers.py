@@ -18,7 +18,7 @@ import pandas as pd
 
 from .base import (FetchResult, STATUS_FAILED, STATUS_PARTIAL, STATUS_SKIPPED, STATUS_SUCCESS, load_config,
                    markdown_table, names_match, normalize_name, resolve_path, utc_now_iso)  # noqa: F401 (re-export)
-from .sec import cik10, parse_company_tickers
+from .sec import apply_entity_override, cik10, parse_company_tickers
 
 logger = logging.getLogger("data_fetch.validate")
 
@@ -79,17 +79,22 @@ def validate_overseas(peers: list[Mapping], sec_df: pd.DataFrame | None, not_sec
         if ent is not None and str(ent.get("verdict")) != OK:
             ok = False
             note = "; ".join(x for x in (note, f"재무 주체 확인 필요: {ent.get('reason')}") if x)
+        elif ent is not None and ent.get("manual_check"):
+            note = "; ".join(x for x in (note, f"OK({ent['manual_check'].split(' — ')[0]})") if x)
         rows.append({**base, "식별자": f"CIK {cik10(r['cik'])}", "공시상 회사명": r["title"],
                      "결과": OK if ok else WARN, "비고": note})
     return rows
 
 
 def load_entity_checks(cfg: Mapping) -> pd.DataFrame | None:
-    name = (cfg["data_fetch"]["sec"].get("entity_check") or {}).get("output", "sec_entity_check.csv")
-    path = resolve_path(cfg["paths"]["processed"]) / name
+    """sec_entity_check.csv + 수동 확인 override(config entity_check.manual_overrides) 적용."""
+    ec = cfg["data_fetch"]["sec"].get("entity_check") or {}
+    path = resolve_path(cfg["paths"]["processed"]) / ec.get("output", "sec_entity_check.csv")
     if not path.exists():
         return None
-    return pd.read_csv(path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    df = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    rows = [apply_entity_override(r, ec.get("manual_overrides")) for r in df.to_dict("records")]
+    return pd.DataFrame(rows).fillna("")
 
 
 def load_mappings(cfg: Mapping) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
@@ -104,14 +109,25 @@ ENTITY_COLS = ["company", "ticker", "listed_cik", "listed_title", "entity_cik", 
                "verdict", "reason"]
 
 
+def manual_section(ent: pd.DataFrame | None) -> list[str]:
+    """수동 확인 override 기록 (근거 URL·확인일)."""
+    if ent is None or "manual_check" not in ent or not (ent["manual_check"] != "").any():
+        return []
+    m = ent[ent["manual_check"] != ""]
+    rows = [{"ticker": r["ticker"], "자동 판정": f"{r.get('auto_verdict', '')} ({r.get('auto_same', '')})",
+             "수동 판정": f"{r['verdict']}({r['manual_check'].split(' — ')[0]})", "내용": r["manual_check"].split(" — ")[-1],
+             "근거 URL": r.get("manual_url", ""), "확인일": r.get("verified_on", "")} for r in m.to_dict("records")]
+    return ["**수동 확인 (자동 판정 override)**", "", markdown_table(rows)]
+
+
 def entity_section(ent: pd.DataFrame | None) -> list[str]:
     lines = ["## 시총(상장사) vs 재무(법인) 주체 검사", ""]
     if ent is None or ent.empty:
         return lines + ["- SEC companyfacts 미수집 → 검사 보류 (fetch_all --source sec [--sec-offline])", ""]
     lines += ["- 상장사 = company_tickers.json의 티커·CIK(시가총액 주체), 재무 = companyfacts의 cik·entityName",
               "- same_consolidated: yes 같은 법인 / likely 같은 CIK·보통주·EPS(법인명 표기만 다름) / no 다른 법인 / "
-              "unknown 보통주·EPS 미보고", "",
-              markdown_table(ent[ENTITY_COLS].to_dict("records"))]
+              "unknown 보통주·EPS 미보고 / yes (manual) 수동 확인", "",
+              markdown_table(ent[ENTITY_COLS].to_dict("records"))] + manual_section(ent)
     return lines
 
 
@@ -153,10 +169,13 @@ def render_vol03_notes(ent: pd.DataFrame | None, watchlist: Mapping[str, str], a
              (f"1. 재무 주체 검사 {n}개사 중 WARN {len(warn)}개" if n else "1. 재무 주체 검사 보류 — SEC companyfacts 미수집(TODO(data))"),
              "2. 시총은 상장사(company_tickers 티커), 재무는 companyfacts 법인 기준 — 둘이 다르면 배수 계산에서 제외",
              "3. " + ("; ".join(f"{r['ticker']}: {r['reason']}" for r in warn) if warn else
-                      ("; ".join(f"{t}: {v} (검사 대기)" for t, v in pending.items()) if pending else "주체 불일치 없음")),
+                      ("; ".join(f"{t}: {v} (검사 대기)" for t, v in pending.items()) if pending else
+                       "주체 불일치 없음" + "".join(f" — {r['ticker']}: {r['manual_check'].split(' — ')[0]} (확인일 {r.get('verified_on', '')})"
+                                                  for r in ([] if ent is None or 'manual_check' not in ent else ent.to_dict('records'))
+                                                  if r.get('manual_check')))),
              "", "## 근거", ""]
     if ent is not None and not ent.empty:
-        lines += [markdown_table(ent[ENTITY_COLS].to_dict("records"))]
+        lines += [markdown_table(ent[ENTITY_COLS].to_dict("records"))] + manual_section(ent)
     else:
         lines += ["- TODO(data): SEC companyfacts 수집 후 자동 작성 — `python -m src.data_fetch.fetch_all --source sec --sec-offline`", ""]
     if pending:
@@ -164,6 +183,7 @@ def render_vol03_notes(ent: pd.DataFrame | None, watchlist: Mapping[str, str], a
     lines += ["## 한계", "",
               "- 법인 일치 판정은 CIK·법인명·보통주 발행주식수·EPS 보고 여부로 한 자동 판정이다. 최종 확인은 10-K 표지(registrant)와 연결범위 주석",
               "- 오프라인 모드 수치의 기준 시각은 브라우저 다운로드 파일의 수정 시각(.meta.json fetched_at)",
+              "- 수동 확인 override는 config(data_fetch.sec.entity_check.manual_overrides)에 근거 URL·확인일과 함께 기록하며, 자동 판정은 auto_verdict로 보존",
               ""]
     return "\n".join(lines)
 

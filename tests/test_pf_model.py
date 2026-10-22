@@ -217,7 +217,7 @@ def test_heatmap_and_tornado_shapes():
 # ---------------------------------------------------------------------------
 def _opt(n=3000, p=0.3):
     return ro.OptionInputs(phase2=replace(BASE_INP, prelease=0.2), phase1_prelease=0.2,
-                           scenarios={"downside": 0.049, "base": 0.101, "upside": 0.137},
+                           scenarios={"downside": {"ramp_growth": 0.049}, "base": {"ramp_growth": 0.101}, "upside": {"ramp_growth": 0.137}},
                            weights={"downside": 1 / 3, "base": 1 / 3, "upside": 1 / 3}, approval_prob=p,
                            decision_year=2, window_years=4, rent_volatility=0.15, n_paths=n, seed=42)
 
@@ -248,3 +248,57 @@ def test_option_npv_increases_with_rent():
     be = r.breakeven_rent["base"]
     if be is not None:
         assert ro.npv_at(o, 2, be, "base") == pytest.approx(0.0, abs=abs(hi - lo) * 0.02)
+
+
+# ---------------------------------------------------------------------------
+# 누진세 · 선형 램프업 · OPEX 비율 · 임대 기간 · 감가상각 미반영 · 이자 현금 지급 진단
+# ---------------------------------------------------------------------------
+KR_BRACKETS = ((2, 0.10), (200, 0.20), (3000, 0.22), (float("inf"), 0.25))   # 억원 상한 (2026 사업연도~)
+
+
+def test_progressive_tax_korea():
+    assert pf.progressive_tax(1.0, KR_BRACKETS) == pytest.approx(0.1)
+    assert pf.progressive_tax(300.0, KR_BRACKETS) == pytest.approx(2 * 0.1 + 198 * 0.2 + 100 * 0.22)
+    assert pf.progressive_tax(300.0, KR_BRACKETS, 0.10) == pytest.approx((0.2 + 39.6 + 22) * 1.1)   # + 지방소득세 10%
+    assert pf.progressive_tax(4000.0, KR_BRACKETS) == pytest.approx(0.2 + 39.6 + 2800 * 0.22 + 1000 * 0.25)
+    tax = pf.tax_schedule(np.array([-100.0, 400.0]), np.zeros(2), 0.0, KR_BRACKETS, 0.10)
+    assert tax[0] == 0 and tax[1] == pytest.approx(pf.progressive_tax(300.0, KR_BRACKETS, 0.10))   # 결손 이월 후
+
+
+def test_linear_ramp_opex_ratio_and_lease_term():
+    inp = replace(BASE_INP, prelease=0.2, stabilized_occupancy=0.9, ramp_years=3, opex_per_kw_year=0.0, opex_ratio=0.2,
+                  opex_escalation=0.025, lease_term_years=10)
+    o = pf.operations(inp)
+    assert list(o["occupancy"][:5]) == pytest.approx([0.2, 0.2 + 0.7 / 3, 0.2 + 1.4 / 3, 0.9, 0.9])
+    opex1 = 0.2 * 0.9 * inp.kw * inp.rent_per_kw_month * 12 / inp.money_scale       # 안정화 매출의 20%
+    assert o["opex"].iloc[0] == pytest.approx(opex1) and o["opex"].iloc[1] == pytest.approx(opex1 * 1.025)
+    assert (o["contracted_occupancy"][:10] == 0.2).all() and (o["contracted_occupancy"][10:] == 0).all()
+    st = pf.operations(inp, pf.Stress(rent_mult=0.8, opex_mult=1.2))
+    assert st["opex"].iloc[0] == pytest.approx(opex1 * 1.2)                           # OPEX는 임대료 스트레스와 무관
+    b = replace(inp, ramp_years=1)
+    assert list(pf.operations(b)["occupancy"][:3]) == pytest.approx([0.2, 0.9, 0.9])
+
+
+def test_no_depreciation_when_life_missing():
+    r0 = pf.run(replace(BASE_INP, dep_years=None))
+    r1 = pf.run(BASE_INP)
+    assert (r0.ops["depreciation"] == 0).all() and r0.ops["tax"].sum() > r1.ops["tax"].sum()
+    assert np.isnan(pf.run(replace(BASE_INP, discount_rate=None)).equity_npv)
+
+
+def test_interest_cover_cap_and_negative_amortization():
+    inp = replace(BASE_INP, prelease=0.2, ramp_years=3, opex_per_kw_year=0.0, opex_ratio=0.2, max_gearing=0.65, tax_rate=0.0)
+    r = pf.run(inp)
+    neg = pf.negative_amortization_years(r)
+    assert neg and neg[0] == 1
+    cap = pf.interest_cover_cap(r)
+    assert 0 < cap < r.debt
+    o = r.ops.iloc[: inp.tenor_years]
+    scaled_interest = o["interest"] * cap / r.debt                                       # 같은 모양으로 비례 축소
+    assert (o["cfads"] >= inp.target_dscr * scaled_interest - 1e-9).all()
+    assert pf.interest_cover_cap(pf.run(BASE_INP)) == pytest.approx(pf.run(BASE_INP).debt)   # 램프업 없으면 제약 없음
+
+
+def test_opex_stress_direction():
+    b = pf.run(replace(BASE_INP, tax_rate=0.0, opex_ratio=0.2))
+    assert pf.stress(b, pf.Stress(opex_mult=1.2)).min_dscr < b.min_dscr < pf.stress(b, pf.Stress(opex_mult=0.8)).min_dscr

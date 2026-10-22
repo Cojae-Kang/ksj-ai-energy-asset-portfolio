@@ -395,6 +395,29 @@ class SecClient:
         return payload
 
 
+def apply_entity_override(row: Mapping, overrides: Mapping[str, Mapping] | None) -> dict:
+    """수동 확인 override 적용: config entity_check.manual_overrides[ticker] = {cik, verdict, note, detail, url, verified_on}.
+
+    자동 판정은 auto_verdict·auto_reason으로 남기고, verdict·reason을 수동 확인 결과로 바꾼다. 근거 URL·확인일이 없으면 적용하지 않는다.
+    """
+    out = dict(row)
+    ov = (overrides or {}).get(str(row.get("ticker", "")).upper())
+    ciks_ok = ov is not None and (ov.get("cik") is None or (normalize_cik(row.get("listed_cik")) == normalize_cik(ov["cik"])
+                                                             == normalize_cik(row.get("entity_cik"))))
+    if not ov or not ov.get("url") or not ov.get("verified_on") or not ciks_ok:
+        out.setdefault("manual_check", "")
+        return out
+    if not row.get("auto_verdict"):        # 이미 적용된 행(수집 시 적용 후 validate에서 다시 읽음)은 자동 판정을 보존
+        out["auto_verdict"], out["auto_reason"], out["auto_same"] = row.get("verdict"), row.get("reason"), row.get("same_consolidated")
+    out["verdict"] = ov.get("verdict", ENTITY_OK)
+    out["reason"] = f"{ov.get('note', '수동 확인')} (확인일 {ov['verified_on']}, 근거 {ov['url']})"
+    out["manual_check"] = f"{ov.get('note', '수동 확인')} — {ov.get('detail', '')}".rstrip(" —")
+    out["manual_url"], out["verified_on"] = ov["url"], ov["verified_on"]
+    if out["verdict"] == ENTITY_OK and out.get("auto_same") in ("likely", "unknown"):
+        out["same_consolidated"] = "yes (manual)"
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 오프라인 모드: 브라우저로 받은 파일을 온라인 응답과 같은 방식으로 처리
 # ---------------------------------------------------------------------------
@@ -613,7 +636,8 @@ def _collect(cfg: Mapping, as_of: str, src: Any, mode: str, notes: list[str], ou
             notes.append(mask_secrets(f"{peer['name']} companyfacts 실패: {e}"))
             continue
         rows, detail = extract_company_financials(facts, scfg, years)
-        ent = check_entity(t, listed_cik, listed_title, facts)
+        ent = apply_entity_override(check_entity(t, listed_cik, listed_title, facts),
+                                    (scfg.get("entity_check") or {}).get("manual_overrides"))
         entity_rows.append({"company": peer["name"], **ent})
         data_source = "manual browser download" if getattr(src, "offline", False) else "online API"
         base = {"company": peer["name"], "ticker": t, "cik": cik10(normalize_cik(facts.get("cik")) or cik),

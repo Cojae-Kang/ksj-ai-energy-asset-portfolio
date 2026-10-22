@@ -44,12 +44,12 @@ class PFInputs:
     rent_escalation: float
     prelease: float                    # COD 시점 사전 임대율 (장기 책임임대 계약분)
     stabilized_occupancy: float
-    ramp_growth: float                 # 연 수요 성장률 (시나리오)
+    ramp_growth: float                 # 연 수요 성장률 (시나리오) — ramp_years가 없을 때 램프업 속도
     ramp_elasticity: float             # 임차 부하 성장 = 수요 성장 × 탄력성
-    opex_per_kw_year: float            # 원 또는 USD / 설치 kW·년 (전력비 제외)
+    opex_per_kw_year: float            # 원 또는 USD / 설치 kW·년 (전력비 제외, 고정분)
     opex_escalation: float
-    tax_rate: float
-    dep_years: int
+    tax_rate: float                    # 단일 세율 (tax_brackets가 있으면 무시)
+    dep_years: int | None              # None = 감가상각 미반영 (법인세 보수적으로 과대)
     operating_years: int
     base_rate_construction: float
     base_rate_term: float
@@ -59,7 +59,7 @@ class PFInputs:
     tenor_years: int                   # COD부터 만기까지 (거치 포함)
     grace_years: int                   # COD 이후 원금 거치(이자만)
     dsra_months: float
-    discount_rate: float               # 자기자본 할인율 (NPV·옵션)
+    discount_rate: float | None        # 자기자본 할인율 (NPV·옵션). None이면 NPV 생략
     power_passthrough: float = 1.0     # 전력비 중 임차인 부담 비율
     power_price: float | None = None   # 원 또는 USD / kWh
     pue: float | None = None
@@ -67,6 +67,11 @@ class PFInputs:
     exit_cap_rate: float | None = None  # 잔존가치 = 마지막 다음 해 EBITDA ÷ cap rate (없으면 잔존가치 제외)
     drawdown: str = "s_curve"
     grace_interest: str = "paid"       # 거치기간 이자: paid(현금 지급, DSCR 검사) | capitalized(원금 가산, 램프업 구간)
+    opex_ratio: float | None = None    # OPEX = 비율 × 안정화 매출(1년차 임대료 기준), 이후 opex_escalation으로 증가
+    ramp_years: float | None = None    # 선형 램프업: 1년차 사전 임대율 → (ramp_years+1)년차 안정화 가동률
+    lease_term_years: int | None = None   # 사전 임대 계약 기간 (None = 운영기간 전체)
+    tax_brackets: tuple | None = None  # 누진세율 ((상한, 세율), …) 금액 단위 기준, 마지막 상한 = inf
+    tax_surcharge: float = 0.0         # 국세 대비 부가세율 (한국 지방소득세 = 0.10)
 
     def __post_init__(self):
         if self.construction_quarters < 1 or self.operating_years < 1 or self.tenor_years < 1:
@@ -109,6 +114,7 @@ class Stress:
     rate_shift: float = 0.0            # 기준금리 이동 (0.01 = +100bp), 건설·운영 모두
     delay_quarters: int = 0            # 준공 지연 (CAPEX 집행 완료 후 COD까지 추가 분기)
     passthrough: float | None = None   # 전력비 패스스루 비율 대체값
+    opex_mult: float = 1.0
 
     def label(self) -> str:
         parts = [f"{k}={v}" for k, v in self.__dict__.items() if v not in (None, 1.0, 0.0, 0)]
@@ -142,6 +148,17 @@ def occupancy_path(prelease: float, stabilized: float, growth: float, elasticity
     return np.clip(path * occ_mult, 0.0, 1.0)
 
 
+def occupancy(inp: PFInputs, st: "Stress", years: int) -> np.ndarray:
+    """케이스 가동률 경로: ramp_years가 있으면 선형 램프업, 없으면 수요 성장률 램프업."""
+    pre = inp.prelease if st.prelease is None else st.prelease
+    if inp.ramp_years is None:
+        return occupancy_path(pre, inp.stabilized_occupancy, inp.ramp_growth, inp.ramp_elasticity, years, st.occ_mult)
+    t = np.arange(years, dtype=float)
+    frac = np.minimum(1.0, t / inp.ramp_years) if inp.ramp_years > 0 else np.ones(years)
+    path = pre + (max(inp.stabilized_occupancy, pre) - pre) * frac
+    return np.clip(path * st.occ_mult, 0.0, 1.0)
+
+
 def growth_to_stabilize(prelease: float, stabilized: float, growth: float, elasticity: float) -> float:
     """사전 임대율 → 안정화 가동률 도달 연수 (성장률 0 이하이면 inf)."""
     g = growth * elasticity
@@ -156,13 +173,18 @@ def operations(inp: PFInputs, st: Stress = BASE) -> pd.DataFrame:
     """연도별 운영 현금흐름 (금액 단위 = money_scale). contracted_* = 사전 임대 계약분만."""
     n = inp.operating_years
     pre = inp.prelease if st.prelease is None else st.prelease
-    occ = occupancy_path(pre, inp.stabilized_occupancy, inp.ramp_growth, inp.ramp_elasticity, n, st.occ_mult)
+    occ = occupancy(inp, st, n)
     t = np.arange(n)
     rent = inp.rent_per_kw_month * st.rent_mult * (1 + inp.rent_escalation) ** t
     rev = occ * inp.kw * rent * 12 / inp.money_scale
-    contracted_occ = np.minimum(np.full(n, pre), occ)        # 장기 책임임대(만기 ≥ 운영기간 가정)
+    contracted_occ = np.minimum(np.full(n, pre), occ)        # 장기 책임임대
+    if inp.lease_term_years is not None:
+        contracted_occ = np.where(t < inp.lease_term_years, contracted_occ, 0.0)
     rev_c = contracted_occ * inp.kw * rent * 12 / inp.money_scale
-    opex = np.full(n, inp.kw * inp.opex_per_kw_year) * (1 + inp.opex_escalation) ** t / inp.money_scale
+    opex0 = inp.kw * inp.opex_per_kw_year
+    if inp.opex_ratio is not None:                           # 계획 기준 비용: 임대료 스트레스와 무관
+        opex0 += inp.opex_ratio * inp.stabilized_occupancy * inp.kw * inp.rent_per_kw_month * 12
+    opex = np.full(n, opex0) * (1 + inp.opex_escalation) ** t / inp.money_scale * st.opex_mult
     pt = inp.power_passthrough if st.passthrough is None else st.passthrough
     if inp.power_modeled():
         kwh = occ * inp.kw * inp.it_load_factor * 8760 * inp.pue
@@ -180,8 +202,20 @@ def operations(inp: PFInputs, st: Stress = BASE) -> pd.DataFrame:
     })
 
 
-def tax_schedule(ebit_before_interest: np.ndarray, interest: np.ndarray, rate: float) -> np.ndarray:
-    """법인세 = 세율 × max(0, 과세소득 − 이월결손금). 결손금은 무기한 이월 (단순화)."""
+def progressive_tax(base: float, brackets, surcharge: float = 0.0) -> float:
+    """누진세: brackets = ((상한, 세율), …). 국세 × (1 + surcharge). 예) 한국 2026~: 2억 10%, 200억 20%, 3,000억 22%, 초과 25%."""
+    tax, lo = 0.0, 0.0
+    for hi, rate in brackets:
+        if base <= lo:
+            break
+        tax += (min(base, hi) - lo) * rate
+        lo = hi
+    return tax * (1 + surcharge)
+
+
+def tax_schedule(ebit_before_interest: np.ndarray, interest: np.ndarray, rate: float, brackets=None,
+                 surcharge: float = 0.0) -> np.ndarray:
+    """법인세 = 세율(또는 누진세율) × max(0, 과세소득 − 이월결손금). 결손금은 무기한 이월 (단순화)."""
     nol, out = 0.0, np.zeros(len(ebit_before_interest))
     for i, (e, it) in enumerate(zip(ebit_before_interest, interest)):
         taxable = e - it
@@ -190,13 +224,18 @@ def tax_schedule(ebit_before_interest: np.ndarray, interest: np.ndarray, rate: f
             continue
         use = min(nol, taxable)
         nol -= use
-        out[i] = rate * (taxable - use)
+        out[i] = progressive_tax(taxable - use, brackets, surcharge) if brackets else rate * (taxable - use)
     return out
 
 
-def depreciation(cost: float, years: int, horizon: int) -> np.ndarray:
+def inp_tax(inp: PFInputs, ebit: np.ndarray, interest: np.ndarray) -> np.ndarray:
+    return tax_schedule(ebit, interest, inp.tax_rate, inp.tax_brackets, inp.tax_surcharge)
+
+
+def depreciation(cost: float, years: int | None, horizon: int) -> np.ndarray:
     d = np.zeros(horizon)
-    d[:min(years, horizon)] = cost / years
+    if years:
+        d[:min(years, horizon)] = cost / years
     return d
 
 
@@ -383,7 +422,7 @@ def payback(flows: np.ndarray) -> float | None:
 
 def _cfads(inp: PFInputs, ops: pd.DataFrame, dep: np.ndarray, interest: np.ndarray, col: str = "ebitda") -> np.ndarray:
     ebit = ops[col].to_numpy() - dep
-    return ops[col].to_numpy() - tax_schedule(ebit, interest, inp.tax_rate)
+    return ops[col].to_numpy() - inp_tax(inp, ebit, interest)
 
 
 def _pad(x: np.ndarray, n: int) -> np.ndarray:
@@ -452,9 +491,9 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
     dsv = interest + principal
     dep = depreciation(cons.capex + cons.idc, inp.dep_years, n)
     ebit = ops["ebitda"].to_numpy() - dep
-    tax = tax_schedule(ebit, interest, inp.tax_rate)
+    tax = inp_tax(inp, ebit, interest)
     cfads = ops["ebitda"].to_numpy() - tax
-    tax_c = tax_schedule(ops["ebitda_contracted"].to_numpy() - dep, interest, inp.tax_rate)
+    tax_c = inp_tax(inp, ops["ebitda_contracted"].to_numpy() - dep, interest)
     cfads_c = ops["ebitda_contracted"].to_numpy() - tax_c
     neg_from = grace if inp.grace_interest == "capitalized" else 0     # 이자 자본화 구간의 음수 원금은 설계상 정상
     if (principal[neg_from:tenor] < -1e-9).any():
@@ -518,7 +557,7 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
     pj = np.zeros(horizon)
     pj[:cod] -= cons.quarters["capex"].to_numpy()
     dep_u = depreciation(cons.capex, inp.dep_years, n)
-    tax_u = tax_schedule(ops["ebitda"].to_numpy() - dep_u, np.zeros(n), inp.tax_rate)
+    tax_u = inp_tax(inp, ops["ebitda"].to_numpy() - dep_u, np.zeros(n))
     tv = 0.0
     if inp.exit_cap_rate:
         nxt_ebitda = float(ops["ebitda"].iloc[-1]) * (1 + inp.rent_escalation)
@@ -532,8 +571,32 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
     eq_df = pd.DataFrame({"quarter": np.arange(horizon), "flow": eq})
     pj_df = pd.DataFrame({"quarter": np.arange(horizon), "flow": pj})
     return PFResult(inp, st, ops, cons, debt, sculpt_debt, gearing_debt, binding, eff_dscr, min_dscr, avg_dscr, llcr,
-                    min_dscr_c, irr(pj), irr(eq), npv_annual_rate(eq, inp.discount_rate), payback(eq), eq_df, pj_df,
+                    min_dscr_c, irr(pj), irr(eq),
+                    npv_annual_rate(eq, inp.discount_rate) if inp.discount_rate is not None else float("nan"), payback(eq), eq_df, pj_df,
                     warnings)
+
+
+def interest_cover_cap(r: PFResult) -> float:
+    """진단: 매년 이자를 현금으로 내면서 CFADS ≥ 목표 DSCR × 이자를 지키는 최대 대출 (같은 상환 모양, 비례 축소).
+
+    sculpting은 램프업 초기 원리금이 이자보다 작아(음수 원금) 잔액이 늘 수 있다. 실무에서는 램프업 이자 적립·자본화가
+    없으면 허용되지 않으므로, 그 제약을 걸었을 때의 한도를 따로 보여준다.
+    """
+    o = r.ops.iloc[: r.inp.tenor_years]
+    it = o["interest"].to_numpy()
+    cf = o["cfads"].to_numpy()
+    m = it > 1e-12
+    if not m.any() or r.debt <= 0:
+        return r.debt
+    factor = float(np.min(np.maximum(cf[m], 0.0) / (r.inp.target_dscr * it[m])))
+    return r.debt * min(1.0, factor)
+
+
+def negative_amortization_years(r: PFResult) -> list[int]:
+    """COD 이후(거치 자본화 구간 제외) 원금이 음수인 연차 — 원리금 < 이자."""
+    start = r.inp.grace_years if r.inp.grace_interest == "capitalized" else 0
+    o = r.ops.iloc[start: r.inp.tenor_years]
+    return [int(y) for y, p in zip(o["year"], o["principal"]) if p < -1e-9]
 
 
 def stress(base: PFResult, st: Stress) -> PFResult:
@@ -572,7 +635,7 @@ def identity_checks(r: PFResult, tol: float = 1e-6) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 # 민감도·손익분기
 # ---------------------------------------------------------------------------
-STRESS_FIELDS = ("rent_mult", "occ_mult", "prelease", "capex_mult", "rate_shift", "delay_quarters")
+STRESS_FIELDS = ("rent_mult", "occ_mult", "prelease", "capex_mult", "rate_shift", "delay_quarters", "opex_mult")
 
 
 def stressed_metric(base: PFResult, field_: str, value: float, metric: str = "min_dscr") -> float:
@@ -637,13 +700,15 @@ def heatmap(base: PFResult, rent_mults: list[float], capex_mults: list[float],
 # ---------------------------------------------------------------------------
 def project_npv(inp: PFInputs, st: Stress = BASE) -> float:
     """무차입 세후 프로젝트 NPV (FC 시점, 자기자본 할인율). 대출 sizing 없이 빠르게 계산."""
+    if inp.discount_rate is None:
+        raise ValueError("project_npv: 할인율 필요")
     n = inp.operating_years
     ops = operations(inp, st)
     q = inp.construction_quarters
     cod = q + st.delay_quarters
     capex_q = drawdown_weights(q, inp.drawdown) * inp.capex_total * st.capex_mult
     dep = depreciation(inp.capex_total * st.capex_mult, inp.dep_years, n)
-    tax = tax_schedule(ops["ebitda"].to_numpy() - dep, np.zeros(n), inp.tax_rate)
+    tax = inp_tax(inp, ops["ebitda"].to_numpy() - dep, np.zeros(n))
     cf = ops["ebitda"].to_numpy() - tax
     t_ops = (cod - 1 + QUARTERS_PER_YEAR * np.arange(1, n + 1)) / QUARTERS_PER_YEAR
     v = float((cf / (1 + inp.discount_rate) ** t_ops).sum())
