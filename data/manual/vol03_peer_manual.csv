@@ -1,0 +1,14 @@
+﻿company,ticker,region,fiscal_year,metric,value,unit,source,detail
+HD현대일렉트릭,267260,KR,FY2025A,da,,억원,,TODO(data): 사업보고서 연결 현금흐름표 감가상각비 + 무형자산상각비(사용권자산 상각 제외)
+LS ELECTRIC,010120,KR,FY2025A,da,,억원,,TODO(data): 사업보고서 연결 현금흐름표 감가상각비 + 무형자산상각비(사용권자산 상각 제외)
+효성중공업,298040,KR,FY2025A,da,,억원,,TODO(data): 사업보고서 연결 현금흐름표 감가상각비 + 무형자산상각비(사용권자산 상각 제외)
+Vertiv,VRT,US,FY2025A,da,,USD mn,,TODO(data): 10-K 현금흐름표 Depreciation and amortization
+Vertiv,VRT,US,FY2022A,net_income,,USD mn,,TODO(data): FY2022 10-K 지배주주 순이익(NetIncomeLoss) — 보수 시나리오 분모
+Eaton,ETN,US,FY2025A,da,,USD mn,,TODO(data): 10-K 현금흐름표 Depreciation and amortization
+Eaton,ETN,US,FY2022A,net_income,,USD mn,,TODO(data): FY2022 10-K 지배주주 순이익(NetIncomeLoss) — 보수 시나리오 분모
+GE Vernova,GEV,US,FY2025A,da,,USD mn,,TODO(data): 10-K 현금흐름표 Depreciation and amortization
+GE Vernova,GEV,US,FY2022A,net_income,,USD mn,,TODO(data): FY2022 10-K 지배주주 순이익(NetIncomeLoss) — 보수 시나리오 분모
+Constellation Energy,CEG,US,FY2025A,da,,USD mn,,TODO(data): 10-K 현금흐름표 Depreciation and amortization
+Constellation Energy,CEG,US,FY2022A,net_income,,USD mn,,TODO(data): FY2022 10-K 지배주주 순이익(NetIncomeLoss) — 보수 시나리오 분모
+Vistra,VST,US,FY2025A,da,,USD mn,,TODO(data): 10-K 현금흐름표 Depreciation and amortization
+Vistra,VST,US,FY2022A,net_income,,USD mn,,TODO(data): FY2022 10-K 지배주주 순이익(NetIncomeLoss) — 보수 시나리오 분모

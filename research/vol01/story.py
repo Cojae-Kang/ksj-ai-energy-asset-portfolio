@@ -9,7 +9,7 @@ from typing import Mapping
 
 from . import charts
 from .data import GROWTH_LABELS, Facts, SumGrowth, Unavailable, growth_kind, ok
-from .layout import BigBox, Cell, Page, TableSpec
+from .layout import BigBox, Cell, Page, TableSpec, toc_line
 
 COMPANY_COLORS = ("gold", "brown_dark", "brown_mid", "warm_grey")
 
@@ -348,7 +348,7 @@ class Story:
         heads = [self.p1(), self.p2(), self.p3(), self.p4(), self.p5()]
         names = [self.T("수요", "Demand"), self.T("현장", "Ground truth"), self.T("실적", "Earnings"),
                  self.T("시장", "Market"), self.T("시사점", "Implications")]
-        toc = [(n, nm, h.title, h.label) for n, nm, h in zip(["I", "II", "III", "IV", "V"], names, heads)]
+        toc = [(n, nm, toc_line(h.extra.get("toc") or h.title), h.label) for n, nm, h in zip(["I", "II", "III", "IV", "V"], names, heads)]
         toc.append(("App.", "Appendix", self.T("A1 예상 질의응답 · A2 데이터 노트(출처·데이터셋·기준일·주식수 검산) · A3 분석 방법과 데이터 · A4 용어",
                                                "A1 Q&A · A2 Data notes (sources, datasets, dates, share-count check) · A3 Methodology · A4 Glossary"),
                     "A1–A4"))

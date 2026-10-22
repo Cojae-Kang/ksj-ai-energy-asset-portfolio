@@ -1,0 +1,13 @@
+﻿point,ticker,company,date,close,currency,shares,source_name,url,notes
+start_2023,VRT,Vertiv,,,USD,,,,TODO(data): 2023년 첫 거래일 종가 · 그 날짜 이전 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+latest,VRT,Vertiv,,,USD,,,,TODO(data): 기준일(2026-10-20) 직전 거래일 종가 · 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+start_2023,ETN,Eaton,,,USD,,,,TODO(data): 2023년 첫 거래일 종가 · 그 날짜 이전 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+latest,ETN,Eaton,,,USD,,,,TODO(data): 기준일(2026-10-20) 직전 거래일 종가 · 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+start_2023,GEV,GE Vernova,,,USD,,,,TODO(data): 2023년 첫 거래일 종가 · 그 날짜 이전 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+latest,GEV,GE Vernova,,,USD,,,,TODO(data): 기준일(2026-10-20) 직전 거래일 종가 · 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+start_2023,SU.PA,Schneider Electric,,,EUR,,,,"TODO(data): 2023년 첫 거래일 종가 · 그 날짜 이전 최근 표지 발행주식수 — Schneider: Euronext Paris 종가·연차보고서(URD) 발행주식수, 이번 편 제외"
+latest,SU.PA,Schneider Electric,,,EUR,,,,"TODO(data): 기준일(2026-10-20) 직전 거래일 종가 · 최근 표지 발행주식수 — Schneider: Euronext Paris 종가·연차보고서(URD) 발행주식수, 이번 편 제외"
+start_2023,CEG,Constellation Energy,,,USD,,,,TODO(data): 2023년 첫 거래일 종가 · 그 날짜 이전 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+latest,CEG,Constellation Energy,,,USD,,,,TODO(data): 기준일(2026-10-20) 직전 거래일 종가 · 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+start_2023,VST,Vistra,,,USD,,,,TODO(data): 2023년 첫 거래일 종가 · 그 날짜 이전 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력
+latest,VST,Vistra,,,USD,,,,TODO(data): 기준일(2026-10-20) 직전 거래일 종가 · 최근 표지 발행주식수 — research.vol03.fetch_extra(yfinance+SEC)가 실패할 때만 수기 입력

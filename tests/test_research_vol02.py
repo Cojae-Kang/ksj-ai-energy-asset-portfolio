@@ -467,20 +467,40 @@ def test_disclosures_license_and_contact(vol):
     assert contact_line(cfg) == "Contact: toonword@naver.com" and cfg["research"]["copyright"] == "© 2026 Shinjae Kang"
 
 
-def test_toc_fit_shrinks_long_rows():
+def test_toc_one_line_same_size_and_footer():
     pytest.importorskip("reportlab")
     from research.vol01 import layout
     from research.vol01.fonts import register_reportlab, resolve_fonts
+    from research.vol02.story import Story
     cfg = base.load_config()
     register_reportlab(resolve_fonts(cfg))
     ctx = layout.Ctx(cfg["research"]["colors"], 960, 720, "kr", "KSJ", {}, {}, Path("."), "footer", "© 2026 Shinjae Kang")
-    short = "짧은 결론"
-    assert layout.toc_fit(ctx, short, 600, 61) == (11.2, True)
-    long_ = "개발 수익률: 한국은 전력비 부담 조항 하나로 Equity IRR이 16.1%(별도 청구) vs 5.7%(전력 포함 임대)로 갈린다, 미국은 대출금리와의 격차가 2.1%p로 좁혀졌다"
-    size, fits = layout.toc_fit(ctx, long_, 600, 61)
-    assert fits and size < 11.2
-    assert layout.toc_fit(ctx, long_ * 4, 600, 61)[1] is False                       # 줄여도 안 되면 넘침으로 보고
+    f = D.load_facts(cfg)
+    for lang in ("kr", "en"):
+        toc = Story(cfg, f, lang).toc_page().toc
+        texts = [t for _, _, t, _ in toc]
+        size, over = layout.toc_size(ctx, texts, 960 - 2 * layout.MX - 190)
+        assert over == [] and size >= layout.TOC_MIN                          # 모든 행이 같은 크기로 한 줄
+        assert all("(" not in t for t in texts[:-1])                             # 괄호 보충 설명은 뺀 한 줄 요약
+    long_ = "개발 수익률: 한국은 전력비 부담 조항 하나로 Equity IRR이 16.1%(별도 청구) vs 5.7%(전력 포함 임대)로 갈린다"
+    assert layout.toc_line(long_) == "한국은 전력비 부담 조항 하나로 Equity IRR이 16.1% vs 5.7%로 갈린다"
     assert layout.footer_text(ctx) == "© 2026 Shinjae Kang · footer"
+
+
+def test_p8_checklist_lease_vs_tenor_row():
+    pytest.importorskip("matplotlib")
+    from research.vol02.story import Story
+    cfg = base.load_config()
+    f = D.load_facts(cfg)
+    for lang, label in (("kr", "임대 만기 ≥ 대출 만기인가 (재임대 위험)"), ("en", "Lease term ≥ loan tenor? (re-letting risk)")):
+        st = Story(cfg, f, lang)
+        rows = {r[0]: r for r in st.p8().cells[0].table.rows}
+        assert label in rows
+        cm = st.contracted_min("A")
+        assert cm is not None and cm[1] == 13 and round(cm[0], 2) == 0.02          # p3 계약분 최소 DSCR 0.02배(13년차)
+        assert st.x(cm[0]) in rows[label][1] and str(cm[1]) in rows[label][1]
+        b = f.cases["B"].inp
+        assert f"{b.lease_term_years:.0f}" in rows[label][2] and f"{b.tenor_years}" in rows[label][2]
 
 
 def test_review_fixes_sources():

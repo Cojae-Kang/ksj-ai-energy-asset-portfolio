@@ -25,10 +25,10 @@ IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오입�
 | Vol | 제목 | 날짜 | 국문 | English | 게시물 |
 |---|---|---|---|---|---|
 | 1 | AI 전력 수요는 진짜인가, 시장은 이미 알고 있나 | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) | [LinkedIn](https://lnkd.in/p/g48PyHjZ) |
-| 2 | AI 데이터센터, 대출은 얼마까지 가능한가 — 대주의 눈으로 본 한국 40MW와 미국 100MW | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | — |
-| 3 | IPO 공모가와 해외 피어 — 가상 기업 Target Co. 희망공모가 밴드 | 예정 | — | — | — |
+| 2 | AI 데이터센터, 대출은 얼마까지 가능한가 — 대주의 눈으로 본 한국 40MW와 미국 100MW | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7518930802538201088/) |
+| 3 | PER 40배 섹터의 IPO — 가상 전력기기 기업의 희망공모가 밴드 | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | — |
 
-**시리즈 로드맵**: Vol.1 수요·시장 → Vol.2 데이터센터 PF(한국 40MW·미국 100MW) → Vol.3 IPO 공모가·해외 피어
+**시리즈 로드맵**: Vol.1 수요·시장 → Vol.2 데이터센터 PF(한국 40MW·미국 100MW) → Vol.3 IPO 공모가·해외 피어 → Vol.4 데이터센터 전력 공급(발전 자산·PPA) → Vol.5 완결: AI 에너지 자산 투자 지도
 
 ## 분석 방법
 
@@ -52,6 +52,8 @@ python -m src.data_fetch.fetch_all --source all --asof 2026-10-20   # 공식 출
 python -m research.vol01.fetch_extra --asof 2026-10-20              # Vol.1 추가 데이터
 python -m research.vol01.build                                      # 국문·영문 PDF + README 핵심 발견·그림 갱신
 python -m research.vol02.build                                      # Vol.2 데이터센터 PF 국문·영문 PDF (가정: data/manual/vol02_assumptions.csv)
+python -m research.vol03.fetch_extra --asof 2026-10-20              # Vol.3 미국 피어 종가(yfinance)·SEC 주식수 이력·D&A (로컬 전용)
+python -m research.vol03.build                                      # Vol.3 IPO 희망공모가 밴드 국문·영문 PDF (가정: data/manual/vol03_assumptions.csv)
 pytest -q                                                           # 네트워크 없이 도는 테스트
 ```
 
@@ -69,6 +71,8 @@ pytest -q                                                           # 네트워�
 | DART | 금융감독원 | 사업보고서 연결 재무제표 | Open DART 이용약관, 출처 표기 |
 | ECOS | 한국은행 | 원/달러 환율, 국고채 금리 | 한국은행 ECOS 이용약관, 출처 표기 |
 | FRED | Federal Reserve Bank of St. Louis | 미 국채 10년 금리 | FRED 이용약관, 출처 표기 |
+| SEC EDGAR | U.S. Securities and Exchange Commission | 미국 피어 10-K 재무(XBRL)·표지 발행주식수 | 미국 정부 공개 데이터, SEC fair access 정책 준수 |
+| yfinance (보조) | Yahoo Finance 비공식 래퍼 | 미국 피어 종가 (SEC 발행주식수로 교차 확인) | 개인·연구 용도, Yahoo 약관 적용 |
 
 - 원자료(API 응답 원본)는 저장소에 올리지 않고, 가공 데이터와 출처·기준일만 공개합니다.
 - 코드: [MIT License](LICENSE) · 보고서·도표: [CC BY 4.0](LICENSE-CONTENT) · 폰트: Noto Sans KR (SIL Open Font License 1.1, `assets/fonts/`)
@@ -108,10 +112,10 @@ Recalculated from official-source data each time the report is built.
 | Vol | Title | Date | Korean | English | Post |
 |---|---|---|---|---|---|
 | 1 | Is AI Power Demand Real, and Does the Market Already Know? | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) | [LinkedIn](https://lnkd.in/p/g48PyHjZ) |
-| 2 | How Much Can an AI Data Centre Borrow? A lender's view of a 40 MW Korean and a 100 MW U.S. project | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | — |
-| 3 | IPO pricing and overseas peers — indicative price range for a hypothetical Target Co. | Planned | — | — | — |
+| 2 | How Much Can an AI Data Centre Borrow? A lender's view of a 40 MW Korean and a 100 MW U.S. project | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7518930802538201088/) |
+| 3 | Pricing an IPO in a 40x P/E Sector — an indicative price range for a hypothetical power-equipment maker | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | — |
 
-**Series roadmap**: Vol.1 demand and market → Vol.2 data-centre PF (Korea 40 MW, U.S. 100 MW) → Vol.3 IPO pricing and overseas peers
+**Series roadmap**: Vol.1 demand and market → Vol.2 data-centre PF (Korea 40 MW, U.S. 100 MW) → Vol.3 IPO pricing and overseas peers → Vol.4 powering data centres (generation assets, PPAs) → Vol.5 finale: an AI energy asset investment map
 
 ### Methodology
 
@@ -130,7 +134,7 @@ See the commands in the Korean section above and [docs/data_pipeline.md](docs/da
 
 ### Data sources and terms
 
-IEA (CC BY 4.0, © IEA) · U.S. EIA (U.S. government data) · KRX · DART (Financial Supervisory Service) · Bank of Korea ECOS · FRED (Federal Reserve Bank of St. Louis). Each is used with attribution under its provider's terms; raw API responses are not redistributed. Code under the [MIT License](LICENSE); reports and charts under [CC BY 4.0](LICENSE-CONTENT); fonts under the SIL Open Font License 1.1.
+IEA (CC BY 4.0, © IEA) · U.S. EIA (U.S. government data) · KRX · DART (Financial Supervisory Service) · Bank of Korea ECOS · FRED (Federal Reserve Bank of St. Louis) · SEC EDGAR (U.S. government data) · yfinance (secondary, cross-checked with SEC shares). Each is used with attribution under its provider's terms; raw API responses are not redistributed. Code under the [MIT License](LICENSE); reports and charts under [CC BY 4.0](LICENSE-CONTENT); fonts under the SIL Open Font License 1.1.
 
 ### Disclaimer
 
@@ -143,8 +147,8 @@ Personal portfolio for education and research; not investment advice. Judgements
 | 대상 · Scope | 라이선스 · License |
 |---|---|
 | 코드 (`src/`, `research/**/*.py`, `tests/` 등) · Code | [MIT License](LICENSE) — 저작권 표시 유지 조건 · keep the copyright notice |
-| 보고서·도표·문장 (`research/vol01/`, `research/vol02/` PDF, `figures/`, `reports/`, `docs/`) · Reports, charts, text | [CC BY 4.0](LICENSE-CONTENT) ([https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/)) — 인용·활용 시 "Shinjae Kang (KSJ Research)"와 출처 표시 · credit required |
-| 제3자 데이터·자료 (IEA, EIA, CBRE, KRX, DART, ECOS, FRED, 보도·업계 보고서 등) · Third-party data | 각 원저작자의 권리와 이용 조건을 따릅니다 · subject to each owner's terms |
+| 보고서·도표·문장 (`research/vol01/`, `research/vol02/`, `research/vol03/` PDF, `figures/`, `reports/`, `docs/`) · Reports, charts, text | [CC BY 4.0](LICENSE-CONTENT) ([https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/)) — 인용·활용 시 "Shinjae Kang (KSJ Research)"와 출처 표시 · credit required |
+| 제3자 데이터·자료 (IEA, EIA, CBRE, KRX, DART, ECOS, FRED, SEC EDGAR, Yahoo Finance, 보도·업계 보고서 등) · Third-party data | 각 원저작자의 권리와 이용 조건을 따릅니다 · subject to each owner's terms |
 
 © 2026 Shinjae Kang (강신재). 특정 금융회사·부서와 무관한 개인 리서치입니다 · Not affiliated with any financial institution.
 

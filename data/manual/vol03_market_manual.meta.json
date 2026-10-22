@@ -1,0 +1,9 @@
+{
+  "source": "수기 입력 양식 (사용자 입력)",
+  "endpoint": "(manual)",
+  "params": {},
+  "fetched_at": null,
+  "as_of": "2026-10-20",
+  "license_note": "공개 시세·공시만 입력(거래소 공표 종가, 10-K/10-Q·연차보고서 표지 발행주식수). 비공개 자료 금지.",
+  "note": "TODO(data): close·shares·source_name·url 입력. close가 비어 있는 행은 무시된다. 우선순위: vol03_global_market_points.csv(fetch_extra) > global_peers_market.csv > 이 파일"
+}

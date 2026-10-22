@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping
@@ -102,7 +103,7 @@ class Ctx:
     build_dir: Path
     footer: str
     copyright: str = ""               # 바닥글 왼쪽·표지 (예: © 2026 Shinjae Kang)
-    warnings: list[str] = field(default_factory=list)   # 렌더링 점검 결과 (목차 넘침 등)
+    warnings: list[str] = field(default_factory=list)   # 렌더링 점검 결과 (목차 한 줄 넘침 등)
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +305,8 @@ def draw_table(c, ctx: Ctx, spec: TableSpec, x: float, y_top: float, w: float, h
         size -= 0.3
         t = build_table(ctx, spec, w, size, pad)
         _, th = t.wrap(w, h)
+    if th > h + 0.5:
+        ctx.warnings.append(f"표 넘침: {spec.header[0] or spec.header[1]} ({th:.0f} > {h:.0f}pt)")
     if spec.fill and th < h * 0.9:
         while size + 0.3 <= min(spec.font_size * spec.max_grow, cap):
             t2 = build_table(ctx, spec, w, size + 0.3, pad)
@@ -466,23 +469,37 @@ def draw_exec(c, ctx: Ctx, page: Page) -> None:
         draw_bigbox(c, ctx, b, rx, top - i * (bh + gap), rw, bh)
 
 
-def toc_fit(ctx: Ctx, text: str, width: float, row_h: float, start: float = 11.2, min_size: float = 8.0) -> tuple[float, bool]:
-    """목차 결론 문단이 행(제목 아래 ~ 구분선 위)에 들어가는 가장 큰 글자 크기. (크기, 들어가는지)."""
-    avail = row_h - 30 - 10                       # 문단 시작(y − 30) ~ 구분선(y − row_h + 6) 사이, 여백 4pt
+TOC_MAX, TOC_MIN = 11.2, 8.0
+
+
+def toc_line(text: str) -> str:
+    """목차 한 줄 요약: 앞의 '장 이름:' 머리와 괄호 속 보충 설명을 뺀다 (장 이름은 왼쪽 열에 이미 있다)."""
+    t = re.sub(r"^[^:：—]{1,32}[:：]\s*", "", text.strip())
+    prev = None
+    while prev != t:                                   # 중첩 괄호까지 제거
+        prev, t = t, re.sub(r"\s*\([^()]*\)", "", t)
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    return t[:1].upper() + t[1:] if t[:1].isascii() else t
+
+
+def toc_size(ctx: Ctx, texts: list[str], width: float, start: float = TOC_MAX, min_size: float = TOC_MIN) -> tuple[float, list[int]]:
+    """모든 행에 같은 글자 크기: 가장 긴 요약이 한 줄(width)에 들어가는 크기. (크기, 넘치는 행 번호)."""
     size = start
-    while True:
-        _, h = para(text, style(ctx, size, leading=1.35)).wrap(width, 10_000)
-        if h <= avail or size <= min_size:
-            return size, h <= avail
-        size = round(size - 0.4, 2)
+    while size > min_size and any(stringWidth(t, RL_REGULAR, size) > width for t in texts):
+        size = round(size - 0.2, 2)
+    return size, [i for i, t in enumerate(texts) if stringWidth(t, RL_REGULAR, size) > width]
 
 
 def draw_toc(c, ctx: Ctx, page: Page) -> None:
+    """목차: 행마다 '번호 · 장 이름 · 한 줄 요약 · 쪽'. 요약은 모든 행이 같은 글자 크기(한 줄)."""
     col = ctx.colors
     top = header(c, ctx, page.title, page.subtitle)
     y = top - 6
     row_h = (top - FOOT_H - 20) / max(len(page.toc), 1)
     cw = ctx.w - 2 * MX - 190
+    size, over = toc_size(ctx, [concl for _, _, concl, _ in page.toc], cw)
+    for i in over:
+        ctx.warnings.append(f"목차 한 줄 넘침: {page.toc[i][0]} {page.toc[i][1]}")
     for num, name, concl, pg in page.toc:
         c.setFillColor(hexc(col["gold"]))
         c.setFont(RL_BOLD, 30 if len(num) <= 3 else 20)
@@ -490,10 +507,8 @@ def draw_toc(c, ctx: Ctx, page: Page) -> None:
         c.setFillColor(hexc(col["text"]))
         c.setFont(RL_BOLD, 16)
         c.drawString(MX + 100, y - 20, name)
-        size, fits = toc_fit(ctx, concl, cw, row_h)
-        if not fits:
-            ctx.warnings.append(f"목차 넘침: {num} {name}")
-        draw_para(c, para(concl, style(ctx, size, leading=1.35)), MX + 100, y - 30, cw)
+        c.setFont(RL_REGULAR, size)
+        c.drawString(MX + 100, y - 30 - size * 1.1, concl)
         c.setFont(RL_BOLD, 14)
         c.setFillColor(hexc(col["brown_dark"]))
         c.drawRightString(ctx.w - MX, y - 18, pg)

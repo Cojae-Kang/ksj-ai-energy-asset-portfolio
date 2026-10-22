@@ -11,7 +11,7 @@ from typing import Mapping
 
 import numpy as np
 
-from research.vol01.layout import BigBox, Cell, Page, TableSpec
+from research.vol01.layout import BigBox, Cell, Page, TableSpec, toc_line
 
 from . import charts
 from src.analysis.pf_model import yield_on_cost as pf_yoc
@@ -242,6 +242,34 @@ class Story:
     def rent20(self):
         b = self.case("B")
         return next((x for k, x in b.stresses.items() if k.startswith("rent_-")), None) if ok(b) else None
+
+    def contracted_min(self, case: str) -> tuple[float, int] | None:
+        """계약분 최소 DSCR과 그 연차 (p3·p6 '계약분 DSCR'과 같은 정의: 원금 상환 기간, 계약 임대료 CFADS만)."""
+        cr = self.case(case)
+        if not ok(cr):
+            return None
+        o, inp = cr.base.ops, cr.inp
+        t0 = inp.grace_years if inp.grace_interest == "reserve" else 0
+        dc = (o["cfads_contracted"] / o["debt_service"]).iloc[t0:inp.tenor_years].to_numpy()
+        if not len(dc) or not np.isfinite(dc).any():
+            return None
+        i = int(np.nanargmin(dc))
+        return float(dc[i]), int(o["year"].iloc[t0 + i])
+
+    def lease_vs_tenor(self, case: str) -> str:
+        """체크리스트 '임대 만기 ≥ 대출 만기' 칸: 임대 기간 vs COD 후 상환 기간 + 계약분 최소 DSCR(연차)."""
+        cr = self.case(case)
+        if not ok(cr):
+            return self.T("임대 기간 · 대출 만기 확인", "Check lease term vs loan tenor")
+        lt, tn = cr.inp.lease_term_years, cr.inp.tenor_years
+        cm = self.contracted_min(case)
+        dscr = (self.T(f"계약분 최소 DSCR {self.x(cm[0])}({cm[1]}년차)", f"contracted min DSCR {self.x(cm[0])} (year {cm[1]})") if cm else "")
+        if lt is None:
+            return self.T(f"임대 기간 미확정 · 대출 COD 후 {tn}년 — {dscr}: 만기까지 신규 임차·재임대에 의존",
+                          f"Lease term not set; {tn}-yr loan after COD — {dscr}: repayment relies on new leasing and re-letting")
+        ok_ = lt >= tn
+        return self.T(f"임대 {lt:.0f}년 {'≥' if ok_ else '<'} 대출 COD 후 {tn}년 — {dscr}" + ("" if ok_ else ": 재임대 위험"),
+                      f"Lease {lt:.0f} yrs {'≥' if ok_ else '<'} {tn}-yr loan after COD — {dscr}" + ("" if ok_ else "; re-letting risk"))
 
     def reserve_on(self) -> bool:
         return self.A("grace_interest").value == "reserve" and (self.A("grace_years").value or 0) > 0
@@ -476,7 +504,7 @@ class Story:
         names = [self.T("구조", "Structure"), self.T("데이터 연결", "Data links"), self.T("대출 한도", "Debt sizing"),
                  self.T("스트레스", "Stress"), self.T("증설 옵션", "Expansion option"), self.T("한·미 비교", "Korea vs U.S."),
                  self.T("개발 수익률", "Development yield"), self.T("시사점", "Implications")]
-        toc = [(n, nm, h.title, h.label) for n, nm, h in zip(["I", "II", "III", "IV", "V", "VI", "VII", "VIII"], names, heads)]
+        toc = [(n, nm, toc_line(h.extra.get("toc") or h.title), h.label) for n, nm, h in zip(["I", "II", "III", "IV", "V", "VI", "VII", "VIII"], names, heads)]
         toc.append(("App.", "Appendix", self.T("A1 예상 질의응답 · A2·A3 케이스별 가정과 출처 · A4 데이터 노트 · A5 분석 방법 · A6 용어",
                                                "A1 Q&A · A2–A3 assumptions and sources by case · A4 Data notes · A5 Methodology · A6 Glossary"), "A1–A6"))
         return Page("toc", label="ii", title=self.T("목차", "Contents"),
@@ -1337,6 +1365,7 @@ class Story:
                     f"Breakeven for 1.0x: {self.pct(pre_be)} (market {self.prelease_range()})" if pre_be else f"Market {self.prelease_range()}"),
              self.T(f"사전 임대율 {self.pct(self.B('prelease').value, 0)} · 임대 {self.B('lease_term_years').value:.0f}년" if self.B('prelease').value and self.B('lease_term_years').value else "앵커 임차인",
                     f"Pre-lease {self.pct(self.B('prelease').value, 0)}; {self.B('lease_term_years').value:.0f}-yr lease" if self.B('prelease').value and self.B('lease_term_years').value else "Anchor tenant"), "3, 4"],
+            [self.T("임대 만기 ≥ 대출 만기인가 (재임대 위험)", "Lease term ≥ loan tenor? (re-letting risk)"), self.lease_vs_tenor("A"), self.lease_vs_tenor("B"), "3, 6"],
             [self.T("금리", "Rates"), f"{self.base_label('A')} {self.base_value('A'):.2f}% + {self.val_assump('A', 'margin_bp')}" if ok(r) else "—",
              self.T(f"{self.base_label('B')} {self.base_value('B'):.2f}% + 가산금리 미확정" if ok(r) else "—",
                     f"{self.base_label('B')} {self.base_value('B'):.2f}% + margin TBC" if ok(r) else "—"), "2, 6"],
@@ -1356,7 +1385,8 @@ class Story:
                                "Lender checklist: check the power-cost structure first; then Korea — approval and tenants, U.S. — rates and cost"),
                   src=["lease", "grid", "market", "cost", "finance", "ksj"],
                   table=TableSpec([self.T("항목", "Item"), self.T("한국 40MW", "Korea 40 MW"), self.T("미국 100MW", "U.S. 100 MW"), self.T("근거 쪽", "Pages")], rows,
-                                  [0.15, 0.40, 0.33, 0.12], ["L", "L", "L", "C"], shade_rows={0}, gold_cells={(0, 1)}, font_size=8.0),
+                                  [0.15, 0.40, 0.33, 0.12], ["L", "L", "L", "C"], shade_rows={0}, gold_cells={(0, 1)}, font_size=8.0,
+                                  brick_cells={(3, j) for j, c_ in ((1, "A"), (2, "B")) if ok(self.case(c_)) and (self.case(c_).inp.lease_term_years or 0) < self.case(c_).inp.tenor_years}),
                   note=self.T("가상 케이스 기준의 점검 항목. 숫자는 본문 계산값", "Checklist for the hypothetical cases; figures from the body"))
         limits = [self.T("두 케이스 모두 실존 프로젝트가 아니며, 저자 판단 가정은 가정표(A2·A3)에 '저자 판단'으로 구분했다", "Both cases are hypothetical; author's judgments are flagged as such in A2–A3")]
         if self.A("dep_years").value and self.A("exit_cap_rate").value:

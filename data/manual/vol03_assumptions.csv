@@ -1,0 +1,19 @@
+﻿case,item,value,low,high,unit,tag,source_name,url,published,page,current,hint
+target,revenue,,,,억원,,,,,,3000,매출 FY2025A / 가상 기업 규모 설정 FY2025A — 중견기업 범위(아래 기준 초과). 주당 가격의 단위만 정하고 할인율 결론에는 영향 없음
+target,midsize_threshold,,,,억원,,,,,,1500,"중견 기준 매출(참고) / 중소기업기본법 시행령 별표1: 전기장비 제조업 평균매출액 1,500억원 이하 = 중소기업 (초과 시 중견 범위) / TODO(source): 별표1 조문·개정일 확인"
+target,revenue_growth,,,,%,,,,,,18.6359,매출 성장률 (FY2026E) / DART 3사 합산 매출 CAGR FY2022A→FY2025A (범위 = 3사 최소~최대)
+target,opm,,,,%,,,,,,14.4446,영업이익률 / DART 3사 합산 영업이익률 FY2025A (범위 = 3사 최소~최대)
+target,npm,,,,%,,,,,,10.2514,지배순이익률 / DART 3사 합산 지배순이익률 FY2025A (범위 = 3사 최소~최대)
+target,net_debt_ratio,,,,%,,,,,,10.6577,"순차입금 ÷ 매출 / DART 순차입금 ÷ 매출 FY2025A (총차입금 수집 회사만, 범위 = 최소~최대)"
+target,da_ratio,,,,%,,,,,,null,D&A ÷ 매출 / D&A ÷ 매출 FY2025A (DART 현금흐름표) / TODO(data): research.vol03.fetch_extra (DART 현금흐름표 감가상각비) — 없으면 EV/EBIT로 대용
+target,shares_pre,,,,주,,,,,,1e+07,상장 전 주식수 / 가상 기업 상장 전 발행주식수 — 주당 가격 수준만 바꾸고 시총·할인율 결론은 불변
+deal,offer_ratio,,,,%,,,,,,25,공모 비율 (공모 후 주식 대비) / 공모주식 ÷ 공모 후 주식수 — 한국거래소 상장규정 주식분산 요건(일반주주 소유비율 25% 이상 등) 수준 / TODO(source): 유가증권·코스닥시장 상장규정·시행세칙 조문 확인
+deal,new_share_ratio,,,,%,,,,,,80,신주 비중 (나머지 구주매출) / 공모주식 중 신주 비중(나머지 = 구주매출) — 가상 거래 설계
+deal,lockup_months,,,,개월,,,,,,null,최대주주 의무보유 / TODO(source): 최대주주 등 의무보유 기간 — 유가증권·코스닥시장 상장규정 조문 확인. 본문은 오버행 물량만 표시
+deal,band_discount_low,,,,%,,,,,,null,밴드 할인율 하단 / TODO(source): 최근 국내 IPO 희망공모가 할인율 사례(DART 증권신고서·KIND) — 없으면 몬테카를로 기준 밴드
+deal,band_discount_high,,,,%,,,,,,null,밴드 할인율 상단 / TODO(source): 위와 같음
+mc,growth_mean,,,,%,,,,,,17.5367,성장률 분포 평균 (로그) / DART 3사 연간 매출 성장률 FY2023A~FY2025A(9개 관측) 로그 평균
+mc,growth_sd,,,,%,,,,,,6.28402,성장률 분포 표준편차 (로그) / 위 9개 관측의 로그 표준편차
+mc,per_shape,,,,-,,,,,,triangular,1년 후 PER 분포 / 1년 후 PER = 삼각분포(최소 보수 · 최빈 정상화 · 최대 현재) — 시나리오 확률 근거 부재 시 중립 형태
+mc,band_q_low,,,,%,,,,,,25,밴드 하단 분위 / 밴드 하단 = 1년 후 주당가치 하위 25% (하단 공모 시 1년 후 손실 확률 25%)
+mc,band_q_high,,,,%,,,,,,50,밴드 상단 분위 / 밴드 상단 = 1년 후 주당가치 중앙값 (상단 공모 시 손실 확률 50%)

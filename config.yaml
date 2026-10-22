@@ -45,7 +45,7 @@ ipo:
   band_width: null
 
 monte_carlo:
-  n_sims: null                      # ASSUMPTION:
+  n_sims: 10000                     # 분석 설정(사용자 지정): Vol.3 몬테카를로 10,000회
   seed: 42
 
 peers:
@@ -646,3 +646,110 @@ research:
       window_grid: [0, 2, 4]
       prob_grid: [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
       basis_degree: 2
+
+  # -------------------------------------------------------------------
+  # Vol.3 — PER 40배 섹터의 IPO: 가상 전력기기 기업 Target Co.의 희망공모가 밴드 (실존 기업 아님)
+  # 가정: {value, unit, tag, source, todo, derive}. derive가 있으면 Vol.1 피어 데이터(DART 3사)에서 값과 범위(low~high)를
+  # 계산한다(tag DATA). 사용자가 data/manual/vol03_assumptions.csv(Vol.2와 같은 열: case, item, value, low, high, unit, tag,
+  # source_name, url, published, page, current, hint)에 값을 넣으면 그 값이 우선한다.
+  # tag: ASSUMPTION(design) 가상 기업·거래 설계값 / ASSUMPTION(verify) 공개 근거 있음, 원문 확인 필요 /
+  #      ASSUMPTION(judgment) 저자 판단(민감도로 점검) / ASSUMPTION(neutral) 근거 부재 시 중립값 / DATA 저장소 데이터에서 계산
+  # 근거 없는 값은 value: null + TODO(source) → 그 계산만 건너뛰거나 주석의 대체 규칙을 쓴다.
+  # -------------------------------------------------------------------
+  vol03:
+    output_dir: "research/vol03"
+    build_dir: "research/vol03/_build"
+    page_pt: [960, 720]
+    title_kr: "PER 40배 섹터의 IPO"
+    title_en: "Pricing an IPO in a 40x P/E Sector"
+    subtitle_kr: "가상 전력기기 기업 Target Co.의 희망공모가 밴드 — 국내 3사와 미국 피어로 본 적용 배수·할인율·사이클 위험"
+    subtitle_en: "An indicative price range for a hypothetical power-equipment maker — multiples, discounts and cycle risk from Korean and U.S. peers"
+    date_label: "2026.10"
+    as_of: "2026-10-20"                 # 시리즈 기준일 (고정)
+    assumptions_csv: "data/manual/vol03_assumptions.csv"
+    inputs:
+      dart: ["data/processed/dart_financials.csv", "data/processed/vol01_dart_extra.csv"]   # FY2022A~FY2025A
+      krx_points: "data/processed/vol01_krx_mcap_points.csv"                                # 2023-01-02 · 2026-10-19
+      sec_financials: "data/processed/sec_financials.csv"
+      sec_shares: "data/processed/sec_shares_outstanding.csv"
+      sec_entity: "data/processed/sec_entity_check.csv"
+      global_market: "data/processed/global_peers_market.csv"         # TODO(data): fetch_all --source global (yfinance, 보조, 기준일)
+      market_points: "data/processed/vol03_global_market_points.csv"  # TODO(data): research.vol03.fetch_extra (2023 첫 거래일·기준일)
+      market_manual: "data/manual/vol03_market_manual.csv"            # 수기 입력 양식 (위 두 파일이 없을 때)
+      peer_extra: "data/processed/vol03_peer_extra.csv"               # TODO(data): research.vol03.fetch_extra (D&A, SEC FY2022A)
+      peer_manual: "data/manual/vol03_peer_manual.csv"                # 수기 입력 양식 (D&A 등)
+      overseas_manual: "data/manual/overseas_financials_manual.csv"   # Schneider Electric (SEC 비대상)
+      fx: "data/processed/ecos_fx_daily.csv"
+    fetch_extra:                        # research.vol03.fetch_extra (로컬 실행 전용)
+      start_from: "2023-01-01"          # 이 날부터 앞으로 찾은 첫 거래일 = 2023년 첫 거래일 (Vol.1과 같은 기준)
+      max_forward_days: 10
+      lookback_days: 10
+      sec_fiscal_years: [2022, 2023, 2024, 2025]
+      sec_da_tags: ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "DepreciationAmortizationAndAccretionNet"]
+      dart_da:                          # 현금흐름표(CF) 영업활동 조정 항목. ASSUMPTION: 유형자산 감가상각 + 무형자산 상각, 사용권자산 상각 제외(리스부채를 순차입금에서 뺐으므로 일관)
+        sj_div: ["CF"]
+        include_name_patterns: ["감가상각비", "무형자산상각비"]
+        exclude_name_patterns: ["사용권자산", "리스"]
+    # 비교기업 선정 3단계 (증권신고서 방식: 업종 → 재무 요건 → 사업 유사성). 사업 설명은 공개 사업보고서·10-K의 사업부 구성 요약(저자 정리)
+    target_business_kr: "배전반·UPS·데이터센터 전력분배 장비"
+    target_business_en: "switchgear, UPS and data-centre power distribution"
+    screen:
+      domestic:
+        "267260": {similarity: "mid", business_kr: "변압기·고압 전력기기 — 전력망·데이터센터 수전 설비 공통 수요", business_en: "Transformers, HV equipment — shared grid and data-centre demand"}
+        "010120": {similarity: "high", business_kr: "배전반·차단기·전력기기 — Target과 제품군이 가장 가깝다", business_en: "Switchgear, breakers — closest product overlap with Target"}
+        "298040": {similarity: "mid", business_kr: "변압기·차단기(중공업 부문) — 전력망 수요 공통", business_en: "Transformers, breakers (heavy industries) — shared grid demand"}
+        "034020": {similarity: "low", business_kr: "원전·가스터빈 등 발전설비 중심 — 배전·UPS와 사업 구조 상이", business_en: "Nuclear and gas-turbine generation equipment — different business mix"}
+      overseas:
+        VRT: {group: "core", kind: "equipment", business_kr: "데이터센터 UPS·배전·열관리", business_en: "Data-centre UPS, power distribution, thermal"}
+        ETN: {group: "core", kind: "equipment", business_kr: "배전·UPS·전력관리(전기 부문)", business_en: "Power distribution, UPS, power management (electrical)"}
+        GEV: {group: "core", kind: "equipment", business_kr: "가스터빈·풍력·전력망 기기(Electrification)", business_en: "Gas turbines, wind, grid equipment (Electrification)"}
+        CEG: {group: "reference", kind: "generation", business_kr: "원전 중심 발전사업자 — 전력 판매·PPA", business_en: "Nuclear-led generator — power sales, PPAs"}
+        VST: {group: "reference", kind: "generation", business_kr: "발전·소매 전력사업자 — 전력 판매", business_en: "Generator and retailer — power sales"}
+        SU.PA: {group: "excluded", kind: "equipment", business_kr: "배전·전력관리·자동화 (사업은 유사)", business_en: "Distribution, power management, automation (similar business)",
+                reason_kr: "SEC 공시 대상 아님(Euronext Paris) — 연차보고서 수기 입력 양식만 두고 이번 편 제외", reason_en: "Not an SEC filer (Euronext Paris) — manual-entry template only; excluded this volume"}
+    multiples:
+      basis_fy: "FY2025A"               # 현재 배수 분모 = 최근 사업연도 (Vol.1과 같은 짝: 기준일 시총 ↔ FY2025A)
+      start_fy: "FY2022A"               # 보수 시나리오 분모 (2023년 첫 거래일 시총 ↔ FY2022A, Vol.1과 같음)
+      applied_groups: ["domestic", "core"]   # 적용 배수 = 국내 3사 + 해외 핵심 비교군. 참고 비교군(발전·유틸리티)은 비교만
+      # ASSUMPTION(judgment): 그룹 안은 합산 PER(Σ시총 ÷ Σ지배순이익) — 3~5개 피어의 산술평균은 한 회사에 좌우. 평균·중앙값 병기
+      aggregation: "aggregate"
+      # ASSUMPTION(judgment): 국내+해외 합산 = 두 그룹 배수의 단순평균 — 시총 가중이면 해외(미국 대형주)가 결과를 지배
+      combine: "group_mean"
+      outlier:                          # ASSUMPTION(judgment): 이상치 규칙 (보고서 p4에 표로 공개)
+        exclude_nonpositive: true       # R1 적자(지배순이익 ≤ 0) → PER 제외
+        per_max: 100                    # R2 PER > 100배 → 제외 (작은 이익의 분모 왜곡)
+        exclude_entity_warn: true       # R3 SEC 재무 주체 WARN → 제외 (시총 주체 ≠ 재무 주체)
+        flag_vs_median: 2.0             # R4 그룹 중앙값의 2배 초과 → 고배수 표시(포함, 합산 가중으로 영향 제한)
+        ev_ebitda_max: 60               # R5 EV/EBITDA > 60배 또는 EBITDA ≤ 0 → 제외. 순차입금 미수집 → EV 제외
+      # ASSUMPTION(judgment): 정상화 배수 = 2023년 초(보수)와 현재의 로그 중간 = √(보수 × 현재).
+      #   근거: Vol.1 Δln(시총) = Δln(이익) + Δln(PER) 분해와 같은 로그 척도에서 멀티플 확대분의 절반이 되돌려지는 경우
+      normalization: {method: "geometric", weight: 0.5}
+    discount_grid: [0.10, 0.20, 0.30, 0.40]     # 할인율 시나리오 (분석 설정, 사용자 지정 10~40%)
+    per_grid: [15, 20, 25, 30, 35, 40, 45]      # 민감도 표 PER 축 (분석 설정)
+    price_tick: 100                             # 주당 가격 표시 반올림 단위(원) — 분석 설정
+    params:
+      target:
+        revenue: {value: 3000, unit: "억원", tag: "ASSUMPTION(design)", source: "가상 기업 규모 설정 FY2025A — 중견기업 범위(아래 기준 초과). 주당 가격의 단위만 정하고 할인율 결론에는 영향 없음"}
+        midsize_threshold: {value: 1500, unit: "억원", tag: "ASSUMPTION(verify)", source: "중소기업기본법 시행령 별표1: 전기장비 제조업 평균매출액 1,500억원 이하 = 중소기업 (초과 시 중견 범위)", todo: "TODO(source): 별표1 조문·개정일 확인"}
+        revenue_growth: {value: null, derive: "peer_revenue_cagr", unit: "%", tag: "DATA", source: "DART 3사 합산 매출 CAGR FY2022A→FY2025A (범위 = 3사 최소~최대)"}
+        opm: {value: null, derive: "peer_opm", unit: "%", tag: "DATA", source: "DART 3사 합산 영업이익률 FY2025A (범위 = 3사 최소~최대)"}
+        npm: {value: null, derive: "peer_npm", unit: "%", tag: "DATA", source: "DART 3사 합산 지배순이익률 FY2025A (범위 = 3사 최소~최대)"}
+        net_debt_ratio: {value: null, derive: "peer_net_debt_ratio", unit: "%", tag: "DATA", source: "DART 순차입금 ÷ 매출 FY2025A (총차입금 수집 회사만, 범위 = 최소~최대)"}
+        da_ratio: {value: null, derive: "peer_da_ratio", unit: "%", tag: "DATA", source: "D&A ÷ 매출 FY2025A (DART 현금흐름표)", todo: "TODO(data): research.vol03.fetch_extra (DART 현금흐름표 감가상각비) — 없으면 EV/EBIT로 대용"}
+        shares_pre: {value: 10000000, unit: "주", tag: "ASSUMPTION(design)", source: "가상 기업 상장 전 발행주식수 — 주당 가격 수준만 바꾸고 시총·할인율 결론은 불변"}
+      deal:
+        offer_ratio: {value: 0.25, unit: "%", tag: "ASSUMPTION(verify)", source: "공모주식 ÷ 공모 후 주식수 — 한국거래소 상장규정 주식분산 요건(일반주주 소유비율 25% 이상 등) 수준", todo: "TODO(source): 유가증권·코스닥시장 상장규정·시행세칙 조문 확인"}
+        new_share_ratio: {value: 0.8, unit: "%", tag: "ASSUMPTION(design)", source: "공모주식 중 신주 비중(나머지 = 구주매출) — 가상 거래 설계"}
+        lockup_months: {value: null, unit: "개월", todo: "TODO(source): 최대주주 등 의무보유 기간 — 유가증권·코스닥시장 상장규정 조문 확인. 본문은 오버행 물량만 표시"}
+        band_discount_low: {value: null, unit: "%", todo: "TODO(source): 최근 국내 IPO 희망공모가 할인율 사례(DART 증권신고서·KIND) — 없으면 몬테카를로 기준 밴드"}
+        band_discount_high: {value: null, unit: "%", todo: "TODO(source): 위와 같음"}
+      mc:
+        growth_mean: {value: null, derive: "peer_log_growth_mean", unit: "%", tag: "DATA", source: "DART 3사 연간 매출 성장률 FY2023A~FY2025A(9개 관측) 로그 평균"}
+        growth_sd: {value: null, derive: "peer_log_growth_sd", unit: "%", tag: "DATA", source: "위 9개 관측의 로그 표준편차"}
+        per_shape: {value: "triangular", unit: "-", tag: "ASSUMPTION(neutral)", source: "1년 후 PER = 삼각분포(최소 보수 · 최빈 정상화 · 최대 현재) — 시나리오 확률 근거 부재 시 중립 형태"}
+        band_q_low: {value: 0.25, unit: "%", tag: "ASSUMPTION(judgment)", source: "밴드 하단 = 1년 후 주당가치 하위 25% (하단 공모 시 1년 후 손실 확률 25%)"}
+        band_q_high: {value: 0.5, unit: "%", tag: "ASSUMPTION(judgment)", source: "밴드 상단 = 1년 후 주당가치 중앙값 (상단 공모 시 손실 확률 50%)"}
+    monte_carlo:
+      horizon_years: 1                  # 상장 1년 후: 이익은 1년 성장, 배수는 시나리오 분포 (분석 설정)
+      convergence: [1000, 2000, 5000, 10000]
+      tolerance: 0.01                   # 마지막 두 단계 P50 상대 차이 ≤ 1%면 수렴 (분석 설정)
