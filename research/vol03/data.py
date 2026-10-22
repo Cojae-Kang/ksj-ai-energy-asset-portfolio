@@ -781,6 +781,9 @@ class IPOEvidence:
     search: tuple[str, str]      # 검색 기간 (YYYYMMDD)
     sub_rule: str                # 하위 표본 정의 (문구용)
     as_of: str | None
+    pit: bool = False            # 접수 시점 판정으로 수집한 파일인가 (corp_cls_now 열)
+    n_restored: int = 0          # 현재 상장사지만 접수 시점 비상장 → 복원된 표본 (전체 표본 중)
+    n_cls_excluded: int = 0      # 로그: 예전 corp_cls 필터로 제외된 신고서 (look-ahead bias 흔적)
 
     @property
     def sample(self) -> IPOSample:
@@ -844,9 +847,13 @@ def ipo_evidence(cfg: Mapping) -> IPOEvidence | Unavailable:
     chosen = "sub" if sub_s.n >= sub_min else "full"
     min_n = int(icfg.get("min_n", 10))
     m = meta_info(path)
+    pit = "corp_cls_now" in df
+    restored = int(t["corp_cls_now"].astype(str).isin(["Y", "K", "N"]).sum()) if pit else 0
+    lg = _read(_inp(cfg, "ipo_log")[0]) if "ipo_log" in v3["inputs"] else None
+    n_cls = int((lg["decision"] == "excluded_cls").sum()) if lg is not None and "decision" in lg else 0
     return IPOEvidence(full_s, sub_s, chosen, len(df), (sub_s if chosen == "sub" else full_s).n >= min_n, min_n, sub_min,
                        int(icfg.get("target_n", 40)), (str(icfg.get("bgn_de", "")), str(icfg.get("end_de", ""))),
-                       f"{'·'.join(sorted(mk))} 또는 공모금액 {mo:,.0f}억원 이상", m.get("as_of"))
+                       f"{'·'.join(sorted(mk))} 또는 공모금액 {mo:,.0f}억원 이상", m.get("as_of"), pit, restored, n_cls)
 
 
 def apply_evidence(a: dict[str, Assumption], ev: IPOEvidence | Unavailable) -> None:

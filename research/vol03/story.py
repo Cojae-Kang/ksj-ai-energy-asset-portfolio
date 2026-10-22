@@ -1076,8 +1076,9 @@ class Story:
         used = "" if ev.used else self.T(f"; n < {ev.min_n}이라 밴드는 몬테카를로 유지", f"; n < {ev.min_n}, range stays Monte Carlo")
         d8 = lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]}" if len(x) == 8 else x  # noqa: E731
         sa, sb = d8(ev.search[0]), d8(ev.search[1])
-        short = (self.T(f" 표본 {ev.full.n}건 < 목표 {ev.target_n}건(검색 {sa}~{sb} 중 실제 신고일 범위가 좁음)",
-                        f" Sample {ev.full.n} < target {ev.target_n} (actual filing dates cover only part of {sa} to {sb})")
+        why = (self.T("현재 상장 상태로 거른 표본 — 접수 시점 판정으로 재수집 예정", "filtered on today's listing status — to be re-collected at filing date")
+               if ev.n_cls_excluded else self.T(f"검색 {sa}~{sb} 중 실제 신고일 범위가 좁음", f"actual filing dates cover only part of {sa} to {sb}"))
+        short = (self.T(f" 표본 {ev.full.n}건 < 목표 {ev.target_n}건({why})", f" Sample {ev.full.n} < target {ev.target_n} ({why})")
                  if ev.full.n < ev.target_n else "")
         return Cell(title=self.T(f"국내 IPO 할인율({self.ipo_label()}): 하단 중앙값 {ml * 100:.0f}% · 상단 {mh * 100:.0f}% — Target 밴드는 분포의 P{pos * 100:.0f}",
                                  f"Korean IPO discounts ({self.ipo_label()}): median {ml * 100:.0f}% (low) · {mh * 100:.0f}% (high) — Target's range at P{pos * 100:.0f}"),
@@ -1444,10 +1445,26 @@ class Story:
                   note=self.T("시총은 상장사(company_tickers 티커) 기준, 재무는 companyfacts 법인 기준 — 다르면 배수에서 제외(R3). 수동 확인은 근거 URL·확인일과 함께 기록, 자동 판정은 보존." + mnote_kr,
                               "Market cap follows the listed entity (ticker map), financials the companyfacts filer — a mismatch drops the multiple (R3). Manual checks are recorded with URL and date; the automatic verdict is kept." + mnote_en)
                   ) if erows else self.pending(self.T("SEC 재무 주체 검사", "SEC entity check"), ["sec"], self.T("SEC 수집 후", "After SEC collection"))
+        pit = self.pit_line()
+        if pit:
+            c1.note = c1.note + " " + pit
         return Page("full", "A3", self.T("데이터 노트: 출처·기준일과 SEC 재무 주체 검사", "Data notes: sources, dates and the SEC entity check"),
                     self.T(f"시리즈 기준일 {f.as_of} · 국내 KRX {f.peers.t1 if ok(f.peers) else '—'} · SEC {f.ovs.sec_as_of if ok(f.ovs) else '—'} · 원/달러 {f.fx:,.1f} ({f.fx_date})" if f.fx else f"시리즈 기준일 {f.as_of}",
                            f"Series as-of {f.as_of} · KRX {f.peers.t1 if ok(f.peers) else '—'} · SEC {f.ovs.sec_as_of if ok(f.ovs) else '—'} · USD/KRW {f.fx:,.1f} ({f.fx_date})" if f.fx else f"Series as-of {f.as_of}"),
                     [c1, c2], grid="2x1")
+
+    def pit_line(self) -> str:
+        """검증 사례 한 줄: DART corp_cls(현재 상태)로 IPO를 고르면 생기는 look-ahead bias와 처리."""
+        ev = self.f.ipo
+        if not ok(ev):
+            return ""
+        if ev.pit:
+            return self.T(f"검증 사례: DART 회사구분(corp_cls)은 현재 상장 상태라 IPO 필터로 쓰면 이후 상장한 회사가 빠진다(시점 착오) → 접수 시점 판정(상장일 > 접수일 · 원문 IPO 문구)으로 {ev.n_restored}건 복원.",
+                          f"Check: DART corp_cls is today's listing status, so filtering on it drops firms that listed later (look-ahead) → classified at filing date (listing date > filing date, IPO wording); {ev.n_restored} filings restored.")
+        if ev.n_cls_excluded:
+            return self.T(f"검증 사례: 현재 표본은 DART 회사구분(corp_cls, 현재 상장 상태)으로 걸러 이후 상장한 회사의 신고서 {ev.n_cls_excluded:,}건이 빠짐(시점 착오) → 접수 시점 판정으로 재수집 예정.",
+                          f"Check: the current sample filters on DART corp_cls (today's status), dropping {ev.n_cls_excluded:,} filings by firms that listed later (look-ahead) → to be re-collected with filing-date classification.")
+        return ""
 
     BUILT_WITH_KR = "구현: AI 코딩 도구(Claude Code)로 데이터 연결·배수 계산·몬테카를로·보고서 생성 코드를 작성. 질문 설계, 비교기업·가정 판단, 숫자 검증은 저자."
     BUILT_WITH_EN = "Built with an AI coding tool (Claude Code) for data links, multiples, Monte Carlo and report generation; question design, peer and assumption judgments and number checks by the author."
@@ -1461,7 +1478,8 @@ class Story:
         url = self.cfg["research"]["repo_url"]
         c1 = Cell(title=self.T("데이터 → 배수 → 공모가 → 검증·보고서", "Data → multiples → price → checks and report"), src=["ksj"], chart_key="method",
                   chart=charts.flow4(steps, self.c), strip=self.T(self.BUILT_WITH_KR, self.BUILT_WITH_EN),
-                  note=self.T(f"전체 코드·데이터 출처: GitHub {url}", f"Full code and data sources: GitHub {url}"))
+                  note=self.T(f"시점 원칙: 표본 선정은 그 시점에 알 수 있던 정보로만 — IPO 여부는 현재 상장 상태(DART corp_cls)가 아니라 신고서 접수 시점(상장일 > 접수일 · 원문의 희망공모가·수요예측 문구)으로 판정. 전체 코드·데이터 출처: GitHub {url}",
+                              f"Point-in-time rule: samples use only what was knowable then — an IPO is judged at the filing date (listing date > filing date, range and book-building wording), not by today's DART corp_cls. Full code and data sources: GitHub {url}"))
         return Page("full", "A4", self.T("분석 방법: 같은 규칙을 모든 피어·시점에, 결론은 계산에서", "Methodology: one rule set for every peer and date; conclusions from the numbers"),
                     self.T("모든 숫자는 데이터와 가정에서 계산하고, 결론 문장도 계산 결과로 만든다", "Every figure is calculated from data and assumptions, and conclusions are generated from the results"),
                     [c1], grid="1x1")

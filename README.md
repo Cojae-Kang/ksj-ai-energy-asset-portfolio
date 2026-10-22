@@ -53,7 +53,9 @@ python -m research.vol01.fetch_extra --asof 2026-10-20              # Vol.1 추�
 python -m research.vol01.build                                      # 국문·영문 PDF + README 핵심 발견·그림 갱신
 python -m research.vol02.build                                      # Vol.2 데이터센터 PF 국문·영문 PDF (가정: data/manual/vol02_assumptions.csv)
 python -m research.vol03.fetch_extra --asof 2026-10-20              # Vol.3 미국 피어 종가(yfinance)·SEC 주식수 이력·D&A (로컬 전용)
-python -m research.vol03.ipo_discounts --asof 2026-10-20            # Vol.3 국내 IPO 할인율 실증 (월 구간·전체 페이지 검색, 회사별 밴드 첫 신고서 1건 → docs/qa/vol03_ipo_discounts.md)
+python -m research.vol03.ipo_discounts --asof 2026-10-20 --listing-dates   # KRX 종목기본정보 → 상장일 표 (IPO 접수 시점 판정용, 원문 다운로드 절감)
+python -m research.vol03.ipo_discounts --asof 2026-10-20            # Vol.3 국내 IPO 할인율 실증 (접수 시점 판정: 상장일 > 접수일 · 원문 IPO 문구, corp_cls 미사용 → docs/qa/vol03_ipo_discounts.md)
+python -m research.vol03.ipo_discounts --estimate-log              # 기존 로그로 예전 corp_cls 제외분 중 IPO 추정 (네트워크 없음 → docs/qa/vol03_ipo_pit_estimate.md)
 python -m src.data_fetch.dart --debt-candidates 267260             # 총차입금 계정 매핑 점검 (로컬 원자료, API 호출 없음; 회사별 대용 계정은 config total_debt.company_overrides)
 python -m src.data_fetch.dart --da-candidates 298040               # D&A(감가상각비·상각비) 계정 후보 점검 (로컬 원자료) → 없으면 data/manual/vol03_peer_manual.csv
 python -m research.vol03.build                                      # Vol.3 IPO 희망공모가 밴드 국문·영문 PDF (가정: data/manual/vol03_assumptions.csv)

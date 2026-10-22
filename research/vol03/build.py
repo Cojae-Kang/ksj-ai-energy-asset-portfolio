@@ -259,6 +259,9 @@ def anomalies(f: data.Facts, cfg: Mapping) -> list[str]:
             out.append(f"IPO 할인율 {r['company']}({r['rcept_no']}) {r['discount_low'] * 100:.1f}~{r['discount_high'] * 100:.1f}% — 50% 초과·10% 미만 범위 밖, 원문 확인 필요(분포에는 유지)")
         if ev.full.n < ev.target_n:
             out.append(f"IPO 할인율 표본 {ev.full.n}건(실제 신고일 {ev.full.period[0]}~{ev.full.period[1]}) < 목표 {ev.target_n}건 — 검색 기간 일부만 반영, 분위 신뢰 제한")
+        if ev.n_cls_excluded:
+            out.append(f"IPO 표본이 DART corp_cls(현재 상장 상태)로 걸러짐 — 이후 상장한 회사의 신고서 {ev.n_cls_excluded:,}건 제외(look-ahead bias). "
+                       "남은 표본은 철회·지연 딜과 아직 상장 전 딜에 치우침 → 접수 시점 판정으로 재수집 필요")
         if ev.chosen == "full":
             out.append(f"Target(공모 2,000억원대)과 비슷한 하위 표본({ev.sub_rule}) {ev.sub.n}건 < {ev.sub_min_n}건 — 전체 표본 분포로 대체")
     if ok(f.mult) and f.mult.applied_group == "domestic":
@@ -297,7 +300,10 @@ def todo_items(f: data.Facts, cfg: Mapping) -> list[str]:
                        "후보가 없으면 무차입, 이름만 다르면 IFRS account_id 2차 매칭(id_fallback)으로 재수집")
     if not ok(f.ipo):
         out.append(f"[data] 국내 IPO 할인율 실증: python -m research.vol03.ipo_discounts --asof {f.as_of} (DART 증권신고서, 로컬)")
-    elif f.ipo.full.n < f.ipo.target_n:
+    elif f.ipo.n_cls_excluded or not f.ipo.pit:
+        out.append(f"[data] IPO 표본 접수 시점 재판정: python -m research.vol03.ipo_discounts --asof {f.as_of} (corp_cls 필터 제거, 캐시 원문 재사용; "
+                   f"상장일 표는 --listing-dates로 먼저 만들면 원문 다운로드가 줄어듦)")
+    if ok(f.ipo) and f.ipo.full.n < f.ipo.target_n:
         out.append(f"[data] IPO 할인율 표본 {f.ipo.full.n}건 < 목표 {f.ipo.target_n}건 (실제 신고일 {f.ipo.full.period[0]}~{f.ipo.full.period[1]}) — "
                    f"python -m research.vol03.ipo_discounts --asof {f.as_of} (월 구간·전체 페이지 재검색, 로컬)")
     if ok(f.peers) and f.peers.table["debt_proxy"].any():
@@ -374,6 +380,16 @@ def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
         L += [f"- 파일 {ev.n_all}행 · 밴드 기준 표본: {'하위 표본' if ev.chosen == 'sub' else '전체'}"
               + ("" if ev.chosen == "sub" else f" (하위 표본 {ev.sub.n}건 < {ev.sub_min_n}건)")
               + (f" → n ≥ {ev.min_n}: 밴드 할인율에 사용(sourced)" if ev.used else f" → n < {ev.min_n}: 몬테카를로 밴드 유지")]
+        L += [f"- 접수 시점 판정: {'적용 — 복원 ' + str(ev.n_restored) + '건(현재 상장사지만 접수 때 비상장)' if ev.pit else '미적용(이전 버전 파일)'}"
+              + (f" · 로그의 예전 corp_cls 필터 제외 {ev.n_cls_excluded:,}건 (look-ahead bias)" if ev.n_cls_excluded else "")]
+        if ev.n_cls_excluded:
+            try:
+                from research.vol03 import ipo_discounts as idc
+                e = idc.estimate_from_log(data._read(data._inp(cfg, "ipo_log")[0]), cfg["research"]["vol03"]["ipo_discounts"])
+                L += [f"- 로그 기준 추정: 제외된 비스팩 {e['base_init_companies']}개사 중 IPO 약 {e['ipo_est']:.0f}개사(범위 {e['ipo_lo']:.0f}~{e['ipo_hi']:.0f}) — "
+                      f"상장사 유상증자 월 {e['rate']:.1f}건(최근 {', '.join(e['tail_months'])} 기준) 차감"]
+            except Exception as e_:  # noqa: BLE001
+                L += [f"- 로그 기준 추정 생략: {type(e_).__name__}"]
         if ev.full.n < ev.target_n:
             L += [f"- 목표 표본 {ev.target_n}건 미달 ({ev.full.n}건) — 월 구간 재검색: {ev_cmd(f)}"]
         out_t = ev.full.table[ev.full.table["outlier"]]

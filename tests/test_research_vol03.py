@@ -34,6 +34,7 @@ def cfg(tmp_path):
     for k in ("market_points", "global_market", "market_manual", "peer_extra", "peer_manual", "ipo_discounts", "ipo_log"):
         v["inputs"][k] = str(tmp_path / f"{k}.csv")          # 미국 시세·D&A·IPO 실증 없음 (수집 전 상태를 재현)
     v["ipo_discounts"]["qa_report"] = str(tmp_path / "qa_ipo.md")
+    v["ipo_discounts"]["listing_sources"] = {"krx_raw_globs": [], "processed": str(tmp_path / "listing.csv"), "manual": str(tmp_path / "listing_manual.csv")}
     c["monte_carlo"]["n_sims"] = 4000
     v["monte_carlo"]["convergence"] = [500, 1000, 2000, 4000]
     return c
@@ -478,21 +479,37 @@ def test_parse_prospectus_fixtures():
     assert lo["confidence"] == "low" and math.isnan(lo["value_per_share"])
 
 
+DOC_NOBAND = "<p>수요예측 일정 미정. 코스닥시장 상장 예정. 공모가격은 추후 정정신고서로 기재</p>"
+DOC_RIGHTS = ("<p>주주배정 후 실권주 일반공모 방식의 유상증자. 1차 발행가액 8,000원, 확정발행가액은 청약일 전 산정. "
+              "주당 평가가액 같은 문구는 없음. 기존 주주 신주인수권증서</p>")
+
+
 def test_pick_filings_and_run_with_fake_client(cfg, tmp_path):
     from research.vol03 import ipo_discounts as ip
+    F = lambda code, name, cls, rno, dt, nm="증권신고서(지분증권)", sc="": {"corp_code": code, "corp_name": name, "corp_cls": cls,  # noqa: E731
+                                                                         "report_nm": nm, "rcept_no": rno, "rcept_dt": dt, "stock_code": sc}
     found = pd.DataFrame([
-        {"corp_code": "001", "corp_name": "가나다", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250301000001", "rcept_dt": "20250301", "stock_code": ""},
-        {"corp_code": "001", "corp_name": "가나다", "corp_cls": "E", "report_nm": "[기재정정]증권신고서(지분증권)", "rcept_no": "20250320000002", "rcept_dt": "20250320", "stock_code": ""},
-        {"corp_code": "001", "corp_name": "가나다", "corp_cls": "E", "report_nm": "[기재정정]증권신고서(지분증권)", "rcept_no": "20250405000007", "rcept_dt": "20250405", "stock_code": ""},
-        {"corp_code": "002", "corp_name": "라마바", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250401000003", "rcept_dt": "20250401", "stock_code": ""},
-        {"corp_code": "003", "corp_name": "엔에이치스팩30호", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250402000004", "rcept_dt": "20250402", "stock_code": ""},
-        {"corp_code": "004", "corp_name": "상장사", "corp_cls": "Y", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250403000005", "rcept_dt": "20250403", "stock_code": "111111"},
-        {"corp_code": "005", "corp_name": "깨진문서", "corp_cls": "E", "report_nm": "증권신고서(지분증권)", "rcept_no": "20250404000006", "rcept_dt": "20250404", "stock_code": ""}])
+        F("001", "가나다", "E", "20250301000001", "20250301"),
+        F("001", "가나다", "E", "20250320000002", "20250320", "[기재정정]증권신고서(지분증권)"),
+        F("001", "가나다", "E", "20250405000007", "20250405", "[기재정정]증권신고서(지분증권)"),
+        F("002", "라마바", "E", "20250401000003", "20250401"),
+        F("003", "엔에이치스팩30호", "E", "20250402000004", "20250402"),
+        F("004", "상장사", "Y", "20250403000005", "20250403", sc="111111"),                   # 상장일 2010 ≤ 접수일 → 원문 없이 제외
+        F("005", "깨진문서", "E", "20250404000006", "20250404"),
+        F("006", "신규상장사", "K", "20250410000008", "20250410", sc="222222"),               # 지금은 상장사, 접수 땐 비상장 → 복원
+        F("007", "유상증자사", "K", "20250415000009", "20250415", sc="333333"),               # 상장일 모름 → 원문(유상증자)으로 제외
+        F("007", "유상증자사", "K", "20250425000010", "20250425", "[발행조건확정]증권신고서(지분증권)", "333333")])
     icfg = cfg["research"]["vol03"]["ipo_discounts"]
+    pd.DataFrame([{"stock_code": "111111", "list_dt": "2010-05-03"}, {"stock_code": "222222", "list_dt": "20250601"}]).to_csv(
+        icfg["listing_sources"]["manual"], index=False)
     cand, log0 = ip.pick_filings(found, icfg)
-    assert list(cand["rcept_no"]) == ["20250301000001", "20250320000002", "20250405000007", "20250401000003", "20250404000006"]  # 회사·접수 순
-    assert {r["decision"] for r in log0} == {"excluded_cls", "excluded_name"}
-    docs = {"1": DOC_LOW, "2": DOC_HIGH.replace("</body>", "<p>공모주식수 : 8,000,000주</p></body>"), "7": DOC_MISMATCH, "3": DOC_IMPLIED}
+    assert "004" in set(cand["corp_code"]) and "006" in set(cand["corp_code"])          # 현재 corp_cls로 거르지 않음
+    assert {r["decision"] for r in log0} == {"excluded_name"}
+    old, log_old = ip.pick_filings(found, {**icfg, "corp_cls_filter": True})              # 예전 방식이면 006까지 빠짐 (look-ahead)
+    assert "006" not in set(old["corp_code"]) and sum(r["decision"] == "excluded_cls" for r in log_old) == 4
+    docs = {"01": DOC_NOBAND, "02": DOC_HIGH.replace("</body>", "<p>공모주식수 : 8,000,000주</p></body>"), "07": DOC_MISMATCH,
+            "03": DOC_IMPLIED, "08": DOC_IMPLIED.replace("40,000원", "50,000원"), "09": DOC_RIGHTS, "10": DOC_RIGHTS}
+    downloaded = []
 
     class Fake:
         large_dir = tmp_path / "large"
@@ -502,23 +519,82 @@ def test_pick_filings_and_run_with_fake_client(cfg, tmp_path):
             return found, []
 
         def download_document(self, rno):
+            downloaded.append(rno)
             p_ = tmp_path / f"{rno}.zip"
-            p_.write_bytes(b"not a zip" if rno.endswith("6") else _zip(docs[rno[-1]]))
+            p_.write_bytes(b"not a zip" if rno.endswith("06") else _zip(docs[rno[-2:]]))
             return p_
     r = ip.run(cfg, "2026-10-20", client=Fake())
-    df = pd.read_csv(cfg["research"]["vol03"]["inputs"]["ipo_discounts"], dtype={"rcept_no": str, "corp_code": str})
-    assert list(df.columns) == ip.COLUMNS and len(df) == 2 and r.status == "PARTIAL" and "깨진문서" in r.message
+    df = pd.read_csv(cfg["research"]["vol03"]["inputs"]["ipo_discounts"], dtype={"rcept_no": str, "corp_code": str, "list_dt": str})
+    assert list(df.columns) == ip.COLUMNS and len(df) == 3 and r.status == "PARTIAL" and "깨진문서" in r.message
     g = df.set_index("corp_code")
     assert g.loc["001", "rcept_no"] == "20250320000002"          # 밴드가 처음 나온 신고서 (첫 신고서는 밴드 없음, 이후 정정은 기록만)
     assert g.loc["001", "offer_amount_low"] == pytest.approx(8e6 * 21000 / 1e8) and g.loc["001", "offer_amount_high"] == pytest.approx(2000.0)
+    assert g.loc["006", "corp_cls_now"] == "K" and g.loc["006", "list_dt"] == "20250601" and "복원" in g.loc["006", "pit_check"]
+    assert "004" not in g.index and "007" not in g.index
+    assert "20250403000005" not in downloaded and "20250425000010" not in downloaded      # 상장일로 거른 건·유상증자 회사의 이후 신고서는 안 받음
     assert set(df["market"]) == {"KOSPI", "KOSDAQ"} and df["url"].str.contains("dart.fss.or.kr/dsaf001").all()
     assert Path(str(cfg["research"]["vol03"]["inputs"]["ipo_discounts"]).replace(".csv", ".meta.json")).exists()
     lg = pd.read_csv(cfg["research"]["vol03"]["inputs"]["ipo_log"], dtype=str).set_index("rcept_no")
-    assert lg.loc["20250301000001", "decision"] == "no_band" and lg.loc["20250405000007", "decision"] == "after_first"
-    assert lg.loc["20250320000002", "decision"] == "used" and lg.loc["20250404000006", "decision"] == "download_fail"
-    assert lg.loc["20250402000004", "decision"] == "excluded_name" and lg.loc["20250403000005", "decision"] == "excluded_cls"
+    assert set(lg.reset_index().columns) == set(ip.LOG_COLUMNS)
+    dec = lg["decision"].to_dict()
+    assert dec["20250301000001"] == "no_band" and dec["20250405000007"] == "after_first" and dec["20250320000002"] == "used"
+    assert dec["20250404000006"] == "download_fail" and dec["20250402000004"] == "excluded_name"
+    assert dec["20250403000005"] == "listed_at_filing" and dec["20250415000009"] == "not_ipo_text" and dec["20250425000010"] == "after_not_ipo"
     qa = Path(icfg["qa_report"]).read_text(encoding="utf-8")
-    assert "구간(월)별" in qa and "목표 표본 40건 미달 (2건)" in qa and "원문에서 밴드 미검출 1건" in qa and "2025-03-20~2025-04-01" in qa
+    assert "구간(월)별" in qa and "목표 표본 40건 미달 (3건)" in qa and "원문에서 밴드 미검출 1건" in qa and "2025-03-20~2025-04-10" in qa
+    assert "복원된 건수: 1건" in qa and "listed_at_filing" in qa and "not_ipo_text" in qa
+    # 두 번째 실행: 받은 원문은 캐시에서 다시 쓴다
+    for rno in downloaded:
+        if not rno.endswith("06"):
+            (Fake.large_dir / "documents").mkdir(parents=True, exist_ok=True)
+            (Fake.large_dir / "documents" / f"{rno}.zip").write_bytes((tmp_path / f"{rno}.zip").read_bytes())
+    downloaded.clear()
+    ip.run(cfg, "2026-10-20", client=Fake())
+    assert downloaded == ["20250404000006"]
+
+
+def test_listing_dates_and_ipo_signals(cfg, tmp_path):
+    import json as _json
+    from research.vol03 import ipo_discounts as ip
+    raw = tmp_path / "raw" / "krx"
+    raw.mkdir(parents=True)
+    (raw / "ksq_base_info_20261019.json").write_text(_json.dumps({"OutBlock_1": [{"ISU_SRT_CD": "222222", "LIST_DD": "2025/06/01"}]}), encoding="utf-8")
+    c = copy.deepcopy(cfg)
+    c["paths"]["raw"] = str(tmp_path / "raw")
+    c["research"]["vol03"]["ipo_discounts"]["listing_sources"]["krx_raw_globs"] = ["ksq_base_info_*.json"]
+    pd.DataFrame([{"stock_code": "111111", "list_dt": "2010-05-03"}]).to_csv(c["research"]["vol03"]["ipo_discounts"]["listing_sources"]["manual"], index=False)
+    dates = ip.listing_dates(c)
+    assert dates == {"222222": "20250601", "111111": "20100503"}
+    assert ip.listed_at_filing("222222", "20250410", dates) == (False, "20250601")
+    assert ip.listed_at_filing("111111", "20250410", dates) == (True, "20100503")
+    assert ip.listed_at_filing("", "20250410", dates) == (None, "") and ip.listed_at_filing("999999", "20250410", dates) == (None, "")
+    kw = cfg["research"]["vol03"]["ipo_discounts"]["ipo_keywords"]
+    assert len(ip.ipo_signals(ip.to_text(DOC_IMPLIED), kw)) >= 2 and len(ip.ipo_signals(DOC_HIGH, kw)) >= 2
+    assert len(ip.ipo_signals(DOC_RIGHTS, kw)) == 0
+
+
+def test_estimate_from_log():
+    from research.vol03 import ipo_discounts as ip
+    rows = []
+    for m in range(1, 13):                       # 2025: 매월 상장사 최초 신고서 4건(= IPO 3 + 유상증자 1, 지금은 모두 상장사)
+        for k in range(4):
+            rows.append({"window": f"2025{m:02d}", "corp_name": f"회사{m}_{k}", "corp_code": f"{m:02d}{k}", "corp_cls": "K",
+                         "rcept_dt": f"2025{m:02d}10", "rcept_no": f"r{m}{k}", "report_nm": "증권신고서(지분증권)", "decision": "excluded_cls", "note": ""})
+    for m, (ne, nk) in {"202609": (6, 1), "202610": (5, 1)}.items():   # 최근: 대부분 아직 상장 전(E) → 상장사 최초 신고서 = 유상증자
+        for k in range(ne):
+            rows.append({"window": m, "corp_name": f"E{m}{k}", "corp_code": f"E{m}{k}", "corp_cls": "E", "rcept_dt": m + "05",
+                         "rcept_no": f"e{m}{k}", "report_nm": "증권신고서(지분증권)", "decision": "used", "note": ""})
+        for k in range(nk):
+            rows.append({"window": m, "corp_name": f"K{m}{k}", "corp_code": f"K{m}{k}", "corp_cls": "K", "rcept_dt": m + "05",
+                         "rcept_no": f"k{m}{k}", "report_nm": "증권신고서(지분증권)", "decision": "excluded_cls", "note": ""})
+    rows.append({"window": "202503", "corp_name": "엔에이치스팩1호", "corp_code": "S1", "corp_cls": "K", "rcept_dt": "20250310",
+                 "rcept_no": "s1", "report_nm": "증권신고서(지분증권)", "decision": "excluded_cls", "note": ""})
+    e = ip.estimate_from_log(pd.DataFrame(rows), {"exclude_name_patterns": ["스팩"], "end_de": "20261020"})
+    assert e["rows"] == 51 and e["spac_companies"] == 1 and e["tail_months"] == ["202609", "202610"] and e["tail_listed_inits"] == 2
+    assert e["base_months"] == 12 and e["base_init_companies"] == 48
+    assert e["rate"] == pytest.approx(2 / (1 + 20 / 30)) and e["ipo_lo"] <= e["ipo_est"] <= e["ipo_hi"] <= 48
+    assert e["ipo_est"] == pytest.approx(48 - e["rate"] * 12)
+    assert "IPO 약" in ip.estimate_markdown(e)
 
 
 def test_outlier_flag_and_size_bucket():
@@ -585,6 +661,26 @@ def test_ipo_sub_sample_and_outliers(real_cfg):
     assert "전체 분포 사용" in txt and "이상치" in txt and "2025-01-15" in txt
     from research.vol03 import build as B
     assert any("하위 표본" in x for x in B.anomalies(f, real_cfg)) and any("목표 40건" in x for x in B.todo_items(f, real_cfg))
+
+
+def test_pit_notes_in_a3_a4(real_cfg, tmp_path):
+    from research.vol03.story import Story
+    t = _ipo_rows(12)
+    t["corp_cls_now"] = ["K"] * 5 + ["E"] * 7                        # 접수 시점 판정 파일: 5건은 지금 상장사(복원)
+    t.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
+    f = D.load_facts(real_cfg)
+    assert f.ipo.pit and f.ipo.n_restored == 5 and f.ipo.n_cls_excluded == 0
+    for lang, key in (("kr", "5건 복원"), ("en", "5 filings restored")):
+        by = {p.label: p for p in Story(real_cfg, f, lang).pages()}
+        assert key in by["A3"].cells[0].note and ("시점 원칙" if lang == "kr" else "Point-in-time") in by["A4"].cells[0].note
+    lg = pd.DataFrame([{"window": "202505", "corp_name": "x", "corp_code": "1", "corp_cls": "K", "rcept_dt": "20250510", "rcept_no": "1",
+                        "report_nm": "증권신고서(지분증권)", "decision": "excluded_cls", "note": ""}] * 3)
+    lg.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_log"], index=False)
+    t.drop(columns="corp_cls_now").to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
+    f = D.load_facts(real_cfg)
+    assert not f.ipo.pit and f.ipo.n_cls_excluded == 3
+    a3 = {p.label: p for p in Story(real_cfg, f, "kr").pages()}["A3"].cells[0].note
+    assert "3건이 빠짐" in a3 and "재수집 예정" in a3
 
 
 def test_breakdown_shortfall_without_log():

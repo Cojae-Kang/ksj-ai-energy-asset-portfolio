@@ -216,6 +216,7 @@ data_fetch:
     endpoints:
       daily_trade: "sto/stk_bydd_trd"   # 유가증권 일별매매정보 (승인됨)
       base_info: "sto/stk_isu_base_info" # 유가증권 종목기본정보 (승인됨)
+      ksq_base_info: "sto/ksq_isu_base_info" # ASSUMPTION(verify): 코스닥 종목기본정보 — API 이용 신청·승인 필요
     response_block: "OutBlock_1"
     request_delay_sec: 0.5
     max_lookback_days: 10               # 기준일이 휴장일이면 직전 영업일까지 소급
@@ -802,13 +803,24 @@ research:
       pblntf_ty: "C"                    # 발행공시
       pblntf_detail_ty: "C001"          # ASSUMPTION(verify): 증권신고서(지분증권)
       report_nm_contains: ["증권신고서(지분증권)"]
-      corp_cls: ["E"]                   # 신청 시점 비상장(기타법인) = 신규 상장 후보. 상장사의 유상증자 신고서 제외
+      # IPO 여부는 '신고서 접수 시점' 기준으로 판정 (DART corp_cls는 현재 상장 상태 → 필터로 쓰면 이후 상장한 회사가 빠지는 look-ahead bias)
+      #   (b) 상장일 확인: 검색 결과 stock_code(현재) + 로컬 KRX 종목기본정보 LIST_DD → 상장일 ≤ 접수일이면 원문 없이 제외(상장사 유상증자 등)
+      #   (a) 원문 확인: 희망공모가 밴드 + IPO 문구(ipo_keywords) 둘 다 있어야 사용. 상장일을 모르면 (a)만으로 판정
+      corp_cls_filter: false            # true면 예전 방식(현재 corp_cls ∈ corp_cls)으로 거름 — 비교·재현용
+      corp_cls: ["E"]
+      ipo_keywords: ["수요\\s*예측", "상장\\s*(?:할\\s*)?예정", "신규\\s*상장", "상장\\s*예비\\s*심사", "상장\\s*신청", "희망\\s*공모\\s*가"]
+      ipo_min_keywords: 2               # 서로 다른 IPO 문구가 이 개수 이상 (밴드 문구 포함)
+      listing_sources:                  # 상장일 조회 (로컬 파일만 읽음, 없으면 (a)만으로 판정)
+        krx_raw_globs: ["base_info_*.json", "ksq_base_info_*.json"]   # data/raw/krx/ (KRX Open API OutBlock_1: ISU_SRT_CD, LIST_DD)
+        processed: data/processed/vol03_listing_dates.csv            # --listing-dates로 만든 상장일 표
+        manual: data/manual/vol03_listing_dates_manual.csv           # 수동 입력 (KIND 상장일 등)
+      listing_endpoints: ["base_info", "ksq_base_info"]               # --listing-dates가 부르는 KRX 종목기본정보 (data_fetch.krx.endpoints)
       window_months: 1                  # 공시검색 구간 (월 단위). 구간마다 total_page 끝까지 순회
       max_pages: 100                    # 구간당 페이지 상한 (100건 × 100쪽 — 넉넉히, 초과 시 기록)
       page_count: 100
       exclude_name_patterns: ["스팩", "기업인수목적", "리츠", "부동산투자회사", "인프라"]
       markets: {"유가증권시장": "KOSPI", "코스닥시장": "KOSDAQ"}
-      max_documents: 400                # 원문 다운로드 상한 (호출 간격은 data_fetch.dart.request_delay_sec)
+      max_documents: 3000               # 새 원문 다운로드 상한 (캐시 재사용분 제외, 호출 간격은 data_fetch.dart.request_delay_sec)
       min_n: 10                         # 이 이상이면 band_discount = 분포 중앙값(sourced), 아니면 몬테카를로 밴드 유지
       target_n: 40                      # 표본 목표 (미달이면 요약에 사유)
       use_confidence: ["high", "medium"]
@@ -821,3 +833,4 @@ research:
       outlier_high: 0.50
       outlier_low: 0.10
       qa_report: docs/qa/vol03_ipo_discounts.md   # 구간·시장·규모별 표본 요약 (ipo_discounts 실행 시 갱신)
+      estimate_report: docs/qa/vol03_ipo_pit_estimate.md   # --estimate-log: 예전 corp_cls 제외분 중 IPO 추정 (로그만 사용)
