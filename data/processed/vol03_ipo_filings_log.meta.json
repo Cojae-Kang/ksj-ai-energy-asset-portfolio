@@ -1,0 +1,8 @@
+{
+  "source": "Open DART list.json",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-22T15:39:07+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "신고서별 처리: used(사용) · after_first(같은 회사 이후 신고서, 기록만) · no_band · low_confidence · download_fail · excluded_*"
+}
