@@ -39,10 +39,20 @@ LABELS: dict[str, tuple[str, str]] = {
     "growth_mean": ("성장률 분포 평균 (로그)", "Growth mean (log)"), "growth_sd": ("성장률 분포 표준편차 (로그)", "Growth s.d. (log)"),
     "per_shape": ("1년 후 PER 분포", "1-yr-ahead P/E distribution"),
     "band_q_low": ("밴드 하단 분위", "Band low quantile"), "band_q_high": ("밴드 상단 분위", "Band high quantile"),
+    "npm_low": ("1년 후 순이익률 최소", "1-yr net margin min"), "npm_mode": ("1년 후 순이익률 최빈", "1-yr net margin mode"),
+    "npm_high": ("1년 후 순이익률 최대", "1-yr net margin max"), "npm_shape": ("1년 후 순이익률 분포", "1-yr net margin distribution"),
+    "corr_growth_per": ("상관: 성장률·PER", "Corr.: growth–P/E"), "corr_growth_npm": ("상관: 성장률·순이익률", "Corr.: growth–margin"),
+    "corr_npm_per": ("상관: 순이익률·PER", "Corr.: margin–P/E"),
+    "inst_lockup_2025": ("기관 의무보유확약 비율 2025", "Institutional lock-up commitments 2025"),
+    "inst_lockup_2024": ("기관 의무보유확약 비율 2024", "Institutional lock-up commitments 2024"),
+    "inst_lockup_kospi_2025": ("기관 의무보유확약 비율 코스피 2025", "Institutional lock-up commitments, KOSPI 2025"),
+    "ipo_in_band_2025": ("2025 IPO 공모가 밴드 안 결정 비율", "2025 IPOs priced within the range"),
+    "top_of_band_h2_2025": ("2025 하반기 밴드 최상단 결정 비율", "2025 H2 IPOs priced at the top"),
 }
 REQUIRED_TARGET = ["revenue", "npm", "shares_pre"]
 REQUIRED_DEAL = ["offer_ratio", "new_share_ratio"]
 REQUIRED_MC = ["growth_mean", "growth_sd", "band_q_low", "band_q_high"]
+REQUIRED_DP = ["npm_low", "npm_mode", "npm_high"]
 
 
 @dataclass
@@ -218,6 +228,7 @@ class Overseas:
     sec_as_of: str | None
     sec_source: str
     market_source: str | None
+    debt: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=["ticker", "fiscal_year", "component"]))  # 총차입금 구성
 
 
 def _market_frames(cfg: Mapping) -> tuple[pd.DataFrame, str | None]:
@@ -282,7 +293,9 @@ def overseas(cfg: Mapping) -> Overseas | Unavailable:
         ent["ticker"] = ent["ticker"].str.upper()
     mk, label = _market_frames(cfg)
     m = meta_info(_inp(cfg, "sec_financials")[0])
-    return Overseas(f, sh, ent, mk, _extra_frames(cfg), m.get("as_of"), m.get("source", "SEC EDGAR"), label)
+    dbt = _read(_inp(cfg, "sec_debt")[0]) if "sec_debt" in cfg["research"]["vol03"]["inputs"] else None
+    dbt = dbt.assign(ticker=dbt["ticker"].str.upper()) if dbt is not None else pd.DataFrame(columns=["ticker", "fiscal_year", "component"])
+    return Overseas(f, sh, ent, mk, _extra_frames(cfg), m.get("as_of"), m.get("source", "SEC EDGAR"), label, dbt)
 
 
 def fx_on(cfg: Mapping, as_of: str) -> tuple[float | None, str | None]:
@@ -388,7 +401,9 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
             r = mk.loc["start_2023"]
             mcap0 = r["close"] * r["shares_sec"] / 1e6
         debt, cash = g(fy1, "total_debt"), g(fy1, "cash")
-        rows.append({**base, "mcap1": mcap1, "mcap0": mcap0, "ni1": g(fy1, "net_income"), "ni0": ni0,
+        dc = ovs.debt[(ovs.debt["ticker"] == tk) & (ovs.debt["fiscal_year"] == f"FY{fy1}A")] if not ovs.debt.empty else ovs.debt
+        lt_tag = bool((dc["component"] == "long_term_debt_incl_current").any()) if not dc.empty else None
+        rows.append({**base, "mcap1": mcap1, "mcap0": mcap0, "ni1": g(fy1, "net_income"), "ni0": ni0, "lt_debt_tag": lt_tag,
                      "rev1": g(fy1, "revenue"), "rev0": g(fy0, "revenue"), "oi1": g(fy1, "operating_income"),
                      "net_debt1": debt - cash if finite(debt) and finite(cash) else float("nan"), "debt_missing": not finite(debt),
                      "entity_warn": warn, "has_fin": finite(g(fy1, "net_income")), "listed0": finite(mcap0),
@@ -413,6 +428,12 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
     t["ebitda1"] = t["oi1"] + t["da1"] if ev_basis == "EBITDA" else t["oi1"]
     t["evm1"] = [im.multiple(a, b) for a, b in zip(t["ev1"], t["ebitda1"])]
     t["sev"] = [im.screen_ev(m, e, v, ev_max=float(out["ev_ebitda_max"])) for m, e, v in zip(t["evm1"], t["ebitda1"], t["ev1"])]
+    # R6 수동 보류: 표에는 남기고 PER·EV 배수에서 제외 (근거 지표는 데이터로 계산해 함께 보관)
+    hold = {k.upper(): v for k, v in (mcfg.get("hold_out") or {}).items()}
+    t["held"] = t["ticker"].isin(hold)
+    t["ni_to_oi"] = [a / b if finite(a) and finite(b) and b > 0 else float("nan") for a, b in zip(t["ni1"], t["oi1"])]
+    for col in ("s1", "s0", "sev"):
+        t[col] = [im.Screen(sc.value, False, "R6") if h else sc for sc, h in zip(t[col], t["held"])]
     # 3단계 선정
     pending_any = False
     st2, st3, status, why = [], [], [], []
@@ -421,6 +442,8 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
         pending_any |= bool(pend and r["group"] == "core")
         if not r["has_fin"]:
             s2 = "no_fin"
+        elif r["held"] and not pend:
+            s2 = "R6"
         elif r["s1"].rule in ("R1", "R2", "R3"):
             s2 = r["s1"].rule
         elif pend:
@@ -430,7 +453,7 @@ def build_peers(cfg: Mapping, dom: Domestic | Unavailable, ovs: Overseas | Unava
         s3 = r["similarity"] if r["group"] in ("domestic",) else ("low" if r["group"] == "excluded" else r["similarity"])
         st2.append(s2)
         st3.append(s3)
-        status.append(_status_text(s2, s3, r["group"], pend))
+        status.append("held" if s2 == "R6" else _status_text(s2, s3, r["group"], pend))
         why.append(s2 if s2 not in ("pass", "pending") else ("step3" if status[-1] == "excluded" else ""))
     t["step2"], t["step3"], t["status"], t["why"] = st2, st3, status, why
     flags = im.flag_high({r["ticker"]: r["per1"] for _, r in t[t["status"] == "applied"].iterrows() if r["group"] == "domestic"},
@@ -546,6 +569,10 @@ def derive(cfg: Mapping, dom: Domestic, pe: Peers | Unavailable) -> Derived:
         if finite(r) and r > 0:
             hist[fy] = {"opm": sum(dom.val(t, fy, "operating_income") for t in members) / r,
                         "npm": sum(dom.val(t, fy, "net_income") for t in members) / r, "revenue": r}
+    if fy0 in hist and fy1 in hist:
+        vals["peer_npm_start"] = (hist[fy0]["npm"], float("nan"), float("nan"))
+        ni_sum = sum(h["npm"] * h["revenue"] for h in hist.values())
+        vals["peer_npm_cycle"] = (ni_sum / sum(h["revenue"] for h in hist.values()), float("nan"), float("nan"))
     return Derived(vals, d, obs, members, hist)
 
 
@@ -581,6 +608,7 @@ class Valuation:
     ev_per_share: float | None
     rev26: float
     ni26: float
+    nn: dict | None = None            # 정상화 이익 × 정상화 배수: npm, per, ni, equity, per_share
 
 
 def valuation(cfg: Mapping, a: Mapping[str, Assumption], mu: Multiples) -> Valuation | Unavailable:
@@ -604,8 +632,13 @@ def valuation(cfg: Mapping, a: Mapping[str, Assumption], mu: Multiples) -> Valua
     ev_eq = mu.ev_applied * ev_base - nd if finite(mu.ev_applied) and finite(ev_base) and nd is not None else None
     g = a["revenue_growth"].value
     rev26 = rev * (1 + g) if g is not None else float("nan")
+    nn = None
+    if a["npm_mode"].value is not None:
+        nm_npm, nm_per = float(a["npm_mode"].value), mu.applied("normalized")
+        nn = {"npm": nm_npm, "per": nm_per, "ni": rev * nm_npm, "equity": rev * nm_npm * nm_per,
+              "per_share": im.per_share(rev * nm_npm * nm_per, sh.post)}
     return Valuation(rev, ni, oi, nd, ev_base, sh, eq, ps, grid, sens, rows, ev_eq,
-                     im.per_share(ev_eq, sh.post) if ev_eq is not None else None, rev26, rev26 * npm)
+                     im.per_share(ev_eq, sh.post) if ev_eq is not None else None, rev26, rev26 * npm, nn)
 
 
 @dataclass
@@ -614,9 +647,18 @@ class Band:
     high: float
     d_low: float            # 상단 가격의 할인율 (작은 값)
     d_high: float           # 하단 가격의 할인율
-    basis: str              # "config" | "mc"
+    basis: str              # "evidence"(국내 IPO 할인율 분포) | "config"(사용자 입력) | "mc"(몬테카를로 분위)
     raw_low: float
     raw_high: float
+
+
+def band_mc(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation, mc: "MCFacts") -> Band:
+    """몬테카를로 분위 밴드 (이중 고점 밴드에 사용)."""
+    tick = float(cfg["research"]["vol03"].get("price_tick") or 0)
+    v0 = val.per_share["current"]
+    lo_p, hi_p = mc.result.q(float(a["band_q_low"].value)), mc.result.q(float(a["band_q_high"].value))
+    lo_r, hi_r = im.round_price(lo_p, tick), im.round_price(hi_p, tick)
+    return Band(lo_r, hi_r, im.implied_discount(v0, hi_r), im.implied_discount(v0, lo_r), "mc", lo_p, hi_p)
 
 
 def band_from(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation, mc: "MCFacts | Unavailable") -> Band | Unavailable:
@@ -625,7 +667,7 @@ def band_from(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation, mc: "MC
     lo_d, hi_d = a["band_discount_low"].value, a["band_discount_high"].value
     if lo_d is not None and hi_d is not None:
         hi_p, lo_p = v0 * (1 - lo_d), v0 * (1 - hi_d)
-        basis = "config"
+        basis = "evidence" if a["band_discount_low"].origin == "evidence" else "config"
     elif ok(mc):
         lo_p, hi_p = mc.result.q(float(a["band_q_low"].value)), mc.result.q(float(a["band_q_high"].value))
         basis = "mc"
@@ -648,9 +690,17 @@ class MCFacts:
     seed: int
     required: dict[float, float]       # 분위 q → 필요 할인율 (= 1 − Pq ÷ 주당 평가가액)
     loss_grid: dict[float, float]      # 할인율 → 1년 후 손실 확률
+    mode: str = "base"                 # base | dp | stress
+    npm_tri: tuple | None = None
+    corr: np.ndarray | None = None
+    se_p50: float = float("nan")       # P50 배치 표준오차(10개 배치) ÷ P50 — 단계 비교와 별도의 오차 진단
+    check_n: int = 0                   # 진단용 대규모 재실행 횟수 (같은 seed)
+    check_p50: float = float("nan")    # 그 P50 (보고값 = n회 결과, 진단은 결론 불변 확인용)
 
 
-def run_mc(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation | Unavailable, mu: Multiples | Unavailable) -> MCFacts | Unavailable:
+def run_mc(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation | Unavailable, mu: Multiples | Unavailable,
+           mode: str = "base") -> MCFacts | Unavailable:
+    """mode: base = 현재 기준(순이익률 고정) / dp = 이중 고점(순이익률 삼각분포, 상관 = config) / stress = 이중 고점 + 동조 상관."""
     if not ok(val):
         return Unavailable(val.reason, val.reason_en, val.missing)
     if not ok(mu):
@@ -663,12 +713,84 @@ def run_mc(cfg: Mapping, a: Mapping[str, Assumption], val: Valuation | Unavailab
         return Unavailable("배수 시나리오 없음", "Multiple scenarios missing", ["conservative"])
     mc_cfg = cfg["research"]["vol03"]["monte_carlo"]
     n, seed = int(cfg["monte_carlo"]["n_sims"]), int(cfg["monte_carlo"]["seed"])
+    kw = {}
+    npm_tri, corr = None, None
+    if mode in ("dp", "stress"):
+        miss = [k for k in REQUIRED_DP if a[k].value is None]
+        if miss:
+            return Unavailable("순이익률 분포 입력 없음", "Net-margin distribution inputs missing", miss)
+        npm_tri = (float(a["npm_low"].value), float(a["npm_mode"].value), float(a["npm_high"].value))
+        rs = float(mc_cfg.get("corr_stress", 0.5))
+        rho = (rs, rs, rs) if mode == "stress" else tuple(float(a[k].value or 0.0) for k in ("corr_growth_per", "corr_growth_npm", "corr_npm_per"))
+        corr = im.corr_matrix(*rho)
+        kw = dict(npm_tri=npm_tri, npm_base=val.ni / val.rev, corr=corr)
     r = im.monte_carlo(val.ni, val.shares.post, float(a["growth_mean"].value), float(a["growth_sd"].value), tri, n, seed,
-                       mc_cfg["convergence"], float(mc_cfg["tolerance"]), int(mc_cfg["horizon_years"]))
+                       mc_cfg["convergence"], float(mc_cfg["tolerance"]), int(mc_cfg["horizon_years"]), **kw)
     v0 = val.per_share["current"]
     req = {q: im.implied_discount(v0, r.q(q)) for q in (0.10, 0.25, 0.50)}
     loss = {d: r.prob_below(v0 * (1 - d)) for d in cfg["research"]["vol03"]["discount_grid"]}
-    return MCFacts(r, tri, float(a["growth_mean"].value), float(a["growth_sd"].value), n, seed, req, loss)
+    nb = 10
+    batches = r.values[: n - n % nb].reshape(nb, -1)
+    se = float(np.std(np.median(batches, axis=1), ddof=1) / math.sqrt(nb) / r.q(0.5))
+    cn = int(mc_cfg.get("check_multiple", 10)) * n
+    big = im.monte_carlo(val.ni, val.shares.post, float(a["growth_mean"].value), float(a["growth_sd"].value), tri, cn, seed,
+                         horizon_years=int(mc_cfg["horizon_years"]), **kw)
+    return MCFacts(r, tri, float(a["growth_mean"].value), float(a["growth_sd"].value), n, seed, req, loss, mode, npm_tri,
+                   corr if corr is not None else np.eye(2), se, cn, big.q(0.5))
+
+
+# ---------------------------------------------------------------------------
+# 국내 IPO 할인율 실증 (DART 증권신고서, research.vol03.ipo_discounts 결과)
+# ---------------------------------------------------------------------------
+@dataclass
+class IPOEvidence:
+    table: pd.DataFrame          # 사용 행 (신뢰도 기준 통과, 할인율 하단·상단 있음)
+    n_all: int                   # 파일 전체 행
+    n: int
+    stats: dict[str, tuple[float, float, float]]   # low·high·mid → (Q1, 중앙값, Q3) 할인율
+    used: bool                   # n ≥ min_n → 밴드 할인율을 분포 기반으로
+    min_n: int
+    period: tuple[str, str]
+    as_of: str | None
+
+    def rank(self, d: float, which: str = "mid") -> float:
+        """할인율 d가 분포에서 차지하는 백분위 (0~1)."""
+        col = {"low": "discount_low", "high": "discount_high", "mid": "discount_mid"}[which]
+        x = self.table[col].to_numpy()
+        return float(np.mean(x <= d)) if len(x) else float("nan")
+
+
+def ipo_evidence(cfg: Mapping) -> IPOEvidence | Unavailable:
+    v3 = cfg["research"]["vol03"]
+    icfg = v3.get("ipo_discounts") or {}
+    path = _inp(cfg, "ipo_discounts")[0] if "ipo_discounts" in v3["inputs"] else None
+    df = _read(path) if path is not None else None
+    if df is None:
+        return Unavailable("국내 IPO 할인율 실증 미수집", "Korean IPO discount evidence not collected", ["vol03_ipo_discounts.csv"])
+    for c in ("discount_low", "discount_high", "value_per_share", "band_low", "band_high"):
+        df[c] = df[c].map(num) if c in df else float("nan")
+    use = set(icfg.get("use_confidence", ["high", "medium"]))
+    t = df[df["confidence"].isin(use) & df["discount_low"].notna() & df["discount_high"].notna()].copy()
+    t["discount_mid"] = (t["discount_low"] + t["discount_high"]) / 2
+    q = lambda col: tuple(float(np.quantile(t[col], x)) for x in (0.25, 0.5, 0.75)) if len(t) else (float("nan"),) * 3  # noqa: E731
+    min_n = int(icfg.get("min_n", 10))
+    m = meta_info(path)
+    return IPOEvidence(t, len(df), len(t), {"low": q("discount_low"), "high": q("discount_high"), "mid": q("discount_mid")},
+                       len(t) >= min_n, min_n, (str(icfg.get("bgn_de", "")), str(icfg.get("end_de", ""))), m.get("as_of"))
+
+
+def apply_evidence(a: dict[str, Assumption], ev: IPOEvidence | Unavailable) -> None:
+    """n ≥ min_n이고 사용자가 밴드 할인율을 직접 넣지 않았으면 분포 중앙값(하단·상단)을 근거 있는(sourced) 값으로."""
+    if not ok(ev) or not ev.used:
+        return
+    for key, which in (("band_discount_low", "low"), ("band_discount_high", "high")):
+        cur = a[key]
+        if cur.value is None:
+            q1, med, q3 = ev.stats[which]
+            cur.value, cur.low, cur.high, cur.origin = med, q1, q3, "evidence"
+            cur.tag = "ASSUMPTION(sourced)"
+            cur.source = (f"DART 증권신고서(지분증권) 신규 상장 {ev.n}건 할인율 중앙값 (범위 = 사분위, {ev.period[0]}~{ev.period[1]})")
+            cur.url = "https://dart.fss.or.kr"
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +839,7 @@ SOURCES = [
     ("yf", "yfinance (보조)", "yfinance (secondary)", "미국 피어 종가 (2023 첫 거래일 · 기준일)", "U.S. peers' closes (first 2023 trading day · as-of)", "market"),
     ("da", "DART·SEC (추가)", "DART·SEC (extra)", "D&A(EBITDA용) · SEC FY2022A 순이익", "D&A (for EBITDA) · SEC FY2022A NI", "peer_extra"),
     ("ecos", "ECOS · 한국은행", "ECOS · Bank of Korea", "원/달러 매매기준율 (표시용 환산)", "USD/KRW (display conversion)", "fx"),
+    ("ipo", "DART 증권신고서", "DART prospectuses", "신규 상장 증권신고서 평가가액·희망공모가·할인율 (2025-01~2026-10)", "New-listing prospectuses: value, range, discount (Jan 2025–Oct 2026)", "ipo_discounts"),
 ]
 
 
@@ -761,6 +884,10 @@ class Facts:
     fx_date: str | None
     sources: list[dict]
     entity: list[dict]
+    mc_dp: MCFacts | Unavailable = None          # 이중 고점 (순이익률 확률변수, 기준 상관)
+    mc_stress: MCFacts | Unavailable = None      # 이중 고점 + 동조 상관 (민감도)
+    band_dp: Band | Unavailable = None
+    ipo: IPOEvidence | Unavailable = None
 
 
 def load_facts(cfg: Mapping, as_of: str | None = None) -> Facts:
@@ -769,12 +896,17 @@ def load_facts(cfg: Mapping, as_of: str | None = None) -> Facts:
     pe = build_peers(cfg, dom, ovs)
     der = derive(cfg, dom, pe) if ok(dom) else None
     a = load_assumptions(cfg, der)
+    ev = ipo_evidence(cfg)
+    apply_evidence(a, ev)
     mu = multiples(cfg, pe) if ok(pe) else Unavailable(pe.reason, pe.reason_en, pe.missing)
     val = valuation(cfg, a, mu) if ok(mu) else Unavailable(mu.reason, mu.reason_en, mu.missing)
     mc = run_mc(cfg, a, val, mu)
+    mc_dp, mc_st = run_mc(cfg, a, val, mu, "dp"), run_mc(cfg, a, val, mu, "stress")
     band = band_from(cfg, a, val, mc) if ok(val) else Unavailable(val.reason, val.reason_en, val.missing)
+    band_dp = band_mc(cfg, a, val, mc_dp) if ok(val) and ok(mc_dp) else Unavailable("이중 고점 몬테카를로 없음", "No double-peak run")
     fx, fd = fx_on(cfg, as_of)
-    return Facts(as_of, a, dom, ovs, pe, der, mu, val, mc, band, links(cfg, as_of), fx, fd, source_status(cfg, ovs), entity_rows(ovs))
+    return Facts(as_of, a, dom, ovs, pe, der, mu, val, mc, band, links(cfg, as_of), fx, fd, source_status(cfg, ovs), entity_rows(ovs),
+                 mc_dp, mc_st, band_dp, ev)
 
 
 def table_keys(a: Mapping[str, Assumption]) -> list[str]:

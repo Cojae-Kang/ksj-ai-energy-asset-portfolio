@@ -4,7 +4,9 @@
     비교기업 배수(PER 주, EV/EBITDA 보조) → 적정 시가총액 = 적용 이익 × 적용 배수
     → 공모 후 주식수(신주·구주) → 주당 평가가액 = 적정 시총 ÷ 공모 후 주식수
     → 할인율 시나리오 → 희망공모가 밴드
-몬테카를로: 1년 후 주당가치 = 적용 이익 × (1 + 성장률) × 1년 후 PER ÷ 공모 후 주식수.
+몬테카를로: 1년 후 주당가치 = 적용 이익 × (1 + 성장률) × 1년 후 PER × (1년 후 순이익률 ÷ 현재 순이익률) ÷ 공모 후 주식수.
+  순이익률을 고정하면 '현재 기준', 순이익률도 확률변수(정점 이익)로 두면 '이중 고점(정점 이익 × 정점 배수)'.
+  상관은 가우스 코퓰라(표준정규 상관 → 각 주변분포의 역함수)로 준다. 상관 0이면 독립.
 금액 단위: 시총·이익 = KRW 억원(또는 같은 단위끼리), 주당 가격 = 원.
 """
 from __future__ import annotations
@@ -197,6 +199,7 @@ class MCResult:
     convergence: pd.DataFrame   # n, P10, P50, P90, mean, rel_change_p50
     converged: bool
     seed: int
+    npm: np.ndarray | None = None   # 1년 후 순이익률 표본 (이중 고점일 때)
 
     def q(self, p: float) -> float:
         return float(np.quantile(self.values, p))
@@ -217,21 +220,59 @@ def log_growth_params(growth: Sequence[float]) -> tuple[float, float]:
     return float(x.mean()), float(x.std(ddof=1))
 
 
+def tri_ppf(u: np.ndarray, lo: float, mode: float, hi: float) -> np.ndarray:
+    """삼각분포 역누적분포함수 (u ∈ [0, 1])."""
+    u = np.asarray(u, dtype=float)
+    if hi <= lo:
+        return np.full(u.shape, lo)
+    fc = (mode - lo) / (hi - lo)
+    left = lo + np.sqrt(u * (hi - lo) * (mode - lo))
+    right = hi - np.sqrt((1 - u) * (hi - lo) * (hi - mode))
+    return np.where(u < fc, left, right)
+
+
+def corr_matrix(rho_gp: float = 0.0, rho_gm: float = 0.0, rho_pm: float = 0.0, k: int = 3) -> np.ndarray:
+    """[성장률, PER, 순이익률] 상관행렬 (k=2면 앞 둘만). 양의 정부호가 아니면 ValueError."""
+    c = np.array([[1.0, rho_gp, rho_gm], [rho_gp, 1.0, rho_pm], [rho_gm, rho_pm, 1.0]])[:k, :k]
+    np.linalg.cholesky(c)
+    return c
+
+
 def monte_carlo(ni_100m: float, shares: float, log_g_mean: float, log_g_sd: float,
                 per_tri: tuple[float, float, float], n: int, seed: int,
                 checkpoints: Sequence[int] = (), tolerance: float = 0.01, horizon_years: int = 1,
-                quantiles: Sequence[float] = (0.10, 0.25, 0.50, 0.75, 0.90)) -> MCResult:
+                quantiles: Sequence[float] = (0.10, 0.25, 0.50, 0.75, 0.90),
+                npm_tri: tuple[float, float, float] | None = None, npm_base: float | None = None,
+                corr: np.ndarray | None = None) -> MCResult:
     """1년 후 주당가치 분포. 성장률: ln(1+g) ~ N(mean, sd) × horizon. PER: 삼각분포(최소, 최빈, 최대).
 
-    이익률은 고정(순이익 성장 = 매출 성장). 같은 seed면 같은 결과. 수렴 = 마지막 두 checkpoint의 P50 상대 차이 ≤ tolerance.
+    npm_tri가 없고 corr도 없으면 이익률 고정·독립 추출(현재 기준, 이전 버전과 같은 난수열).
+    npm_tri가 있으면 1년 후 순이익률 ~ 삼각분포, 이익 = 적용 이익 × (1+g) × npm ÷ npm_base.
+    corr = [성장률, PER(, 순이익률)] 상관행렬 → 가우스 코퓰라. 같은 seed면 같은 결과.
+    수렴 = 마지막 두 checkpoint의 P50 상대 차이 ≤ tolerance.
     """
     lo, mode, hi = sorted(per_tri)[0], per_tri[1], sorted(per_tri)[-1]
     mode = min(max(mode, lo), hi)
     rng = np.random.default_rng(seed)
-    lg = rng.normal(log_g_mean * horizon_years, log_g_sd * math.sqrt(horizon_years), n)
-    per = rng.triangular(lo, mode, hi, n) if hi > lo else np.full(n, lo)
+    npm = None
+    if npm_tri is None and corr is None:
+        lg = rng.normal(log_g_mean * horizon_years, log_g_sd * math.sqrt(horizon_years), n)
+        per = rng.triangular(lo, mode, hi, n) if hi > lo else np.full(n, lo)
+        factor = 1.0
+    else:
+        from scipy.special import ndtr
+        k = 3 if npm_tri is not None else 2
+        c = np.eye(k) if corr is None else np.asarray(corr, dtype=float)[:k, :k]
+        z = rng.standard_normal((n, k)) @ np.linalg.cholesky(c).T
+        lg = log_g_mean * horizon_years + log_g_sd * math.sqrt(horizon_years) * z[:, 0]
+        per = tri_ppf(ndtr(z[:, 1]), lo, mode, hi)
+        factor = 1.0
+        if npm_tri is not None:
+            a, m, b = sorted(npm_tri)[0], npm_tri[1], sorted(npm_tri)[-1]
+            npm = tri_ppf(ndtr(z[:, 2]), a, min(max(m, a), b), b)
+            factor = npm / float(npm_base)
     g = np.expm1(lg)
-    vals = ni_100m * np.exp(lg) * per * KRW_PER_100M / shares
+    vals = ni_100m * np.exp(lg) * per * factor * KRW_PER_100M / shares
     rows = []
     for k in sorted({c for c in checkpoints if 0 < c <= n} | {n}):
         s = vals[:k]
@@ -240,4 +281,4 @@ def monte_carlo(ni_100m: float, shares: float, log_g_mean: float, log_g_sd: floa
     conv = pd.DataFrame(rows)
     conv["rel_change_p50"] = conv["P50"].pct_change().abs()
     converged = bool(len(conv) < 2 or conv["rel_change_p50"].iloc[-1] <= tolerance)
-    return MCResult(vals, g, per, {q: float(np.quantile(vals, q)) for q in quantiles}, conv, converged, seed)
+    return MCResult(vals, g, per, {q: float(np.quantile(vals, q)) for q in quantiles}, conv, converged, seed, npm)

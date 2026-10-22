@@ -177,3 +177,65 @@ def export_figure(draw: Draw, stem, title: str, unit: str, foot: str, c: Mapping
     plt.close(fig)
     inner.unlink(missing_ok=True)
     return out
+
+
+def histogram_pair(a: np.ndarray, b: np.ndarray, c: Mapping, fmt: Callable[[float], str], cols: tuple[str, str],
+                   bands: Sequence[tuple[float, float, str, str]], ref: tuple[float, str] | None, bins: int = 70) -> Draw:
+    """두 분포 겹쳐 그리기 (현재 기준 = 채움, 이중 고점 = 선) + 각 밴드 음영 + 평가가액 기준선."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        ax = fig.add_axes([0.04, 0.13, 0.93, 0.76])
+        lo = float(min(np.quantile(a, 0.002), np.quantile(b, 0.002)))
+        hi = float(max(np.quantile(a, 0.998), np.quantile(b, 0.998), ref[0] if ref else 0))
+        edges = np.linspace(lo, hi, bins)
+        ax.hist(np.clip(a, lo, hi), bins=edges, color=cols[0], alpha=0.85, edgecolor="white", lw=0.3)
+        ax.hist(np.clip(b, lo, hi), bins=edges, histtype="step", color=cols[1], lw=1.5)
+        ymax = ax.get_ylim()[1]
+        for k, (b0, b1, lab, col) in enumerate(bands):
+            ax.axvspan(b0, b1, color=col, alpha=0.18, lw=0)
+            ax.text((b0 + b1) / 2, ymax * (1.03 + 0.09 * k), lab, ha="center", va="bottom", fontsize=FS + 0.2, fontweight="bold", color=col)
+        if ref:
+            ax.axvline(ref[0], color=c["charcoal"], lw=1.0, ls="--")
+            ax.text(ref[0], ymax * 0.95, f" {ref[1]} {fmt(ref[0])}", ha="left", va="top", fontsize=FS - 0.2, fontweight="bold", color=c["charcoal"])
+        ax.set_ylim(0, ymax * 1.28)
+        ax.yaxis.set_major_locator(NullLocator())
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt(v)))
+        ax.tick_params(axis="x", labelsize=FS - 0.4, colors=c["note"])
+        _style(ax, c)
+        _save(fig, path)
+    return draw
+
+
+def discount_dist(lows: Sequence[float], highs: Sequence[float], c: Mapping, marks: Sequence[tuple[float, str, str]],
+                  labels: tuple[str, str]) -> Draw:
+    """국내 IPO 할인율 분포: 하단·상단 할인율 상자그림(사분위·중앙값) + Target 할인율 표시선."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        lf = label_frac(list(labels), w, lo=0.14)
+        ax = fig.add_axes([lf, 0.16, 0.95 - lf, 0.74])
+        data = [np.asarray(lows, float) * 100, np.asarray(highs, float) * 100]
+        kw = dict(widths=0.45, patch_artist=True, showfliers=True, medianprops={"color": c["charcoal"], "lw": 1.6},
+                  flierprops={"markersize": 2.5, "markerfacecolor": c["warm_grey"]})
+        try:                                   # matplotlib ≥ 3.10: orientation, 이전 버전: vert
+            bp = ax.boxplot(data, orientation="horizontal", **kw)
+        except TypeError:
+            bp = ax.boxplot(data, vert=False, **kw)
+        for patch in bp["boxes"]:
+            patch.set(facecolor=c["warm_grey_light"], edgecolor=c["warm_grey"])
+        allv = np.concatenate(data + [np.asarray([m[0] * 100 for m in marks])])
+        x0, x1 = float(np.nanmin(allv)), float(np.nanmax(allv))
+        pad = max(2.0, (x1 - x0) * 0.06)
+        ax.set_xlim(x0 - pad, x1 + pad)
+        for k, (v, lab, col) in enumerate(marks):
+            right = v * 100 > x0 + (x1 - x0) * 0.6          # 오른쪽 끝 표시선은 라벨을 왼쪽으로 (잘림 방지)
+            ax.axvline(v * 100, color=col, lw=1.2, ls="--")
+            ax.text(v * 100, 2.62 - 0.17 * k, (f"{lab} {v * 100:.0f}% " if right else f" {lab} {v * 100:.0f}%"), ha="right" if right else "left",
+                    va="center", fontsize=FS - 0.2, fontweight="bold", color=col)
+        ax.set_yticks([1, 2])
+        ax.set_yticklabels(list(labels))
+        ax.set_ylim(0.5, 2.8)
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}%"))
+        ax.tick_params(axis="x", labelsize=FS - 0.4, colors=c["note"])
+        _style(ax, c, grid_x=True)
+        _save(fig, path)
+    return draw

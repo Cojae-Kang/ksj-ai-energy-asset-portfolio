@@ -99,13 +99,29 @@ def key_conclusions(f: data.Facts) -> list[str]:
                    f"정상화 {mu.applied('normalized'):.1f}배(로그 중간), 보수 {mu.applied('conservative'):.1f}배(2023년 초)")
     if ok(f.val) and ok(f.band):
         v, b = f.val, f.band
-        out.append(f"Target Co. 주당 평가가액 {v.per_share['current']:,.0f}원 → 희망공모가 {b.low:,.0f}~{b.high:,.0f}원(할인율 {b.d_low * 100:.1f}~{b.d_high * 100:.1f}%, "
-                   f"{'몬테카를로 분위' if b.basis == 'mc' else '할인율 사례'} 기준), 공모금액 {v.shares.offered * b.low / 1e8:,.0f}~{v.shares.offered * b.high / 1e8:,.0f}억원")
-    if ok(f.mc):
+        basis = {"mc": "몬테카를로 분위", "evidence": "국내 IPO 할인율 분포", "config": "입력 할인율"}[b.basis]
+        out.append(f"Target Co. 주당 평가가액 {v.per_share['current']:,.0f}원 → 현재 기준 희망공모가 {b.low:,.0f}~{b.high:,.0f}원(할인율 {b.d_low * 100:.1f}~{b.d_high * 100:.1f}%, "
+                   f"{basis} 기준), 공모금액 {v.shares.offered * b.low / 1e8:,.0f}~{v.shares.offered * b.high / 1e8:,.0f}억원")
+    if ok(f.mc) and ok(f.mc_dp) and ok(f.band_dp):
+        mc, dp, bd = f.mc, f.mc_dp, f.band_dp
+        g = cfg_grid_top(f)
+        out.append(f"이중 고점(순이익률 {dp.npm_tri[0] * 100:.1f}~{dp.npm_tri[2] * 100:.1f}%) 반영 밴드 {bd.low:,.0f}~{bd.high:,.0f}원 — 필요 할인율 {mc.required[0.5] * 100:.1f}% → "
+                   f"{dp.required[0.5] * 100:.1f}%(P50), 할인율 {g * 100:.0f}%에서도 1년 후 손실 확률 {dp.loss_grid[g] * 100:.1f}%"
+                   + (" — 할인율만으로는 덮이지 않음" if dp.required[0.5] > g else ""))
+    elif ok(f.mc):
         mc = f.mc
-        out.append(f"1년 후 주당가치 P10/P50/P90 {mc.result.q(0.1):,.0f}/{mc.result.q(0.5):,.0f}/{mc.result.q(0.9):,.0f}원 — 사이클 고점 위험을 덮는 할인율 "
-                   f"{mc.required[0.5] * 100:.1f}%(P50)~{mc.required[0.25] * 100:.1f}%(P25), P10까지면 {mc.required[0.1] * 100:.1f}%")
+        out.append(f"1년 후 주당가치 P10/P50/P90 {mc.result.q(0.1):,.0f}/{mc.result.q(0.5):,.0f}/{mc.result.q(0.9):,.0f}원 — 필요 할인율 "
+                   f"{mc.required[0.5] * 100:.1f}%(P50)~{mc.required[0.25] * 100:.1f}%(P25)")
     return out[:3]
+
+
+def ev_cmd(f: data.Facts) -> str:
+    return f"python -m research.vol03.ipo_discounts --asof {f.as_of} (로컬, DART)"
+
+
+def cfg_grid_top(f: data.Facts) -> float:
+    """할인율 시나리오 상단 (몬테카를로 손실 확률 격자의 최대 키)."""
+    return max(f.mc.loss_grid)
 
 
 def checks(f: data.Facts, cfg: Mapping) -> list[dict]:
@@ -148,6 +164,21 @@ def checks(f: data.Facts, cfg: Mapping) -> list[dict]:
         rows.append({"검산": "공모 후 = 상장 전 + 신주, 공모 = 공모 비율 × 공모 후",
                      "계산": f"{sh.pre:,.0f} + {sh.new:,.0f} = {sh.pre + sh.new:,.0f}; {f.assumptions['offer_ratio'].value} × {sh.post:,.0f} = {f.assumptions['offer_ratio'].value * sh.post:,.0f}",
                      "보고서 값": f"{sh.post:,.0f}; {sh.offered:,.0f}", "차이": f"{abs(sh.pre + sh.new - sh.post) + abs(f.assumptions['offer_ratio'].value * sh.post - sh.offered):.1e}"})
+    if ok(f.val) and f.val.nn:
+        nn, sh = f.val.nn, f.val.shares
+        ps = f.val.rev * nn["npm"] * nn["per"] * 1e8 / sh.post
+        rows.append({"검산": "정상화 이익 × 정상화 배수 = 매출 × 사이클 평균 순이익률 × 정상화 PER ÷ 주식수",
+                     "계산": f"{f.val.rev:,.0f} × {nn['npm']:.4f} × {nn['per']:.4f} × 1e8 ÷ {sh.post:,.0f} = {ps:,.2f}",
+                     "보고서 값": f"{nn['per_share']:,.2f}", "차이": f"{abs(ps - nn['per_share']):.1e}"})
+        hist = f.der.hist if f.der else {}
+        if hist:
+            cyc = sum(h["npm"] * h["revenue"] for h in hist.values()) / sum(h["revenue"] for h in hist.values())
+            rows.append({"검산": "사이클 평균 순이익률 = Σ지배순이익 ÷ Σ매출 (FY2022A~FY2025A, 3사)", "계산": f"{cyc:.6f}",
+                         "보고서 값": f"{nn['npm']:.6f}", "차이": f"{abs(cyc - nn['npm']):.1e}"})
+    if ok(f.band_dp) and ok(f.val):
+        bd, v0 = f.band_dp, f.val.per_share["current"]
+        rows.append({"검산": "이중 고점 밴드 할인율 = 1 − 가격 ÷ 평가가액", "계산": f"1 − {bd.high:,.0f} ÷ {v0:,.0f} = {1 - bd.high / v0:.4f}",
+                     "보고서 값": f"{bd.d_low:.4f}", "차이": f"{abs(1 - bd.high / v0 - bd.d_low):.1e}"})
     if ok(f.band) and ok(f.val):
         b, v0 = f.band, f.val.per_share["current"]
         rows.append({"검산": "밴드 할인율 = 1 − 가격 ÷ 평가가액", "계산": f"1 − {b.high:,.0f} ÷ {v0:,.0f} = {1 - b.high / v0:.4f}; 1 − {b.low:,.0f} ÷ {v0:,.0f} = {1 - b.low / v0:.4f}",
@@ -157,6 +188,12 @@ def checks(f: data.Facts, cfg: Mapping) -> list[dict]:
         r2 = im.monte_carlo(f.val.ni, f.val.shares.post, mc.mu, mc.sd, mc.per_tri, mc.n, mc.seed)
         rows.append({"검산": f"몬테카를로 재현 (seed {mc.seed})", "계산": f"P50 재실행 {r2.q(0.5):,.4f}", "보고서 값": f"{mc.result.q(0.5):,.4f}",
                      "차이": f"{abs(r2.q(0.5) - mc.result.q(0.5)):.1e}"})
+    if ok(f.mc_dp) and ok(f.val):
+        dp = f.mc_dp
+        r3 = im.monte_carlo(f.val.ni, f.val.shares.post, dp.mu, dp.sd, dp.per_tri, dp.n, dp.seed, npm_tri=dp.npm_tri,
+                            npm_base=f.val.ni / f.val.rev, corr=dp.corr)
+        rows.append({"검산": f"이중 고점 몬테카를로 재현 (seed {dp.seed})", "계산": f"P50 재실행 {r3.q(0.5):,.4f}", "보고서 값": f"{dp.result.q(0.5):,.4f}",
+                     "차이": f"{abs(r3.q(0.5) - dp.result.q(0.5)):.1e}"})
     if f.fx and ok(f.peers):
         t = f.peers.table
         us = t[(t["region"] == "US") & t["mcap1"].notna()]
@@ -172,6 +209,9 @@ def anomalies(f: data.Facts, cfg: Mapping) -> list[str]:
     grid = cfg["research"]["vol03"]["discount_grid"]
     if ok(f.peers):
         t = f.peers.table
+        for _, r in t[t["status"] == "held"].iterrows():
+            out.append(f"{r['company']} R6 보류(10-K 확인 전 PER·EV 제외): 순이익 ÷ 영업이익 {r['ni_to_oi']:.1f}배, 장기차입금 태그 "
+                       f"{'미보고' if str(r.get('lt_debt_tag')) == 'False' else '있음'}, EV/{f.peers.ev_basis} {r['evm1']:.0f}배")
         for _, r in t[t["high_flag"]].iterrows():
             med = f.mult.groups[r["group"]]["current"].median if ok(f.mult) else float("nan")
             out.append(f"{r['company']} PER {r['per1']:.1f}배 = 그룹 중앙값({med:.1f}배)의 {r['per1'] / med:.1f}배 — 지배순이익률 {r['ni1'] / r['rev1'] * 100:.1f}%로 피어 최저, 시총은 최대(R4 표시·포함)")
@@ -181,9 +221,9 @@ def anomalies(f: data.Facts, cfg: Mapping) -> list[str]:
         for _, r in us.iterrows():
             if np.isfinite(r["net_debt1"]) and np.isfinite(r["rev1"]) and r["net_debt1"] / r["rev1"] > 0.75:
                 out.append(f"{r['company']} 순차입금 ÷ 매출 {r['net_debt1'] / r['rev1'] * 100:.0f}% (FY2025A) — 발전·유틸리티의 자산·차입 구조, 핵심 비교군에서 분리")
-            if np.isfinite(r["net_debt1"]) and r["net_debt1"] < 0:
+            if np.isfinite(r["net_debt1"]) and r["net_debt1"] < 0 and r["status"] != "held":
                 out.append(f"{r['company']} 순현금 {(-r['net_debt1']):,.0f} USD mn (총차입금이 단기차입금 태그만 잡힘 — 장기차입금 태그 미보고 가능성, 10-K 주석 확인 필요)")
-            if np.isfinite(r["ni1"]) and np.isfinite(r["oi1"]) and r["ni1"] > r["oi1"] * 1.5 and r["oi1"] > 0:
+            if np.isfinite(r["ni1"]) and np.isfinite(r["oi1"]) and r["ni1"] > r["oi1"] * 1.5 and r["oi1"] > 0 and r["status"] != "held":
                 out.append(f"{r['company']} FY2025A 순이익 {r['ni1']:,.0f} > 영업이익 {r['oi1']:,.0f} USD mn ({r['ni1'] / r['oi1']:.1f}배) — 영업외 이익(일회성) 가능성, PER 분모 과대 → 배수 과소")
         if f.peers.ev_basis == "EBIT":
             out.append("EV 배수는 D&A 미수집으로 EV/EBIT 대용 — EV/EBITDA보다 높게 나온다")
@@ -197,12 +237,19 @@ def anomalies(f: data.Facts, cfg: Mapping) -> list[str]:
             out.append(f"P10 기준 필요 할인율 {mc.required[0.1] * 100:.0f}% > 할인율 시나리오 상단 {grid[-1] * 100:.0f}% — 국내 IPO 통상 범위를 넘는 하방")
         if mc.loss_grid[grid[0]] > 0.6:
             out.append(f"할인율 {grid[0] * 100:.0f}%로 공모 시 1년 후 손실 확률 {mc.loss_grid[grid[0]] * 100:.0f}% — 현재 배수가 정점이라는 시나리오 가정의 결과")
-        if not mc.result.converged:
-            out.append("몬테카를로 미수렴 — 시뮬레이션 수 확대 필요")
+        for lab, m in (("현재 기준", mc), ("이중 고점", f.mc_dp), ("동조 민감도", f.mc_stress)):
+            if ok(m) and not m.result.converged:
+                cv = m.result.convergence
+                out.append(f"몬테카를로 {lab}: 5,000→10,000회 P50 변화 {cv['rel_change_p50'].iloc[-1] * 100:.2f}% > 기준 1% (미수렴 판정) — "
+                           f"배치 표준오차 {m.se_p50 * 100:.2f}%, {m.check_n:,}회 재실행 P50 {m.check_p50:,.0f}원({(m.check_p50 / m.result.q(0.5) - 1) * 100:+.2f}%)로 결론 불변")
+    if ok(f.mc_dp):
+        dp = f.mc_dp
+        if dp.required[0.5] > grid[-1]:
+            out.append(f"이중 고점의 중앙값 손익분기 할인율 {dp.required[0.5] * 100:.0f}% > 할인율 시나리오 상단 {grid[-1] * 100:.0f}% — 할인율 {grid[-1] * 100:.0f}%에서도 1년 후 손실 확률 {dp.loss_grid[grid[-1]] * 100:.0f}%")
     if f.der and f.der.hist:
         y0, y1 = min(f.der.hist), max(f.der.hist)
         r = f.der.hist[y0]["npm"] / f.der.hist[y1]["npm"]
-        out.append(f"3사 합산 순이익률 FY{y0}A {f.der.hist[y0]['npm'] * 100:.1f}% → FY{y1}A {f.der.hist[y1]['npm'] * 100:.1f}% (FY{y0}A 이익률이면 평가가액 {r * 100:.0f}%) — 이익률 정점 위험은 할인율 밖")
+        out.append(f"3사 합산 순이익률 FY{y0}A {f.der.hist[y0]['npm'] * 100:.1f}% → FY{y1}A {f.der.hist[y1]['npm'] * 100:.1f}% (FY{y0}A 이익률이면 평가가액 {r * 100:.0f}%) — 이중 고점 몬테카를로(p7)로 반영")
     if ok(f.mult) and f.mult.applied_group == "domestic":
         out.append("적용 배수가 국내 3사만 — 미국 핵심 비교군 시총 미수집(TODO(data))")
     return out
@@ -228,6 +275,17 @@ def todo_items(f: data.Facts, cfg: Mapping) -> list[str]:
             out.append(f"[data] 국내 총차입금 미수집: {names} — DART 재무상태표 차입금 계정 매핑 확인(config data_fetch.dart.total_debt)")
         if t[(t["group"] == "core") & t["ni0"].isna()].shape[0]:
             out.append("[data] 미국 피어 FY2022A 순이익(보수 시나리오 분모): " + data.CMD_FETCH)
+        held = t[t["status"] == "held"]
+        for _, r in held.iterrows():
+            out.append(f"[verify] {r['company']} 10-K 주석: 영업외 이익(순이익 {r['ni1']:,.0f} vs 영업이익 {r['oi1']:,.0f} USD mn)·장기차입금 — 확인 후 config multiples.hold_out에서 삭제")
+        kr_da = t[(t["region"] == "KR") & (t["status"] == "applied") & t["da1"].isna()]
+        if len(kr_da):
+            out.append(f"[data] 국내 D&A 미수집: {', '.join(kr_da['company'])} — research.vol03.fetch_extra --only dart 재실행, 계정명 확인(현금흐름표 '감가상각비' 표기)")
+        if (t["region"] == "KR").any() and t[(t["region"] == "KR") & (t["status"] == "applied")]["debt_missing"].any():
+            out.append("[check] 국내 총차입금 매핑 점검: python -m src.data_fetch.dart --debt-candidates 267260 (로컬 원자료, API 호출 없음) → "
+                       "후보가 없으면 무차입, 이름만 다르면 IFRS account_id 2차 매칭(id_fallback)으로 재수집")
+    if not ok(f.ipo):
+        out.append(f"[data] 국내 IPO 할인율 실증: python -m research.vol03.ipo_discounts --asof {f.as_of} (DART 증권신고서, 로컬)")
     out.append("[manual] Schneider Electric: data/manual/overseas_financials_manual.csv(재무) + data/manual/vol03_market_manual.csv(종가·주식수, EUR) — 이번 편 제외")
     return out
 
@@ -258,7 +316,9 @@ def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
     if ok(f.val):
         v = f.val
         L += ["", "### 공모가 산출", "", markdown_table([{"시나리오": s, "적용 PER": _f(f.mult.applied(s)), "적정 시총(억원)": _f(v.equity[s], 1),
-                                                          "주당 평가가액(원)": _f(v.per_share[s], 0)} for s in SCEN]),
+                                                          "주당 평가가액(원)": _f(v.per_share[s], 0)} for s in SCEN]
+                                                        + ([{"시나리오": f"정상화 이익(순이익률 {v.nn['npm'] * 100:.2f}%) × 정상화 배수", "적용 PER": _f(v.nn["per"]),
+                                                             "적정 시총(억원)": _f(v.nn["equity"], 1), "주당 평가가액(원)": _f(v.nn["per_share"], 0)}] if v.nn else [])),
               "", markdown_table([{"할인율": f"{d * 100:.0f}%", "공모가(원)": _f(p, 0)} for d, p in zip(v.grid["discount"], v.grid["price"])])]
         sh = v.shares
         L += ["", f"- 주식: 상장 전 {sh.pre:,.0f} · 신주 {sh.new:,.0f} · 구주 {sh.old:,.0f} · 공모 {sh.offered:,.0f} · 공모 후 {sh.post:,.0f} (오버행 {sh.overhang / sh.post * 100:.1f}%)"]
@@ -269,11 +329,32 @@ def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
         L += [f"- 밴드: {b.low:,.0f}~{b.high:,.0f}원 (원값 {b.raw_low:,.1f}~{b.raw_high:,.1f}, 기준 {b.basis}, 할인율 {b.d_low * 100:.2f}~{b.d_high * 100:.2f}%)"]
     if ok(f.mc):
         mc = f.mc
-        L += ["", "### 몬테카를로", "", f"- n = {mc.n:,} · seed {mc.seed} · ln(1+g) ~ N({mc.mu:.4f}, {mc.sd:.4f}) · PER 삼각({mc.per_tri[0]:.3f}, {mc.per_tri[1]:.3f}, {mc.per_tri[2]:.3f})",
-              "- 분위(원): " + " · ".join(f"P{q * 100:.0f} {x:,.0f}" for q, x in mc.result.quantiles.items()),
-              "- 필요 할인율: " + " · ".join(f"P{q * 100:.0f} {d * 100:.1f}%" for q, d in mc.required.items()),
-              "- 손실 확률: " + " · ".join(f"할인 {d * 100:.0f}% → {p * 100:.1f}%" for d, p in mc.loss_grid.items()),
-              "", "**수렴**", "", markdown_table(mc.result.convergence.round(4).to_dict("records"))]
+        L += ["", "### 몬테카를로 (현재 기준 · 이중 고점 · 동조 민감도)", "",
+              f"- n = {mc.n:,} · seed {mc.seed} · ln(1+g) ~ N({mc.mu:.4f}, {mc.sd:.4f}) · PER 삼각({mc.per_tri[0]:.3f}, {mc.per_tri[1]:.3f}, {mc.per_tri[2]:.3f})"]
+        if ok(f.mc_dp):
+            dp = f.mc_dp
+            L += [f"- 이중 고점: 순이익률 삼각({dp.npm_tri[0]:.4f}, {dp.npm_tri[1]:.4f}, {dp.npm_tri[2]:.4f}), 상관 행렬 {np.round(dp.corr, 2).tolist()}; "
+                  f"동조 민감도 상관 {np.round(f.mc_stress.corr, 2).tolist() if ok(f.mc_stress) else '—'}"]
+        for lab, m in (("현재 기준", mc), ("이중 고점", f.mc_dp), ("동조 민감도", f.mc_stress)):
+            if not ok(m):
+                continue
+            L += ["", f"**{lab}**", "",
+                  "- 분위(원): " + " · ".join(f"P{q * 100:.0f} {x:,.0f}" for q, x in m.result.quantiles.items()),
+                  "- 필요 할인율: " + " · ".join(f"P{q * 100:.0f} {d * 100:.1f}%" for q, d in m.required.items()),
+                  "- 손실 확률: " + " · ".join(f"할인 {d * 100:.0f}% → {p * 100:.1f}%" for d, p in m.loss_grid.items()),
+                  f"- 수렴: {'수렴' if m.result.converged else '기준 초과(미수렴 판정)'} · 배치 표준오차 {m.se_p50 * 100:.2f}% · {m.check_n:,}회 재실행 P50 {m.check_p50:,.0f}원",
+                  "", markdown_table(m.result.convergence.round(4).to_dict("records"))]
+        if ok(f.band_dp):
+            bd = f.band_dp
+            L += ["", f"- 이중 고점 밴드: {bd.low:,.0f}~{bd.high:,.0f}원 (원값 {bd.raw_low:,.1f}~{bd.raw_high:,.1f}, 할인율 {bd.d_low * 100:.2f}~{bd.d_high * 100:.2f}%)"]
+    L += ["", "### 국내 IPO 할인율 실증 (DART 증권신고서)", ""]
+    if ok(f.ipo):
+        ev = f.ipo
+        L += [f"- 전체 {ev.n_all}건 중 사용 {ev.n}건 (신뢰도 기준) · 기간 {ev.period[0]}~{ev.period[1]} · "
+              + " · ".join(f"{k} Q1/중앙값/Q3 {a * 100:.1f}/{b * 100:.1f}/{c * 100:.1f}%" for k, (a, b, c) in ev.stats.items())
+              + (f" → n ≥ {ev.min_n}: 밴드 할인율에 사용(sourced)" if ev.used else f" → n < {ev.min_n}: 몬테카를로 밴드 유지")]
+    else:
+        L += [f"- 미수집 — {ev_cmd(f)}"]
     L += ["", "### 검산 (배수·단위·환율·공모 구조·재현)", "", markdown_table(checks(f, cfg)) if checks(f, cfg) else "- 계산 보류"]
     L += ["", "## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
     L += [f"- `figures/{p.name}`" for p in r.get("figures", [])]
@@ -295,7 +376,8 @@ def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
         lim.append("- D&A 미수집 → EV/EBITDA 대신 EV/EBIT 대용(보조 지표)")
     L += ["", "## 한계", ""] + lim + [
           "- 이익 기준은 FY2025A(최근 사업연도). LTM이면 배수·이익 모두 달라짐",
-          "- 몬테카를로는 성장률·배수만(독립), 이익률 고정 — 하방 과소 가능",
+          "- 이중 고점 몬테카를로의 순이익률 분포(최빈 = 4년 사이클 평균)·상관 0(기준)은 저자 판단/중립값 — 동조(ρ=0.5) 민감도 병기",
+          "- 보류(R6) 회사는 10-K 주석 확인 전 — 확인 후 편입 시 해외 핵심 배수 변동",
           "- 밴드 분위(P25~P50)·정상화 50%·이상치 기준·그룹 평균 결합은 저자 판단"]
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
 

@@ -206,7 +206,9 @@ def fetch_dart_extra(cfg: Mapping, as_of: str, *, client=None) -> list[dict]:
 def write_extra(cfg: Mapping, as_of: str, rows: list[dict]) -> str:
     out = resolve_path(cfg["research"]["vol03"]["inputs"]["peer_extra"])
     old = pd.read_csv(out, dtype={"ticker": str}, encoding="utf-8-sig") if out.exists() else pd.DataFrame(columns=EXTRA_COLUMNS)
-    df = pd.concat([pd.DataFrame(rows, columns=EXTRA_COLUMNS), old], ignore_index=True).drop_duplicates(["ticker", "fiscal_year", "metric"], keep="first")
+    frames = [x for x in (pd.DataFrame(rows, columns=EXTRA_COLUMNS), old) if not x.empty]   # 빈 DataFrame concat은 pandas FutureWarning
+    df = (pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=EXTRA_COLUMNS)).drop_duplicates(
+        ["ticker", "fiscal_year", "metric"], keep="first")
     save_processed(out, df.sort_values(["region", "ticker", "fiscal_year", "metric"]).reset_index(drop=True),
                    sources=["SEC EDGAR companyfacts", "Open DART fnlttSinglAcntAll"], as_of=as_of,
                    note="da = 감가상각비 + 무형자산상각비(KR 억원, 사용권자산 제외) / DepreciationDepletionAndAmortization 등(US USD mn). "

@@ -180,6 +180,12 @@ data_fetch:
       include_name_patterns: ["차입금", "사채", "유동성장기부채"]
       exclude_name_patterns: ["할인발행차금", "상환할증금", "리스", "전환권조정", "신주인수권조정", "충당", "이자"]
       exclude_detail_rows: true         # account_detail이 '-'가 아닌 세부행 제외 (이중계산 방지)
+      # 계정명으로 하나도 못 찾을 때만 IFRS 표준 account_id로 2차 매칭 (플래그 total_debt:id_fallback). ASSUMPTION(verify)
+      #   점검: python -m src.data_fetch.dart --debt-candidates 267260 (로컬 원자료, API 호출 없음)
+      fallback_account_ids: ["ifrs-full_ShorttermBorrowings", "ifrs-full_LongtermBorrowings", "ifrs-full_CurrentPortionOfLongtermBorrowings",
+                             "ifrs-full_CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings", "ifrs-full_NoncurrentPortionOfNoncurrentBorrowings",
+                             "ifrs-full_Borrowings", "ifrs-full_BondsIssued", "ifrs-full_NoncurrentPortionOfNoncurrentBondsIssued",
+                             "ifrs-full_CurrentPortionOfNoncurrentBondsIssued", "ifrs-full_NoncurrentPortionOfNoncurrentLoansReceived"]
     # 발행공시(증권신고서) 검색 + 원문 다운로드. Vol.1에는 불필요 → 기본 비활성.
     #   켜려면 enabled: true 또는 fetch_all 실행 시 --skip-filings를 빼고 실행.
     filings:
@@ -678,6 +684,8 @@ research:
       market_manual: "data/manual/vol03_market_manual.csv"            # 수기 입력 양식 (위 두 파일이 없을 때)
       peer_extra: "data/processed/vol03_peer_extra.csv"               # TODO(data): research.vol03.fetch_extra (D&A, SEC FY2022A)
       peer_manual: "data/manual/vol03_peer_manual.csv"                # 수기 입력 양식 (D&A 등)
+      sec_debt: "data/processed/sec_debt_components.csv"              # 총차입금 구성 태그 (장기차입금 태그 보고 여부 점검)
+      ipo_discounts: "data/processed/vol03_ipo_discounts.csv"         # research.vol03.ipo_discounts (로컬 실행, DART 증권신고서)
       overseas_manual: "data/manual/overseas_financials_manual.csv"   # Schneider Electric (SEC 비대상)
       fx: "data/processed/ecos_fx_daily.csv"
     fetch_extra:                        # research.vol03.fetch_extra (로컬 실행 전용)
@@ -721,6 +729,11 @@ research:
         exclude_entity_warn: true       # R3 SEC 재무 주체 WARN → 제외 (시총 주체 ≠ 재무 주체)
         flag_vs_median: 2.0             # R4 그룹 중앙값의 2배 초과 → 고배수 표시(포함, 합산 가중으로 영향 제한)
         ev_ebitda_max: 60               # R5 EV/EBITDA > 60배 또는 EBITDA ≤ 0 → 제외. 순차입금 미수집 → EV 제외
+      # ASSUMPTION(judgment): 수동 보류(R6) — 표에는 남기고 PER·EV 배수 계산에서 제외. 해제 = 10-K 주석 확인 후 이 목록에서 삭제
+      #   근거(보고서에는 데이터로 다시 계산해 표기): FY2025A 순이익 > 영업이익 × ni_to_oi_max(일회성 이익 가능성),
+      #   장기차입금 태그 미보고(순현금 과대), EV/EBIT > ev_ebitda_max
+      hold_out:
+        GEV: {note_kr: "10-K 확인 전 제외", note_en: "Excluded pending 10-K review", ni_to_oi_max: 1.5}
       # ASSUMPTION(judgment): 정상화 배수 = 2023년 초(보수)와 현재의 로그 중간 = √(보수 × 현재).
       #   근거: Vol.1 Δln(시총) = Δln(이익) + Δln(PER) 분해와 같은 로그 척도에서 멀티플 확대분의 절반이 되돌려지는 경우
       normalization: {method: "geometric", weight: 0.5}
@@ -749,7 +762,42 @@ research:
         per_shape: {value: "triangular", unit: "-", tag: "ASSUMPTION(neutral)", source: "1년 후 PER = 삼각분포(최소 보수 · 최빈 정상화 · 최대 현재) — 시나리오 확률 근거 부재 시 중립 형태"}
         band_q_low: {value: 0.25, unit: "%", tag: "ASSUMPTION(judgment)", source: "밴드 하단 = 1년 후 주당가치 하위 25% (하단 공모 시 1년 후 손실 확률 25%)"}
         band_q_high: {value: 0.5, unit: "%", tag: "ASSUMPTION(judgment)", source: "밴드 상단 = 1년 후 주당가치 중앙값 (상단 공모 시 손실 확률 50%)"}
+        # 이중 고점(정점 이익 × 정점 배수): 1년 후 Target 순이익률 ~ 삼각(최소 FY2022A, 최빈 사이클 평균, 최대 FY2025A) — 국내 비교기업 합산
+        npm_low: {value: null, derive: "peer_npm_start", unit: "%", tag: "DATA", source: "DART 3사 합산 지배순이익률 FY2022A (사이클 저점 쪽 끝)"}
+        npm_mode: {value: null, derive: "peer_npm_cycle", unit: "%", tag: "DATA", source: "DART 3사 합산 지배순이익률 FY2022A~FY2025A 4년 합계 기준(사이클 평균)"}
+        npm_high: {value: null, derive: "peer_npm", unit: "%", tag: "DATA", source: "DART 3사 합산 지배순이익률 FY2025A (현재 = 정점 쪽 끝)"}
+        npm_shape: {value: "triangular", unit: "-", tag: "ASSUMPTION(judgment)", source: "순이익률 = 삼각분포, 최빈값을 4년 사이클 평균에 둠 = 평균회귀 가정. 상한은 현재(더 오르는 경우 배제), 하한은 FY2022A"}
+        # 상관(가우스 코퓰라, 성장률·PER·순이익률). 추정할 데이터(같은 기간 관측 2~4개)가 없어 기준은 0(독립), 동조는 민감도로만
+        corr_growth_per: {value: 0.0, unit: "-", tag: "ASSUMPTION(neutral)", source: "성장률·1년 후 PER 상관 0 — 근거 데이터 부재 시 중립. 동조 민감도는 monte_carlo.corr_stress"}
+        corr_growth_npm: {value: 0.0, unit: "-", tag: "ASSUMPTION(neutral)", source: "성장률·순이익률 상관 0 — 근거 데이터 부재 시 중립"}
+        corr_npm_per: {value: 0.0, unit: "-", tag: "ASSUMPTION(neutral)", source: "순이익률·PER 상관 0 — 근거 데이터 부재 시 중립 (실제로는 함께 꺾일 수 있어 하방 과소 가능 → 민감도)"}
+      market:                           # 국내 IPO 시장 관행 (공개 보도, 금융감독원 발표 인용) — 오버행·밴드 위치 논의에 사용
+        inst_lockup_2025: {value: 0.41, unit: "%", tag: "ASSUMPTION(sourced)", source: "금융감독원 발표: 2025년 IPO 기관 의무보유확약 비율 41% (머니투데이)",
+                           url: "https://www.mt.co.kr/stock/2026/03/04/2026030410445340662", published: "2026-03-04"}
+        inst_lockup_2024: {value: 0.18, unit: "%", tag: "ASSUMPTION(sourced)", source: "금융감독원 발표: 2024년 기관 의무보유확약 비율 18% (머니투데이)",
+                           url: "https://www.mt.co.kr/stock/2026/03/04/2026030410445340662", published: "2026-03-04"}
+        inst_lockup_kospi_2025: {value: 0.54, unit: "%", tag: "ASSUMPTION(sourced)", source: "금융감독원 발표: 2025년 코스피 IPO 기관 의무보유확약 비율 54% (머니투데이)",
+                                 url: "https://www.mt.co.kr/stock/2026/03/04/2026030410445340662", published: "2026-03-04"}
+        ipo_in_band_2025: {value: 1.0, unit: "%", tag: "ASSUMPTION(sourced)", source: "금융감독원 발표: 2025년 모든 IPO 공모가가 희망밴드 안에서 결정 (머니투데이)",
+                           url: "https://www.mt.co.kr/stock/2026/03/04/2026030410445340662", published: "2026-03-04"}
+        top_of_band_h2_2025: {value: 0.97, unit: "%", tag: "ASSUMPTION(sourced)", source: "금융감독원 발표: 2025년 하반기 상장사 97%가 희망밴드 최상단에서 공모가 결정 (머니투데이)",
+                              url: "https://www.mt.co.kr/stock/2026/03/04/2026030410445340662", published: "2026-03-04"}
     monte_carlo:
       horizon_years: 1                  # 상장 1년 후: 이익은 1년 성장, 배수는 시나리오 분포 (분석 설정)
       convergence: [1000, 2000, 5000, 10000]
       tolerance: 0.01                   # 마지막 두 단계 P50 상대 차이 ≤ 1%면 수렴 (분석 설정)
+      check_multiple: 10                # 수렴 진단: 같은 seed로 n × 10회 재실행한 P50과 비교 (보고값은 n회 결과 그대로)
+      corr_stress: 0.5                  # ASSUMPTION(judgment): 동조 민감도 — 성장률·PER·순이익률 쌍별 상관 0.5 (하방이 함께 오는 경우)
+    # 증권신고서 할인율 실증 (research.vol03.ipo_discounts, 로컬 실행: DART 공시검색 + 원문). 결과 n ≥ min_n이면 밴드 할인율을 분포 기반(sourced)으로
+    ipo_discounts:
+      bgn_de: "20250101"
+      end_de: "20261020"
+      pblntf_ty: "C"                    # 발행공시
+      pblntf_detail_ty: "C001"          # ASSUMPTION(verify): 증권신고서(지분증권)
+      report_nm_contains: ["증권신고서(지분증권)"]
+      corp_cls: ["E"]                   # 신청 시점 비상장(기타법인) = 신규 상장 후보. 상장사의 유상증자 신고서 제외
+      exclude_name_patterns: ["스팩", "기업인수목적", "리츠", "부동산투자회사", "인프라"]
+      markets: {"유가증권시장": "KOSPI", "코스닥시장": "KOSDAQ"}
+      max_documents: 400                # 원문 다운로드 상한 (호출 간격은 data_fetch.dart.request_delay_sec)
+      min_n: 10                         # 이 이상이면 band_discount = 분포 중앙값(sourced), 아니면 몬테카를로 밴드 유지
+      use_confidence: ["high", "medium"]

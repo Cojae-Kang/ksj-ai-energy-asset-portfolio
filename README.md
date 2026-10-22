@@ -53,6 +53,8 @@ python -m research.vol01.fetch_extra --asof 2026-10-20              # Vol.1 추�
 python -m research.vol01.build                                      # 국문·영문 PDF + README 핵심 발견·그림 갱신
 python -m research.vol02.build                                      # Vol.2 데이터센터 PF 국문·영문 PDF (가정: data/manual/vol02_assumptions.csv)
 python -m research.vol03.fetch_extra --asof 2026-10-20              # Vol.3 미국 피어 종가(yfinance)·SEC 주식수 이력·D&A (로컬 전용)
+python -m research.vol03.ipo_discounts --asof 2026-10-20            # Vol.3 국내 IPO 할인율 실증 (DART 증권신고서 원문, 로컬 전용)
+python -m src.data_fetch.dart --debt-candidates 267260             # 총차입금 계정 매핑 점검 (로컬 원자료, API 호출 없음)
 python -m research.vol03.build                                      # Vol.3 IPO 희망공모가 밴드 국문·영문 PDF (가정: data/manual/vol03_assumptions.csv)
 pytest -q                                                           # 네트워크 없이 도는 테스트
 ```

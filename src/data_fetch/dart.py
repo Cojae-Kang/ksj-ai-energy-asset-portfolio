@@ -102,20 +102,58 @@ def _is_detail_row(r: Mapping) -> bool:
     return d not in ("-", "")
 
 
+def _debt_base_rows(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
+    sj_divs = set(debt_cfg.get("sj_div", ["BS"]))
+    return [r for r in rows if r.get("sj_div") in sj_divs
+            and not (debt_cfg.get("exclude_detail_rows", True) and _is_detail_row(r))]
+
+
 def select_debt_lines(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
-    """총차입금 구성 행 선택 (ASSUMPTION: config dart.total_debt)."""
+    """총차입금 구성 행 선택 (ASSUMPTION: config dart.total_debt).
+
+    1차: 계정명 패턴. 이름으로 하나도 못 찾으면 2차: IFRS account_id(fallback_account_ids) — 계정명이 회사 고유 표기인 경우.
+    """
     inc = [re.compile(p) for p in debt_cfg.get("include_name_patterns", [])]
     exc = [re.compile(p) for p in debt_cfg.get("exclude_name_patterns", [])]
-    sj_divs = set(debt_cfg.get("sj_div", ["BS"]))
+    base = _debt_base_rows(rows, debt_cfg)
+    out = [r for r in base if any(p.search(_norm(r.get("account_nm"))) for p in inc)
+           and not any(p.search(_norm(r.get("account_nm"))) for p in exc)]
+    if out:
+        return out
+    ids = set(debt_cfg.get("fallback_account_ids", []))
+    return [dict(r, _id_fallback=True) for r in base if r.get("account_id") in ids
+            and not any(p.search(_norm(r.get("account_nm"))) for p in exc)]
+
+
+DEBT_HINT = re.compile(r"차입|사채|금융부채|부채|Borrow|Bond|Debt|Loan", re.I)
+
+
+def debt_candidates(rows: list[dict], debt_cfg: Mapping) -> list[dict]:
+    """총차입금 매핑 점검용: 재무상태표에서 차입금처럼 보이는 모든 계정과 선택 여부·사유 (네트워크 없음)."""
+    chosen = {id(r) for r in select_debt_lines(rows, debt_cfg)}
+    chosen_ids = {(r.get("account_id"), r.get("account_nm")) for r in select_debt_lines(rows, debt_cfg)}
+    inc = [re.compile(p) for p in debt_cfg.get("include_name_patterns", [])]
+    exc = [re.compile(p) for p in debt_cfg.get("exclude_name_patterns", [])]
     out = []
     for r in rows:
-        if r.get("sj_div") not in sj_divs:
-            continue
-        if debt_cfg.get("exclude_detail_rows", True) and _is_detail_row(r):
+        if r.get("sj_div") not in set(debt_cfg.get("sj_div", ["BS"])):
             continue
         nm = _norm(r.get("account_nm"))
-        if any(p.search(nm) for p in inc) and not any(p.search(nm) for p in exc):
-            out.append(r)
+        if not (DEBT_HINT.search(nm) or DEBT_HINT.search(str(r.get("account_id", "")))):
+            continue
+        sel = id(r) in chosen or (r.get("account_id"), r.get("account_nm")) in chosen_ids
+        if sel:
+            why = "선택"
+        elif _is_detail_row(r) and debt_cfg.get("exclude_detail_rows", True):
+            why = "세부행 제외"
+        elif any(p.search(nm) for p in exc):
+            why = "제외 패턴"
+        elif not any(p.search(nm) for p in inc):
+            why = "이름 패턴 불일치"
+        else:
+            why = "기타"
+        out.append({"account_id": r.get("account_id"), "account_nm": r.get("account_nm"), "account_detail": r.get("account_detail"),
+                    "amount_krw_100m": to_number(r.get("thstrm_amount")) / KRW_PER_100M, "selected": sel, "reason": why})
     return out
 
 
@@ -141,6 +179,8 @@ def extract_dart_metrics(rows: list[dict], dart_cfg: Mapping) -> tuple[dict, lis
             metrics[metric] = to_number(hit.get("thstrm_amount")) / KRW_PER_100M
 
     debt_rows = select_debt_lines(rows, dart_cfg["total_debt"])
+    if any(r.get("_id_fallback") for r in debt_rows):
+        flags.append("total_debt:id_fallback")
     if debt_rows:
         metrics["total_debt"] = sum(
             v for v in (to_number(r.get("thstrm_amount")) for r in debt_rows) if v == v
@@ -403,3 +443,45 @@ def run(cfg: Mapping, as_of: str, *, use_cache: bool = True, client: DartClient 
 
     status = STATUS_SUCCESS if not errors else (STATUS_PARTIAL if fin_rows else STATUS_FAILED)
     return FetchResult(SOURCE, status, n_items=len(fin_rows), outputs=outputs, message="; ".join(errors))
+
+
+def main(argv: list[str] | None = None) -> int:
+    """총차입금 매핑 점검 (로컬 원자료만 읽음, API 호출 없음):
+
+        python -m src.data_fetch.dart --debt-candidates 267260 --year 2025
+    data/raw/dart/fnltt_{ticker}_{year}_{CFS|OFS}.json(수집 때 저장된 원본)에서 차입금 후보 계정과 선택 여부를 출력.
+    """
+    import argparse
+    import json
+
+    from .base import load_config, markdown_table
+    p = argparse.ArgumentParser(description="DART 총차입금 계정 매핑 점검 (로컬 원자료)")
+    p.add_argument("--debt-candidates", required=True, metavar="TICKER")
+    p.add_argument("--year", type=int, nargs="*", default=None)
+    p.add_argument("--config", default=None)
+    args = p.parse_args(argv)
+    cfg = load_config(args.config)
+    dcfg = cfg["data_fetch"]["dart"]
+    raw = resolve_path(cfg["paths"]["raw"]) / "dart"
+    t = str(args.debt_candidates).zfill(6)
+    found = False
+    for y in args.year or cfg["data_fetch"]["fiscal_years"]:
+        for fs in dcfg["fs_div_priority"]:
+            f = raw / f"fnltt_{t}_{y}_{fs}.json"
+            if not f.exists():
+                continue
+            found = True
+            rows = json.loads(f.read_text(encoding="utf-8")).get("list", [])
+            cand = debt_candidates(rows, dcfg["total_debt"])
+            print(f"\n## {t} FY{y} {fs} — 차입금 후보 {len(cand)}개, 선택 {sum(c['selected'] for c in cand)}개")
+            print(markdown_table(cand) if cand else "- 후보 없음 (재무상태표에 차입금·사채 계정 없음 → 무차입 가능성, 주석 확인)")
+            break
+    if not found:
+        print(f"원자료 없음: {raw}/fnltt_{t}_<year>_<CFS|OFS>.json — python -m src.data_fetch.fetch_all --source dart 로 먼저 수집")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
