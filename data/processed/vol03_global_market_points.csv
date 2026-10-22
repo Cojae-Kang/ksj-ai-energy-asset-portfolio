@@ -1,0 +1,10 @@
+﻿point,date,company,ticker,close,currency,shares_sec,shares_sec_end,shares_yf,mcap_usd_mn,source
+start_2023,2023-01-03,Vertiv,VRT,13.300000190734863,USD,377295546.0,2022-10-28,,5018.030833763414,yfinance (close) + SEC dei (shares)
+latest,2026-10-19,Vertiv,VRT,206.0800018310547,USD,384988173.0,2026-07-27,384988173.0,79338.3633967744,yfinance (close) + SEC dei (shares)
+start_2023,2023-01-03,Eaton,ETN,157.75,USD,397700000.0,2022-09-30,,62737.175,yfinance (close) + SEC dei (shares)
+latest,2026-10-19,Eaton,ETN,391.5,USD,388400000.0,2026-06-30,388400000.0,152058.6,yfinance (close) + SEC dei (shares)
+latest,2026-10-19,GE Vernova,GEV,908.4400024414062,USD,266333581.0,2026-06-30,266333581.0,241948.07897386848,yfinance (close) + SEC dei (shares)
+start_2023,2023-01-03,Constellation Energy,CEG,81.91000366210938,USD,327017895.0,2022-09-30,,26786.0369770253,yfinance (close) + SEC dei (shares)
+latest,2026-10-19,Constellation Energy,CEG,263.19000244140625,USD,354307379.0,2026-07-31,354307379.0,93250.15994401825,yfinance (close) + SEC dei (shares)
+start_2023,2023-01-03,Vistra,VST,22.270000457763672,USD,397953513.0,2022-11-01,,8862.424916678661,yfinance (close) + SEC dei (shares)
+latest,2026-10-19,Vistra,VST,149.6999969482422,USD,335635195.0,2026-08-03,335635195.0,50244.58766722267,yfinance (close) + SEC dei (shares)

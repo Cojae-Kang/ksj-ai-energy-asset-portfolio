@@ -1,0 +1,26 @@
+﻿company,ticker,region,fiscal_year,metric,value,unit,source,detail
+LS ELECTRIC,010120,KR,FY2022A,da,799.6755791,억원,"Open DART fnlttSinglAcntAll (CFS, 11011)",감가상각비 + 무형자산상각비
+LS ELECTRIC,010120,KR,FY2023A,da,786.54582534,억원,"Open DART fnlttSinglAcntAll (CFS, 11011)",무형자산상각비 + 감가상각비에 대한 조정
+LS ELECTRIC,010120,KR,FY2024A,da,889.79638252,억원,"Open DART fnlttSinglAcntAll (CFS, 11011)",투자부동산감가상각비 + 무형자산상각비 + 감가상각비
+LS ELECTRIC,010120,KR,FY2025A,da,1055.97404055,억원,"Open DART fnlttSinglAcntAll (CFS, 11011)",투자부동산감가상각비 + 무형자산상각비 + 감가상각비
+Constellation Energy,CEG,US,FY2022A,da,2427.0,USD mn,SEC EDGAR companyfacts CIK0001868275,DepreciationAmortizationAndAccretionNet 2022-12-31 0001868275-25-000023
+Constellation Energy,CEG,US,FY2022A,net_income,-160.0,USD mn,SEC EDGAR companyfacts CIK0001868275,NetIncomeLoss 2022-12-31 0001868275-25-000023
+Constellation Energy,CEG,US,FY2023A,da,2514.0,USD mn,SEC EDGAR companyfacts CIK0001868275,DepreciationAmortizationAndAccretionNet 2023-12-31 0001868275-26-000032
+Constellation Energy,CEG,US,FY2024A,da,2700.0,USD mn,SEC EDGAR companyfacts CIK0001868275,DepreciationAmortizationAndAccretionNet 2024-12-31 0001868275-26-000032
+Constellation Energy,CEG,US,FY2025A,da,2601.0,USD mn,SEC EDGAR companyfacts CIK0001868275,DepreciationAmortizationAndAccretionNet 2025-12-31 0001868275-26-000032
+Eaton,ETN,US,FY2022A,da,954.0,USD mn,SEC EDGAR companyfacts CIK0001551182,DepreciationDepletionAndAmortization 2022-12-31 0001551182-25-000006
+Eaton,ETN,US,FY2022A,net_income,2462.0,USD mn,SEC EDGAR companyfacts CIK0001551182,NetIncomeLoss 2022-12-31 0001551182-25-000006
+Eaton,ETN,US,FY2023A,da,926.0,USD mn,SEC EDGAR companyfacts CIK0001551182,DepreciationDepletionAndAmortization 2023-12-31 0001551182-26-000007
+Eaton,ETN,US,FY2024A,da,921.0,USD mn,SEC EDGAR companyfacts CIK0001551182,DepreciationDepletionAndAmortization 2024-12-31 0001551182-26-000007
+Eaton,ETN,US,FY2025A,da,1006.0,USD mn,SEC EDGAR companyfacts CIK0001551182,DepreciationDepletionAndAmortization 2025-12-31 0001551182-26-000007
+GE Vernova,GEV,US,FY2022A,net_income,-2736.0,USD mn,SEC EDGAR companyfacts CIK0001996810,NetIncomeLoss 2022-12-31 0001996810-25-000011
+Vertiv,VRT,US,FY2022A,da,302.4,USD mn,SEC EDGAR companyfacts CIK0001674101,DepreciationDepletionAndAmortization 2022-12-31 0001628280-25-005905
+Vertiv,VRT,US,FY2022A,net_income,76.6,USD mn,SEC EDGAR companyfacts CIK0001674101,NetIncomeLoss 2022-12-31 0001628280-25-005905
+Vertiv,VRT,US,FY2023A,da,271.0,USD mn,SEC EDGAR companyfacts CIK0001674101,DepreciationDepletionAndAmortization 2023-12-31 0001674101-26-000008
+Vertiv,VRT,US,FY2024A,da,277.0,USD mn,SEC EDGAR companyfacts CIK0001674101,DepreciationDepletionAndAmortization 2024-12-31 0001674101-26-000008
+Vertiv,VRT,US,FY2025A,da,308.6,USD mn,SEC EDGAR companyfacts CIK0001674101,DepreciationDepletionAndAmortization 2025-12-31 0001674101-26-000008
+Vistra,VST,US,FY2022A,da,1596.0,USD mn,SEC EDGAR companyfacts CIK0001692819,DepreciationDepletionAndAmortization 2022-12-31 0001692819-25-000013
+Vistra,VST,US,FY2022A,net_income,-1227.0,USD mn,SEC EDGAR companyfacts CIK0001692819,NetIncomeLoss 2022-12-31 0001692819-25-000013
+Vistra,VST,US,FY2023A,da,1502.0,USD mn,SEC EDGAR companyfacts CIK0001692819,DepreciationDepletionAndAmortization 2023-12-31 0001692819-26-000006
+Vistra,VST,US,FY2024A,da,1843.0,USD mn,SEC EDGAR companyfacts CIK0001692819,DepreciationDepletionAndAmortization 2024-12-31 0001692819-26-000006
+Vistra,VST,US,FY2025A,da,1986.0,USD mn,SEC EDGAR companyfacts CIK0001692819,DepreciationDepletionAndAmortization 2025-12-31 0001692819-26-000006

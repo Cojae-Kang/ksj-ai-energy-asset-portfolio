@@ -1,0 +1,8 @@
+{
+  "source": "yfinance (보조), SEC EDGAR dei:EntityCommonStockSharesOutstanding",
+  "endpoint": "(processed)",
+  "params": {},
+  "fetched_at": "2026-10-22T14:09:38+00:00",
+  "as_of": "2026-10-20",
+  "license_note": "종가 USD(yfinance, auto_adjust=False) × 그 날짜 이전 최근 SEC 표지 발행주식수 = 시총 USD mn. start_2023 = 2023-01-01 이후 첫 거래일, latest = 2026-10-20 직전 거래일(기준일 당일 제외)"
+}
