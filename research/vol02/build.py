@@ -55,6 +55,7 @@ def build(cfg: Mapping, as_of: str | None = None, langs: tuple[str, ...] = ("kr"
         result["pdfs"][lang], result["pages"][lang] = path, n
         result["pending"][lang] = [(pg.label, cell.title, cell.placeholder[0]) for pg in pages for cell in pg.cells if cell.placeholder]
         if lang == "kr":
+            result["exec_lines"] = st.exec_conclusions()
             result["page_titles"] = [(pg.label, pg.title) for pg in pages if pg.kind not in ("cover", "back")]
     write_summary(out_dir / "build_summary.md", result, facts.as_of)
     return result
@@ -72,11 +73,10 @@ def key_conclusions(f: data.Facts) -> list[str]:
     a, b = f.cases.get("A"), f.cases.get("B")
     g = f.grid
     if ok(a):
-        pt = a.alts.get("passthrough")
-        from src.analysis import pf_model as pf
+        pair = a.power_pair()
         out.append(f"케이스 A 대출 한도 {a.base.debt:,.0f}억원(총사업비의 {a.base.gearing * 100:.0f}%, 구속 조건 {a.base.binding}, 이자유보계좌 {a.base.cons.reserve_initial:,.0f}억원 포함), "
-                   f"최소 DSCR {a.base.min_dscr:.2f}배, Equity IRR {_f(a.base.equity_irr, 1, True)}, 원가 대비 수익률 {_f(a.yoc, 1, True)}"
-                   + (f" — 전력비 별도 청구면 {pt.debt:,.0f}억원·Equity IRR {_f(pt.equity_irr, 1, True)}·수익률 {_f(pf.yield_on_cost(pt), 1, True)}" if pt is not None else ""))
+                   f"최소 DSCR {a.base.min_dscr:.2f}배, Equity IRR {_f(a.base.equity_irr, 1, True)}(잔존가치 제외 {_f(a.base.equity_irr_ex_tv, 1, True)})"
+                   + (f" — 전력비 부담 조항 하나로 Equity IRR {_f(pair[0].equity_irr, 1, True)}(별도 청구) vs {_f(pair[1].equity_irr, 1, True)}(전력 포함)" if pair else ""))
     elif g.ratio is not None:
         out.append(f"케이스 A: 계통 승인률 건수 {_f(g.ratio_n, 1, True)}·용량 {g.ratio * 100:.1f}%, 사전 임대율이 병목. 대출 한도는 가정 입력 후 산출")
     if ok(b):
@@ -84,7 +84,7 @@ def key_conclusions(f: data.Facts) -> list[str]:
         rng_ = (f" (가산금리 {min(ms):.0f}~{max(ms):.0f}bp: USD {ms[max(ms)].base.debt:,.0f}~{ms[min(ms)].base.debt:,.0f}mn)" if ms else "")
         ct = b.alts.get("contracted")
         out.append(f"케이스 B 대출 한도 USD {b.base.debt:,.0f}mn(총사업비의 {b.base.gearing * 100:.0f}%, {b.base.binding}){rng_}, "
-                   f"최소 DSCR {b.base.min_dscr:.2f}배, Equity IRR {_f(b.base.equity_irr, 1, True)}"
+                   f"최소 DSCR {b.base.min_dscr:.2f}배, Equity IRR {_f(b.base.equity_irr, 1, True)}(잔존가치 제외 {_f(b.base.equity_irr_ex_tv, 1, True)})"
                    + (f"; 계약 매출 sizing이면 USD {ct.debt:,.0f}mn" if ct is not None else ""))
     elif ok(f.rates):
         out.append(f"케이스 B: 기준금리 DGS10 {f.rates.dgs10:.2f}%. 대출 한도는 가정 입력 후 산출")
@@ -111,6 +111,7 @@ def assumption_counts(f: data.Facts) -> dict[str, dict[str, int]]:
 
 
 CHECK_RANGES = {"yoc": (0.08, 0.14), "equity_irr": (0.10, 0.25)}   # 사용자 지정 점검 범위 (원가 대비 수익률, Equity IRR)
+YOC_TOLERANCE = 0.01                                                 # 원가 대비 수익률 ±1%p 허용
 
 
 def check_rows(f: data.Facts) -> list[dict]:
@@ -119,8 +120,10 @@ def check_rows(f: data.Facts) -> list[dict]:
     items = []
     a, b = f.cases.get("A"), f.cases.get("B")
     if ok(a):
-        items.append(("A 기준(전력 포함 임대, SPC 전력비 부담)", a.base))
-        for k, lab in (("passthrough", "A 전력비 별도 청구"), ("power_cut", "A 전력단가 −10원(제안, 민감도)")):
+        gross = a.inp.power_passthrough < 1
+        items.append(("A 기준(전력 포함 임대, SPC 전력비 부담)" if gross else "A 기준(전력비 별도 청구)", a.base))
+        for k, lab in (("passthrough", "A 전력비 별도 청구"), ("gross", "A 전력 포함 임대(스트레스, 재sizing)"),
+                       ("power_cut", "A 전력 포함 + 단가 −10원(제안, 민감도)")):
             if k in a.alts:
                 items.append((lab, a.alts[k]))
     if ok(b):
@@ -136,8 +139,8 @@ def check_rows(f: data.Facts) -> list[dict]:
         neg = pf.negative_amortization_years(r)
         flags = []
         lo, hi = CHECK_RANGES["yoc"]
-        if not lo <= y <= hi:
-            flags.append(f"원가 대비 수익률 {y * 100:.1f}% (범위 {lo * 100:.0f}~{hi * 100:.0f}% 밖)")
+        if not lo - YOC_TOLERANCE <= y <= hi + YOC_TOLERANCE:
+            flags.append(f"원가 대비 수익률 {y * 100:.1f}% (범위 {lo * 100:.0f}~{hi * 100:.0f}% ±1%p 밖)")
         lo, hi = CHECK_RANGES["equity_irr"]
         if e is None or not lo <= e <= hi:
             flags.append(f"Equity IRR {_f(e, 1, True)} (범위 {lo * 100:.0f}~{hi * 100:.0f}% 밖)")
@@ -146,6 +149,7 @@ def check_rows(f: data.Facts) -> list[dict]:
         if neg:
             flags.append(f"마이너스 상환 {neg}년차")
         rows.append({"케이스": lab, "원가 대비 수익률": _f(y, 1, True), "Equity IRR": _f(e, 1, True),
+                     "Project / Equity IRR (잔존가치 제외)": f"{_f(r.project_irr_ex_tv, 1, True)} / {_f(r.equity_irr_ex_tv, 1, True)}",
                      "최소 DSCR / 목표": f"{r.min_dscr:.2f} / {r.inp.target_dscr:.2f}", "마이너스 상환": "없음" if not neg else str(neg),
                      "대출 한도": f"{r.debt:,.0f}", "판정": "범위 내" if not flags else "⚠ " + "; ".join(flags)})
     return rows
@@ -166,12 +170,16 @@ def anomalies(f: data.Facts) -> list[str]:
         neg = [k for k, x in a.stresses.items() if x.min_dscr < 0]
         if neg:
             out.append(f"A: 스트레스 {', '.join(neg)}에서 최소 DSCR 음수")
-        short = {k: x.ops["shortfall"].sum() for k, x in a.stresses.items() if x.ops["shortfall"].sum() > 1e-6}
+        short = {k: x.ops["shortfall"].sum() for k, x in a.stresses.items() if x.ops["shortfall"].sum() > 1e-6 and k != "power_gross"}
         if short:
             out.append("A: 대출 고정 스트레스에서 유보계좌·DSRA 소진 후 원리금 부족 — " + ", ".join(f"{k} {v:,.1f}억원" for k, v in short.items()))
+        pg = a.stresses.get("power_gross")
+        if pg is not None:
+            out.append(f"A: 전력 포함 임대(SPC 부담) 스트레스(대출 고정) — 최소 DSCR {pg.min_dscr:.2f}배, 유보계좌·DSRA 이후 원리금 부족 {pg.ops['shortfall'].sum():,.1f}억원. "
+                       "다시 sizing하면 범위 점검 표의 'A 전력 포함 임대' 행")
         if a.tax_timing:
             out.append(f"A: 토네이도 {', '.join(a.tax_timing)}의 유리한 쪽이 기준보다 낮음 — 세율 0 재계산 시 사라짐(이월결손금 소진 시점이 바뀌어 특정 연도 법인세 증가). "
-                       "sculpting으로 기준 DSCR이 모든 상환 연도에서 목표와 같아, 어느 해 CFADS가 조금만 줄어도 최소 DSCR이 내려간다")
+                       "sculpting으로 기준 DSCR이 모든 상환 연도에서 같은 값(유효 DSCR)이라, 어느 해 CFADS가 조금만 줄어도 최소 DSCR이 내려간다")
         if a.inp.grace_interest == "reserve" and a.base.llcr < a.base.min_dscr - 1e-6:
             out.append(f"A: LLCR {a.base.llcr:.2f}배 < 최소 DSCR {a.base.min_dscr:.2f}배 — LLCR은 램프업 {a.inp.grace_years}년 CFADS 적자(유보계좌로 충당)까지 대출 기간 현재가치에 넣기 때문")
         rng = [k for k in ("prelease_low", "prelease_high") if k in a.stresses]
@@ -217,6 +225,9 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
     L = ["# Vol.2 빌드 요약\n", f"- 기준일: {as_of} · 빌드(UTC): {utc_now_iso()}", f"- 폰트: {r['fonts']}",
          "- 가상 케이스(실존 프로젝트 아님). 교육·연구 목적, 투자 권유 아님", ""]
     L += ["## 핵심 결론", ""] + [f"{i}. {t}" for i, t in enumerate(key_conclusions(f), 1)] + [""]
+    if r.get("exec_lines"):
+        L += ["## Executive Summary 결론 문장 (국문 PDF와 같은 문장)", "", f"- 헤드라인: {r['exec_lines'][0]}"] \
+             + [f"{i}. {t}" for i, t in enumerate(r["exec_lines"][1:], 1)] + [""]
     L += ["## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
     L += ["", "## 페이지 제목 (국문)", ""] + [f"- **{lab}** {t}" for lab, t in r.get("page_titles", [])]
     pend = r["pending"].get("kr") or next(iter(r["pending"].values()), [])

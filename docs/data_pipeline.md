@@ -49,10 +49,14 @@ pytest -q tests/test_pf_model.py tests/test_research_vol02.py
   적립액 = 기준 시나리오 부족분 합계 × (1 + `interest_reserve_buffer`), 최소·평균 DSCR은 원금 상환 기간 기준, 잔액은 거치 마지막 해 해제).
   스트레스는 유보계좌를 FC 적립액 그대로 두고 부족하면 DSRA → 자기자본 순으로 메웁니다.
 - 전력비: SPC 부담분 = (1 − `power_passthrough`) × IT 용량 × 가동률 × IT 부하율 × PUE × 8,760시간 × 전력단가 × (1 + `power_escalation`)^t.
-  케이스 A는 전력 포함(gross) 임대를 기준(패스스루 0%)으로 두고 별도 청구(패스스루 100%)·단가 인하 제안(`sensitivity.power_price_cut`)을 다시 sizing해 비교합니다.
+  케이스 A는 전력비 별도 청구(패스스루 100%)를 기준으로 두고(한·미 임대료 모두 CBRE 계열 → 같은 전력 제외 정의), 전력 포함 임대(SPC 부담)는
+  스트레스(대출 고정 `power_gross`)와 재sizing 대안(`gross`, 단가 인하 제안 `sensitivity.power_price_cut` 포함)으로 봅니다.
+  `sensitivity.power_inclusion_grid`(전력비 포함 비율 0·25·50·75·100%)마다 다시 sizing해 대출 한도·Equity IRR·최소 DSCR 곡선을 그립니다.
+- 잔존가치: Project·Equity IRR은 항상 잔존가치 제외 값(`project_irr_ex_tv`, `equity_irr_ex_tv`)과 함께 표시합니다.
+- CAPEX: 케이스 A 기준값 = 군산 60MW 실제 PF 딜(총사업비 ÷ 용량), 범위 하단 = 공사비, `sensitivity.capex_mid` = 중간 민감도.
 - 대안 sizing: `sensitivity.contracted_sizing`에 든 케이스는 사전 임대 계약분 CFADS만으로 sculpting한 결과를 나란히 보입니다(케이스 B).
   `capex_yoy_change`가 있으면 공사비 상승 전(÷(1+상승률))·임대료 1년 전 수준으로 다시 계산해 원가 대비 수익률을 비교합니다.
-- 범위 점검: 빌드 요약 '범위 점검' 표 = 원가 대비 수익률(안정화 첫해 EBITDA ÷ 총사업비) 8~14%, Equity IRR 10~25%, 최소 DSCR ≥ 목표, 마이너스 상환 없음.
+- 범위 점검: 빌드 요약 '범위 점검' 표 = 원가 대비 수익률(안정화 첫해 EBITDA ÷ 총사업비) 8~14%(±1%p 허용), Equity IRR 10~25%, 최소 DSCR ≥ 목표, 마이너스 상환 없음.
 - Vol.1 데이터 연결: IEA 2024→2035 성장률(하단·기준·상단) → 가동률 램프업, ECOS 국고채 3·10년·FRED DGS10(기준일 2026-10-20 이전 최근값)
   → 기준금리, DART 피어 3사 영업이익률 FY2022A→FY2025A → 함의 가격 상승률(상한값) × 전력설비 비중 → CAPEX 스트레스,
   EIA 버지니아 상업용 판매·요금(`data/processed/vol02_eia_va_com.csv`, 2015~2025) → 케이스 B 수요 근거·전력 단가·전력비 민감도(PUE 축 × 요금).

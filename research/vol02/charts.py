@@ -92,6 +92,42 @@ def yield_bars(labels: Sequence[str], values: Sequence[float], colors: Sequence[
     return draw
 
 
+def debt_irr_curve(labels: Sequence[str], debt: Sequence[float], irr: Sequence[float], irr_ex: Sequence[float] | None,
+                   notes: Sequence[str], c: Mapping, dfmt: Callable[[float], str], names: tuple[str, str, str]) -> Draw:
+    """x = 단계(예: 전력비 포함 비율). 막대 = 대출 한도(아래 절반), 선 = Equity IRR %(위 절반), 점선 = 잔존가치 제외 IRR.
+    notes = x축 라벨 아래 줄(예: 최소 DSCR)."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        ax = fig.add_axes([0.04, 0.17, 0.88, 0.80])
+        x = np.arange(len(labels))
+        b = ax.bar(x, debt, color=c["warm_grey_light"], width=0.5)
+        top = max(debt)
+        for bar, v in zip(b, debt):
+            ax.text(bar.get_x() + bar.get_width() / 2, v + top * 0.03, dfmt(v), ha="center", va="bottom", fontsize=FS, color=c["text"])
+        ax.set_ylim(0, top * 2.1)                                  # 막대는 아래쪽
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"{lb}\n{nt}" for lb, nt in zip(labels, notes)], fontsize=FS - 0.4)
+        ax.yaxis.set_major_locator(NullLocator())
+        _style(ax, c)
+        ax2 = ax.twinx()
+        vals = list(irr) + list(irr_ex or [])
+        lo, hi = min(vals), max(vals)
+        span = max(hi - lo, 1.0)
+        ax2.set_ylim(lo - span * 1.25, hi + span * 0.3)            # 선은 위쪽
+        ax2.plot(x, irr, color=c["gold"], lw=2.2, marker="o", ms=4)
+        for xi, v in zip(x, irr):
+            ax2.text(xi, v + span * 0.05, f"{v:.1f}%", ha="center", va="bottom", fontsize=FS + 0.6, fontweight="bold", color=c["gold"])
+        if irr_ex is not None:
+            ax2.plot(x, irr_ex, color=c["brick"], lw=1.3, ls="--", marker="o", ms=3)
+            for xi, v in zip(x, irr_ex):
+                ax2.text(xi, v - span * 0.05, f"{v:.1f}%", ha="center", va="top", fontsize=FS - 0.6, color=c["brick"])
+        ax2.yaxis.set_major_locator(NullLocator())
+        for sp in ("top", "left", "right"):
+            ax2.spines[sp].set_visible(False)
+        _save(fig, path)
+    return draw
+
+
 # ---------------------------------------------------------------------------
 # CFADS vs 원리금 + DSCR
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ SYNTH = {
               opex_per_kw_year=300000, opex_escalation=0.02, tax_brackets="2:10,200:20,3000:22,inf:25", dep_years=20, operating_years=20,
               margin_bp=200, target_dscr=1.3, max_gearing=0.7, tenor_years=15, grace_years=2, grace_interest="capitalized",
               dsra_months=6, discount_rate=0.09, grid_approval_prob=0.3, approval_decision_year=2, option_window_years=4,
-              rent_volatility=0.15),
+              rent_volatility=0.15, pue=1.3, it_load_factor=0.7, power_price=150),
     "B": dict(capex_per_mw=11, power_equipment_share=0.4, construction_quarters=8, rent_per_kw_month=130, rent_escalation=0.03,
               prelease=0.6, stabilized_occupancy=0.95, opex_per_kw_year=150, opex_escalation=0.025, dep_years=20,
               operating_years=20, margin_bp=225, target_dscr=1.35, max_gearing=0.65, tenor_years=15, grace_years=1,
@@ -313,6 +313,7 @@ def test_build_pdfs(cfg, tmp_path, fill):
     assert ("검산 (회계 항등식" in summary) == fill
     assert "## 가정 집계" in summary and "근거 있는 가정" in summary and "저자 판단" in summary
     assert "## 범위 점검" in summary and ("범위 내" in summary or "⚠" in summary) == fill
+    assert "## Executive Summary 결론 문장" in summary and "- 헤드라인:" in summary
 
 
 def test_vol01_roadmap_wording():
@@ -376,8 +377,9 @@ def test_committed_assumptions_tags_and_counts():
     cfg = base.load_config()
     a = D.load_assumptions(cfg)
     A, B = a["A"], a["B"]
-    assert (A["capex_per_mw"].value, A["capex_per_mw"].low, A["capex_per_mw"].high) == (120.0, 86.0, 145.0)
-    assert A["capex_per_mw"].status == "judgment" and A["rent_per_kw_month"].status == "sourced"
+    assert (A["capex_per_mw"].value, A["capex_per_mw"].low, A["capex_per_mw"].high) == (145.0, 86.0, 145.0)
+    assert A["capex_per_mw"].status == "sourced" and "eda202610125649" in A["capex_per_mw"].url    # 군산 60MW 실제 PF 딜
+    assert A["rent_per_kw_month"].status == "sourced"
     assert A["prelease"].value == pytest.approx((0.16 + 0.235) / 2) and A["prelease"].status == "sourced"
     assert A["margin_bp"].value == 150 and A["target_dscr"].value == 1.45 and A["max_gearing"].value == pytest.approx(0.65)
     assert D.parse_brackets(A["tax_brackets"].value) == ((2, 0.10), (200, 0.20), (3000, 0.22), (math.inf, 0.25))
@@ -385,8 +387,8 @@ def test_committed_assumptions_tags_and_counts():
     assert A["grace_years"].value == 3 and A["grace_interest"].value == "reserve"
     assert A["interest_reserve_buffer"].value == pytest.approx(0.10)
     assert {A[k].status for k in ("grace_years", "grace_interest", "interest_reserve_buffer")} == {"judgment"}
-    # 전력비: 전력 포함 임대(SPC 부담, 판단) · 한전 판매단가(근거) · 연 2% 인상(판단)
-    assert A["power_passthrough"].value == 0 and A["power_passthrough"].status == "judgment"
+    # 전력비: 별도 청구가 기준(판단) · 한전 판매단가(근거) · 연 2% 인상(판단)
+    assert A["power_passthrough"].value == 1.0 and A["power_passthrough"].status == "judgment"
     assert A["power_price"].value == pytest.approx(181.9) and A["power_price"].status == "sourced" and A["power_price"].published == "2026-08-27"
     assert A["power_escalation"].value == pytest.approx(0.02) and A["power_escalation"].status == "judgment"
     assert B["capex_per_mw"].value == pytest.approx(17.6 + 0.584) and B["capex_per_mw"].status == "sourced"
@@ -415,9 +417,22 @@ def test_committed_case_results_and_checks():
     assert D.ok(a) and D.ok(b)
     assert not a.negative_amort and a.base.cons.reserve_initial > 0
     assert a.base.min_dscr >= a.inp.target_dscr - 1e-6 and b.base.min_dscr >= b.inp.target_dscr - 1e-6
-    assert set(a.alts) == {"passthrough", "power_cut"} and set(b.alts) == {"contracted"}
-    assert a.alts["passthrough"].debt > a.base.debt and pf.yield_on_cost(a.alts["passthrough"]) > a.yoc
-    assert a.alts["power_cut"].inp.power_price == pytest.approx(181.9 - 10)
+    assert set(a.alts) == {"gross", "power_cut"} and set(b.alts) == {"contracted"}
+    assert a.alts["gross"].debt < a.base.debt and pf.yield_on_cost(a.alts["gross"]) < a.yoc        # 전력 포함 임대 = 스트레스
+    assert a.alts["power_cut"].inp.power_price == pytest.approx(181.9 - 10) and a.alts["power_cut"].inp.power_passthrough == 0
+    assert a.alts["gross"].equity_irr < a.alts["power_cut"].equity_irr < a.base.equity_irr
+    # 전력비 포함 비율 곡선 (0~100%): 포함 비율이 높을수록 Equity IRR·대출 한도 하락
+    cv = a.power_curve
+    assert sorted(cv) == [0.0, 0.25, 0.5, 0.75, 1.0] and cv[0.0] is a.base and cv[1.0] is a.alts["gross"]
+    irrs = [cv[k].equity_irr for k in sorted(cv)]
+    debts = [cv[k].debt for k in sorted(cv)]
+    assert all(x > y for x, y in zip(irrs, irrs[1:])) and all(x >= y - 1e-6 for x, y in zip(debts, debts[1:]))
+    assert a.power_pair() == (cv[0.0], cv[1.0])
+    assert a.stresses["power_gross"].stress.passthrough == 0.0 and a.stresses["power_gross"].min_dscr < a.base.min_dscr
+    assert "capex_mid" in a.stresses and a.stresses["capex_mid"].stress.capex_mult == pytest.approx(120 / 145)
+    # 잔존가치 제외 IRR: 모든 케이스에 존재, 잔존가치가 있으면 더 낮다
+    for x in (a.base, b.base, a.alts["gross"], b.alts["contracted"]):
+        assert x.terminal_value > 0 and x.equity_irr_ex_tv < x.equity_irr and x.project_irr_ex_tv < x.project_irr
     assert b.alts["contracted"].debt < b.base.debt
     assert b.alts["contracted"].min_dscr_contracted == pytest.approx(b.inp.target_dscr)
     assert pf.yield_on_cost(b.cost_counterfactual) > b.yoc                                 # 공사비 상승 전 수익률이 더 높다
@@ -428,5 +443,7 @@ def test_committed_case_results_and_checks():
     assert op.inputs.phase2.discount_rate == pytest.approx(0.10) and op.inputs.window_years == 2
     assert len(op.grid) == 9                                                              # 격자 유지 (3 × 3)
     rows = check_rows(f)
-    assert {r["케이스"].split("(")[0].strip() for r in rows} >= {"A 기준", "A 전력비 별도 청구", "B 계약 매출 sizing"}
+    assert {r["케이스"].split("(")[0].strip() for r in rows} >= {"A 기준", "A 전력 포함 임대", "B 계약 매출 sizing"}
     assert all(r["마이너스 상환"] == "없음" for r in rows)
+    base_row = next(r for r in rows if r["케이스"].startswith("A 기준"))
+    assert "별도 청구" in base_row["케이스"] and "잔존가치 제외" in " ".join(rows[0])

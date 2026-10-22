@@ -172,7 +172,9 @@ class Story:
         cx = self.A("capex_per_mw")
         if cx.low is None or cx.high is None:
             return self.T("MW당 CAPEX 범위 미입력", "CAPEX range not set")
-        return self.T(f"MW당 {cx.low:,.0f}~{cx.high:,.0f}억원 범위", f"KRW {cx.low / 10:,.1f}–{cx.high / 10:,.1f}bn per MW")
+        mid = ((self.v["sensitivity"].get("capex_mid") or {}).get("A") or {}).get("value")
+        return self.T(f"MW당 {cx.low:,.0f}~{cx.high:,.0f}억원 범위" + (f"(중간 {mid:,.0f}억원)" if mid else ""),
+                      f"KRW {cx.low / 10:,.1f}–{cx.high / 10:,.1f}bn per MW" + (f" (mid {mid / 10:,.1f}bn)" if mid else ""))
 
     def prelease_range(self) -> str:
         p = self.A("prelease")
@@ -210,6 +212,33 @@ class Story:
         """케이스 A 임대료를 전력 포함(gross)으로 보고 SPC가 전력비를 부담하는지."""
         v = self.A("power_passthrough").value
         return v is not None and v < 1
+
+    def irr2(self, r, which: str = "equity") -> str:
+        """'16.1% (잔존가치 제외 14.0%)' 형식."""
+        v, ex = (r.equity_irr, r.equity_irr_ex_tv) if which == "equity" else (r.project_irr, r.project_irr_ex_tv)
+        if not r.terminal_value:
+            return self.pct(v)
+        return self.T(f"{self.pct(v)} (잔존가치 제외 {self.pct(ex)})", f"{self.pct(v)} (ex-TV {self.pct(ex)})")
+
+    def power_clause(self) -> tuple | None:
+        """케이스 A 전력비 조항 비교: (별도 청구 결과, 전력 포함 결과, 기준이 별도 청구인지)."""
+        a = self.case("A")
+        if not ok(a) or a.power_pair() is None:
+            return None
+        pt_r, gr_r = a.power_pair()
+        return pt_r, gr_r, not self.a_gross()
+
+    def clause_sentence(self) -> str | None:
+        pc = self.power_clause()
+        if pc is None:
+            return None
+        pt_r, gr_r, _ = pc
+        return self.T(f"전력비 부담 조항 하나로 Equity IRR이 {self.pct(pt_r.equity_irr)}(별도 청구) vs {self.pct(gr_r.equity_irr)}(전력 포함 임대)로 갈린다",
+                      f"One power-cost clause splits equity IRR: {self.pct(pt_r.equity_irr)} (passed through) vs {self.pct(gr_r.equity_irr)} (gross rent)")
+
+    def rent20(self):
+        b = self.case("B")
+        return next((x for k, x in b.stresses.items() if k.startswith("rent_-")), None) if ok(b) else None
 
     def reserve_on(self) -> bool:
         return self.A("grace_interest").value == "reserve" and (self.A("grace_years").value or 0) > 0
@@ -254,6 +283,9 @@ class Story:
     # --- Executive Summary --------------------------------------------------
     def headline(self) -> str:
         a, b = self.case("A"), self.case("B")
+        if ok(a) and ok(b) and self.clause_sentence():
+            return self.T(f"대출 한도는 총사업비의 한국 {self.pct(a.base.gearing, 0)}, 미국 {self.pct(b.base.gearing, 0)} — 한국은 {self.clause_sentence()}",
+                          f"Debt capacity: {self.pct(a.base.gearing, 0)} of cost in Korea, {self.pct(b.base.gearing, 0)} in the U.S. — in Korea, {self.clause_sentence()[0].lower() + self.clause_sentence()[1:]}")
         if ok(a) and ok(b):
             ka, kb = a.base.gearing, b.base.gearing
             vk, ve = self.VAR_KR, self.VAR_EN
@@ -270,6 +302,10 @@ class Story:
                                 f"U.S.: scale and rates ({self.base_label('B')} {sp:.2f}pp above {self.base_label('A')})"))
         body = self.T(" · ".join(parts) + "가 대출 한도의 첫 변수", "; ".join(parts) + " — the first drivers of debt capacity")
         return body if parts else self.T("AI 데이터센터 PF: 대주의 눈으로 본 대출 한도", "AI data-centre PF: debt capacity through a lender's eyes")
+
+    def exec_conclusions(self) -> list[str]:
+        """Executive Summary 결론 문장: 헤드라인 + 세 박스 제목."""
+        return [self.headline()] + [b.title for b in (self.box_korea(), self.box_us(), self.box_cost())]
 
     def executive(self) -> Page:
         f, r, d, pp = self.f, self.f.rates, self.f.demand, self.f.peers
@@ -299,15 +335,16 @@ class Story:
                 b = cr.base
                 add(self.T(f"{self.name(c)} 대출 한도 (총사업비 대비)", f"{self.name(c)} debt (share of cost)"),
                     f"{self.money(c, b.debt)} ({self.pct(b.gearing, 0)})", "3" if c == "A" else "6", True)
-                add(self.T(f"{self.name(c)} 최소 DSCR · Equity IRR", f"{self.name(c)} min DSCR · equity IRR"),
-                    f"{self.x(b.min_dscr)} · {self.pct(b.equity_irr)}", "3" if c == "A" else "6")
+                add(self.T(f"{self.name(c)} 최소 DSCR · Equity IRR (잔존가치 제외)", f"{self.name(c)} min DSCR · equity IRR (ex-TV)"),
+                    f"{self.x(b.min_dscr)} · {self.pct(b.equity_irr)} ({self.pct(b.equity_irr_ex_tv)})", "3" if c == "A" else "6")
             else:
                 add(self.T(f"{self.name(c)} 대출 한도", f"{self.name(c)} debt capacity"), self.T("입력 후 산출", "after inputs"), "3" if c == "A" else "6")
+        pc = self.power_clause()
+        if pc is not None:
+            add(self.T("한국 Equity IRR: 전력비 별도 청구 vs 전력 포함 임대", "Korea equity IRR: power passed through vs gross rent"),
+                f"{self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}", "7", True)
         if ok(self.case("A")) and ok(self.case("B")):
-            ya, yb = self.case("A"), self.case("B")
-            pt = ya.alts.get("passthrough")
-            add(self.T("원가 대비 수익률 (A 전력 포함 · A 전력 별도 · B)", "Yield on cost (A gross · A pass-through · B)"),
-                " · ".join(self.pct(v) for v in ([ya.yoc] + ([pf_yoc(pt)] if pt is not None else []) + [yb.yoc])), "7")
+            add(self.T("원가 대비 수익률 (한국 · 미국)", "Yield on cost (Korea · U.S.)"), f"{self.pct(self.case('A').yoc)} · {self.pct(self.case('B').yoc)}", "7")
         op = f.option
         add(self.T("2단계 20MW 증설 옵션 가치", "Phase 2 (20 MW) option value"),
             self.money("A", op.result.value) if ok(op) else self.T("입력 후 산출", "after inputs"), "5")
@@ -329,15 +366,26 @@ class Story:
             b = a.base
             num, cap = self.money("A", b.debt), self.T(f"1단계 20MW 대출 한도 (총사업비의 {self.pct(b.gearing, 0)})",
                                                         f"Phase 1 (20 MW) debt ({self.pct(b.gearing, 0)} of cost)")
-            title = self.T(f"한국 40MW — {self.binding_text(b)}, 최소 DSCR {self.x(b.min_dscr)}",
-                           f"Korea 40 MW — {self.binding_text(b)}; min DSCR {self.x(b.min_dscr)}")
-            bl.append(self.T(f"계약 임대료만으로 본 최소 DSCR {self.x(b.min_dscr_contracted)} (사전 임대율 {self.pct(a.inp.prelease)})",
-                             f"Min DSCR on contracted rent only: {self.x(b.min_dscr_contracted)} (pre-lease {self.pct(a.inp.prelease)})"))
+            cs = self.clause_sentence()
+            pc0 = self.power_clause()
+            title = (self.T(f"한국 40MW — 별도 청구 기준 대출 {self.money('A', pc0[0].debt)}·Equity IRR {self.pct(pc0[0].equity_irr)}, 전력 포함 임대면 {self.money('A', pc0[1].debt)}·{self.pct(pc0[1].equity_irr)}",
+                            f"Korea 40 MW — passed-through power: debt {self.money('A', pc0[0].debt)}, equity IRR {self.pct(pc0[0].equity_irr)}; gross rent: {self.money('A', pc0[1].debt)}, {self.pct(pc0[1].equity_irr)}")
+                     if cs and pc0 else
+                     self.T(f"한국 40MW — {cs}", f"Korea 40 MW — {cs[0].lower() + cs[1:]}") if cs else
+                     self.T(f"한국 40MW — {self.binding_text(b)}, 최소 DSCR {self.x(b.min_dscr)}",
+                            f"Korea 40 MW — {self.binding_text(b)}; min DSCR {self.x(b.min_dscr)}"))
+            pc = self.power_clause()
+            if pc is not None:
+                pt_r, gr_r, _ = pc
+                bl.append(self.T(f"{cs} — 기준은 별도 청구(CBRE 임대료와 같은 전력 제외 정의, CBRE 정의는 원문 미확인)",
+                                 f"{cs} — base is pass-through (same ex-power definition as CBRE rents; CBRE definition not verified)"))
+            bl.append(self.T(f"{self.binding_text(b)}: 최소 DSCR {self.x(b.min_dscr)}, Equity IRR {self.irr2(b)}",
+                             f"{self.binding_text(b)[0].upper() + self.binding_text(b)[1:]}: min DSCR {self.x(b.min_dscr)}, equity IRR {self.irr2(b)}"))
         else:
             num = self.pct(g.ratio) if g.ratio is not None else "—"
             cap = self.T(f"수도권 계통 승인률, 용량 기준 ({self.grid_basis()})", f"Seoul-metro grid approval by capacity ({self.grid_basis()})")
             title = self.T("한국 40MW — 계통 승인과 사전 임대율이 먼저 묶는다", "Korea 40 MW — grid approval and pre-leasing bind first")
-        if self.grid_sentence():
+        if self.grid_sentence() and not ok(a):
             bl.append(self.grid_sentence())
         bl.append(self.T(f"수도권 2027·2028 준공분 사전 임대율 {self.prelease_range()}, 임대료 kW당 월 약 {self.A('rent_per_kw_month').value / 1e4:.0f}만원",
                          f"Pre-leasing {self.prelease_range()} for 2027–28 deliveries; rent about KRW {self.A('rent_per_kw_month').value:,.0f}/kW-month"))
@@ -358,8 +406,16 @@ class Story:
                     if ms and all(ok(x) for x in ms.values()) else "")
             cap = self.T(f"대출 한도 (원화 {self.krw(self.to_krw(b.base.debt))}, 총사업비의 {self.pct(b.base.gearing, 0)})",
                          f"Debt capacity ({self.krw(self.to_krw(b.base.debt))}; {self.pct(b.base.gearing, 0)} of cost)")
-            title = self.T(f"미국 100MW — {self.binding_text(b.base)}, 최소 DSCR {self.x(b.base.min_dscr)}",
-                           f"U.S. 100 MW — {self.binding_text(b.base)}; min DSCR {self.x(b.base.min_dscr)}")
+            r20 = self.rent20()
+            title = (self.T(f"미국 100MW — 최소 DSCR {self.x(b.base.min_dscr)}, 하이퍼스케일 실계약 임대료가 CBRE 호가보다 20% 낮으면 {self.x(r20.min_dscr)}",
+                            f"U.S. 100 MW — min DSCR {self.x(b.base.min_dscr)}; {self.x(r20.min_dscr)} if hyperscale rents sit 20% below CBRE quotes")
+                     if r20 is not None else
+                     self.T(f"미국 100MW — {self.binding_text(b.base)}, 최소 DSCR {self.x(b.base.min_dscr)}",
+                            f"U.S. 100 MW — {self.binding_text(b.base)}; min DSCR {self.x(b.base.min_dscr)}"))
+            if r20 is not None:
+                bl.append(self.T(f"CBRE 호가 USD {self.B('rent_per_kw_month').value:,.0f}/kW·월은 250~500kW 기준 — 100MW 실계약이 20% 낮으면 대출 고정 시 최소 DSCR {self.x(r20.min_dscr)}(1.0배 미만)",
+                                 f"CBRE's USD {self.B('rent_per_kw_month').value:,.0f}/kW-month quote is for 250–500 kW; 20% lower on a 100 MW lease gives min DSCR {self.x(r20.min_dscr)} at fixed debt (below 1.0x)"))
+            bl.append(self.T(f"Equity IRR {self.irr2(b.base)}", f"Equity IRR {self.irr2(b.base)}"))
             if ms:
                 bl.append(self.T(f"가산금리 미확정 → {b.margin_bp:.0f}bp 시나리오 대표값{rng_}",
                                  f"Margin not yet sourced → {b.margin_bp:.0f}bp scenario shown{rng_}"))
@@ -391,6 +447,12 @@ class Story:
             r_hi = a.stresses["capex_high"]
             bl.append(self.T(f"CAPEX +{(cm['high'] - 1) * 100:.1f}%(고) 시 최소 DSCR {self.x(a.base.min_dscr)} → {self.x(r_hi.min_dscr)}",
                              f"CAPEX +{(cm['high'] - 1) * 100:.1f}% (high): min DSCR {self.x(a.base.min_dscr)} → {self.x(r_hi.min_dscr)}"))
+        elif ok(a) and "capex_mid" in a.stresses:
+            cx = self.A("capex_per_mw")
+            mid = self.v["sensitivity"]["capex_mid"]["A"]["value"]
+            r_m = a.stresses["capex_mid"]
+            bl.append(self.T(f"MW당 CAPEX {cx.value:,.0f}억원(군산 실제 PF 딜) → {mid:,.0f}억원(중간)이면 최소 DSCR {self.x(a.base.min_dscr)} → {self.x(r_m.min_dscr)}, Equity IRR {self.pct(a.base.equity_irr)} → {self.pct(r_m.equity_irr)}",
+                             f"CAPEX KRW {cx.value / 10:,.1f}bn/MW (Gunsan deal) → {mid / 10:,.1f}bn (mid): min DSCR {self.x(a.base.min_dscr)} → {self.x(r_m.min_dscr)}; equity IRR {self.pct(a.base.equity_irr)} → {self.pct(r_m.equity_irr)}"))
         elif ok(a) and "capex_range_high" in a.stresses:
             cx = self.A("capex_per_mw")
             r_hi = a.stresses["capex_range_high"]
@@ -443,14 +505,17 @@ class Story:
         c1 = Cell(title=(self.T("SPC는 전력 포함 임대료로 전력비·대출을 감당하고, 램프업 이자 부족분은 이자유보계좌가 메운다",
                                 "The SPC pays power and debt from gross rent; an interest reserve covers the ramp-up interest gap")
                          if gross and res else
+                         self.T("SPC는 장기 책임임대 임대료로 대출을 갚고 전력비는 임차인이 부담(별도 청구) — 램프업 이자 부족분은 이자유보계좌가 메운다",
+                                "The SPC repays debt from committed rent, power is billed to the tenant — an interest reserve covers the ramp-up gap")
+                         if res else
                          self.T("SPC는 장기 책임임대 임대료로 대출을 갚고, 전력비는 임차인이 부담한다(패스스루)",
                                 "The SPC repays debt from long-term committed rent; power is passed through to the tenant")),
                   src=["ksj"], chart_key="structure", chart=charts.structure(nodes, edges, c),
                   note=(self.T(f"케이스 A 기준 구조도(가상). 임대료를 전력 포함(gross)으로 보고 SPC가 전력비 부담(원문에서 전력 포함 여부 미확인 → p7에 별도 청구 비교).",
                                f"Case A structure (hypothetical). Rent treated as gross of power, so the SPC pays power (inclusion not confirmed in the source; pass-through compared on p7).")
                         if gross else
-                        self.T(f"케이스 A 기준 구조도(가상). 전력비 패스스루 {pt * 100:.0f}% 가정: SPC의 전력비 순액 = 0.",
-                               f"Case A structure (hypothetical). Power pass-through {pt * 100:.0f}%: SPC's net power cost = 0.")) + rs)
+                        self.T(f"케이스 A 기준 구조도(가상). 전력비 별도 청구 {pt * 100:.0f}%(저자 판단: 대형 임대 계약의 일반 구조, 한·미 임대료 모두 CBRE 계열이라 같은 전력 제외 정의로 처리 — CBRE 정의는 원문 미확인). 전력 포함 임대는 p7 스트레스.",
+                               f"Case A structure (hypothetical). Power billed separately, {pt * 100:.0f}% (judgment: usual for large leases; both rents are CBRE-family figures, so one ex-power definition — CBRE definition not verified). Gross rent is a stress on p7.")) + rs)
         rows = [
             [self.T("임대차", "Lease"), self.T("임차인", "Tenant"), self.T("장기 책임임대 · 임대료 kW·월 · 연 인상", "Long-term committed lease; rent per kW-month; annual escalation"),
              self.T("사전 임대율 · 임차인 신용", "Pre-lease ratio; tenant credit")],
@@ -510,6 +575,9 @@ class Story:
         title = (self.T(f"구조: 한국은 전력 포함 임대 + 램프업 {gy}년 이자유보계좌, 미국은 전력비 패스스루 — 20MW 확정 + 20MW 옵션 vs 100MW 단일",
                         f"Structure: Korea — gross rent plus a {gy}-yr ramp-up interest reserve; U.S. — power pass-through; 20 MW + 20 MW option vs 100 MW")
                  if gross and res else
+                 self.T(f"구조: 장기 책임임대 + 전력비 별도 청구 SPC, 한국은 램프업 {gy}년 이자유보계좌 — 20MW 확정 + 20MW 옵션 vs 미국 100MW 단일",
+                        f"Structure: committed leases with power billed separately; Korea adds a {gy}-yr ramp-up interest reserve — 20 MW + 20 MW option vs U.S. 100 MW")
+                 if res else
                  self.T("구조: 장기 책임임대 + 전력비 패스스루 SPC — 한국은 20MW 확정 + 20MW 옵션, 미국은 100MW 단일",
                         "Structure: an SPC with long-term committed leases and power pass-through — Korea 20 MW + 20 MW option, U.S. 100 MW"))
         sub = self.T(f"케이스 A(메인) 수도권 외곽 40MW · 원화, 케이스 B(비교) 버지니아 100MW · 달러 — " + (self.grid_sentence() or ""),
@@ -681,6 +749,9 @@ class Story:
                 [self.T("최소 · 평균 DSCR · LLCR", "Min · avg DSCR · LLCR"), f"{self.x(b.min_dscr)} · {self.x(b.avg_dscr)} · {self.x(b.llcr)}"],
                 [self.T("Project IRR · Equity IRR · 회수기간(FC 기준)", "Project IRR · equity IRR · payback (from FC)"),
                  f"{self.pct(b.project_irr)} · {self.pct(b.equity_irr)} · {self.yrs(b.payback_years)}"]]
+        if b.terminal_value:
+            rows.append([self.T(f"잔존가치 제외 Project IRR · Equity IRR (cap rate {self.pct(inp.exit_cap_rate)})", f"Ex-TV project IRR · equity IRR (cap rate {self.pct(inp.exit_cap_rate)})"),
+                         f"{self.pct(b.project_irr_ex_tv)} · {self.pct(b.equity_irr_ex_tv)}"])
         if res:
             gap = float((o["interest"][:g] - o["cfads"][:g]).clip(lower=0).sum())
             rows.insert(5, [self.T(f"이자유보계좌 = 램프업 {g}년 이자 부족분 {mfmt(gap)} × (1 + {self.pct(inp.reserve_buffer, 0)})",
@@ -699,9 +770,11 @@ class Story:
                                   shade_rows={2} | ({len(rows) - 1} if neg else set()) | ({5} if res else set()),
                                   gold_cells={(2, 1)} | ({(5, 1)} if res else set()), brick_cells={(len(rows) - 1, 1)} if neg else set(), font_size=8.0),
                   note=self.T("대출 한도 = min(sculpting, 최대 대출 비율 × 총사업비). 총사업비에 건설이자(IDC)·초기 DSRA" + ("·이자유보계좌" if res else "") + " 포함, 반복 계산."
-                              + (" 최소·평균 DSCR = 원금 상환 기간 기준. 램프업 구조는 이자 원금 가산 대신 유보계좌(저자 판단, Gridlines 2026: 램프업 의존 사업은 초기 레버리지가 낮고 지분이 더 필요)" if res else ""),
+                              + (" 최소·평균 DSCR = 원금 상환 기간 기준. 램프업 구조는 이자 원금 가산 대신 유보계좌(저자 판단, Gridlines 2026: 램프업 의존 사업은 초기 레버리지가 낮고 지분이 더 필요)" if res else "")
+                              + (f". LLCR {self.x(b.llcr)} < 최소 DSCR {self.x(b.min_dscr)}: LLCR에는 램프업 {g}년 적자(유보계좌로 충당)가 포함되기 때문" if res and b.llcr < b.min_dscr - 1e-6 else ""),
                               "Debt = min(sculpting, max gearing × total cost); cost includes IDC and initial DSRA" + (" and the interest reserve" if res else "") + ", solved iteratively."
-                              + (" Min/avg DSCR over principal repayment years. Ramp-up uses a reserve, not capitalised interest (author's judgment; Gridlines 2026: ramp-up-dependent projects carry lower initial leverage and more equity)" if res else "")) + neg_note)
+                              + (" Min/avg DSCR over principal repayment years. Ramp-up uses a reserve, not capitalised interest (author's judgment; Gridlines 2026: ramp-up-dependent projects carry lower initial leverage and more equity)" if res else "")
+                              + (f". LLCR {self.x(b.llcr)} < min DSCR {self.x(b.min_dscr)} because LLCR includes the {g}-yr ramp-up deficit (covered by the reserve)" if res and b.llcr < b.min_dscr - 1e-6 else "")) + neg_note)
         pick = sorted({1, 2, 3, min(5, inp.tenor_years), min(10, inp.tenor_years), inp.tenor_years} | ({g + 1} if res else set()))
         wrows = []
         for y in pick:
@@ -813,6 +886,10 @@ class Story:
                                   f" (pre-lease {self.pct(self.A('prelease').low)}: reserve draw {self.money('A', pl.reserve_used)} of {self.money('A', a.base.cons.reserve_initial)}, uncovered after DSRA {self.money('A', pl.grace_shortfall)})")
                 res_note = self.T(f" 최소 DSCR = 원금 상환 기간 기준: 사전 임대율은 램프업 {a.inp.grace_years}년(유보계좌 구간)에만 영향{used}.",
                                   f" Min DSCR covers principal repayment years: pre-lease only affects the {a.inp.grace_years}-yr ramp-up (reserve period){used}.")
+            pg = a.stresses.get("power_gross")
+            pg_note = (self.T(f" 전력 포함 임대(SPC 부담)로 바뀌면(대출 고정) 최소 DSCR {self.x(pg.min_dscr)}, 유보계좌·DSRA 이후 원리금 부족 {self.money('A', float(pg.ops['shortfall'].sum()))} — p7.",
+                              f" If rent turns gross (SPC pays power, debt fixed): min DSCR {self.x(pg.min_dscr)}, uncovered debt service {self.money('A', float(pg.ops['shortfall'].sum()))} — p7.")
+                       if pg is not None else "")
             c1 = Cell(title=self.T(f"최소 DSCR을 가장 크게 흔드는 변수는 {vn[top['variable']]} ({self.x(top['low'])}~{self.x(top['high'])})",
                                    f"{vn[top['variable']]} moves min DSCR the most ({self.x(top['low'])}–{self.x(top['high'])})"),
                       src=["ksj", "dart"], legend=[(c["brick"], self.T("불리", "Adverse")), (c["brown_mid"], self.T("유리", "Favourable"))],
@@ -821,7 +898,7 @@ class Story:
                       note=self.T(f"대출 스케줄은 기준 케이스로 고정. 건설 지연 = +{max(sc['delay_quarters'])}분기, 사전 임대율 = {self.prelease_range()}, "
                                   f"CAPEX = {self.capex_range_text()}, OPEX ±20%(출처 없는 저자 판단)" + (", 전력단가 ±10%" if "power" in set(t["variable"]) else "") + ".",
                                   f"Debt schedule fixed at base. Delay = +{max(sc['delay_quarters'])} quarters; pre-lease {self.prelease_range()}; "
-                                  f"CAPEX = {self.capex_range_text()}; OPEX ±20% (unsourced judgment)" + ("; power price ±10%" if "power" in set(t["variable"]) else "") + ".") + res_note + tt_note)
+                                  f"CAPEX = {self.capex_range_text()}; OPEX ±20% (unsourced judgment)" + ("; power price ±10%" if "power" in set(t["variable"]) else "") + ".") + res_note + tt_note + pg_note)
             bn = self.BE_KR if self.kr else self.BE_EN
             be = a.breakeven
             brow = []
@@ -867,14 +944,14 @@ class Story:
             vn = self.VAR_KR if self.kr else self.VAR_EN
             rows = [[vn[r_["variable"]], self.x(r_["low"]), self.x(r_["high"])] for _, r_ in b.tornado.iterrows()]
             r20 = next((x for k, x in b.stresses.items() if k.startswith("rent_-")), None)
-            t20 = (self.T(f" · 임대료 −20%면 {self.x(r20.min_dscr)}", f"; rent −20%: {self.x(r20.min_dscr)}") if r20 is not None else "")
+            t20 = (self.T(f" — 실계약 임대료가 CBRE 호가보다 20% 낮으면 {self.x(r20.min_dscr)}", f" — {self.x(r20.min_dscr)} if contract rents sit 20% below CBRE quotes") if r20 is not None else "")
             cells.append(Cell(title=self.T(f"케이스 B: 최소 DSCR {self.x(b.base.min_dscr)}, 가장 민감한 변수 {vn[b.tornado.iloc[0]['variable']]}{t20}",
                                            f"Case B: min DSCR {self.x(b.base.min_dscr)}; most sensitive: {vn[b.tornado.iloc[0]['variable']]}{t20}"),
                               src=["ksj"], table=TableSpec([self.T("변수", "Variable"), self.T("불리", "Adverse"), self.T("유리", "Favourable")], rows,
                                                            [0.5, 0.25, 0.25], ["L", "R", "R"], font_size=8.6),
-                              note=self.T(f"같은 스트레스 + 임대료 −20%(100MW 하이퍼스케일 계약은 250~500kW 시세보다 낮을 수 있음). 대출 스케줄 고정"
+                              note=self.T(f"같은 스트레스 + 임대료 −20%: 하이퍼스케일 실계약 임대료가 CBRE 호가(250~500kW 기준)보다 낮을 경우의 위험. 대출 스케줄 고정"
                                           + (f", 가산금리 {b.margin_bp:.0f}bp 시나리오(미확정)" if b.margin_bp is not None else ""),
-                                          f"Same stresses plus rent −20% (100 MW hyperscale leases may price below 250–500 kW quotes). Debt schedule fixed"
+                                          f"Same stresses plus rent −20%: the risk that hyperscale contract rents sit below CBRE quotes (250–500 kW). Debt schedule fixed"
                                           + (f"; {b.margin_bp:.0f}bp margin scenario (not yet sourced)" if b.margin_bp is not None else ""))))
         else:
             cells.append(self.pending(self.T("케이스 B 스트레스 요약", "Case B stress summary"), ["ksj"], b))
@@ -1004,6 +1081,8 @@ class Story:
             if not ms or not all(ok(x) for x in ms.values()):
                 return base_s
             vs = [fn(x) for x in ms.values()]
+            if fmt(min(vs)) == fmt(max(vs)):                      # 가산금리와 무관한 지표 (예: Project IRR)
+                return base_s
             return f"{base_s} ({fmt(min(vs))}~{fmt(max(vs))})" if self.kr else f"{base_s} ({fmt(min(vs))}–{fmt(max(vs))})"
         sp = self.rate_spread()
         margin_b = (self.T(f"미확정: {b.margin_bp:.0f}bp 시나리오 (150/250/350bp)", f"Not sourced: {b.margin_bp:.0f}bp scenario (150/250/350bp)")
@@ -1024,6 +1103,10 @@ class Story:
             ["LLCR", val(a, lambda x: self.x(x.base.llcr)), val(b, lambda x: self.x(x.base.llcr))],
             ["Project IRR", val(a, lambda x: self.pct(x.base.project_irr)), rng(b, lambda x: x.base.project_irr, self.pct)],
             ["Equity IRR", val(a, lambda x: self.pct(x.base.equity_irr)), rng(b, lambda x: x.base.equity_irr, self.pct)],
+            [self.T("Project IRR (잔존가치 제외)", "Project IRR (ex-TV)"), val(a, lambda x: self.pct(x.base.project_irr_ex_tv)),
+             rng(b, lambda x: x.base.project_irr_ex_tv, self.pct)],
+            [self.T("Equity IRR (잔존가치 제외)", "Equity IRR (ex-TV)"), val(a, lambda x: self.pct(x.base.equity_irr_ex_tv)),
+             rng(b, lambda x: x.base.equity_irr_ex_tv, self.pct)],
             [self.T("핵심 병목", "Key bottleneck"),
              self.T(f"계통(승인률 {self.grid_short()}) · 사전 임대율({self.prelease_range()})", f"Grid (approval {self.grid_short()}) · pre-leasing ({self.prelease_range()})"),
              self.T(f"규모(100MW, 한국 1단계의 5배) · 금리(+{sp:.2f}%p)" if sp is not None else "규모 · 금리",
@@ -1092,62 +1175,62 @@ class Story:
             return Page("body", "7", self.T("개발 수익률: 입력 확인 후 계산", "Development yield: computed once inputs are sourced"), "", cells)
         from src.analysis.pf_model import yield_on_cost as yoc
         mb = b.margin_bp if b.margin_bp is not None else b.inp.margin * 1e4      # 케이스 B 가산금리(시나리오 또는 입력값)
-        ga, pt, cut = a.base, a.alts.get("passthrough"), a.alts.get("power_cut")
-        cut_v = ((self.v["sensitivity"].get("power_price_cut") or {}).get("A") or {}).get("value")
-        cols_a = [(self.T("전력 포함 임대 (기준)", "Gross rent (base)"), ga)]
-        if pt is not None:
-            cols_a.append((self.T("전력비 별도 청구", "Power passed through"), pt))
-        if cut is not None:
-            cols_a.append((self.T(f"단가 {cut_v:+.0f}원 (제안·확정 전)", f"Tariff {cut_v:+.0f} KRW (proposal)"), cut))
-        pw = a.power or {}
-        si = pw.get("stab_year", 1) - 1
-
-        def spc_power(x):
-            return -float(x.ops["net_power"].iloc[si])
-        rows = [[self.T(f"SPC 전력비 ({si + 1}년차, 안정화)", f"SPC power cost (yr {si + 1}, stabilised)")] + [self.money("A", spc_power(x)) for _, x in cols_a],
-                [self.T("원가 대비 수익률 (안정화 EBITDA ÷ 총사업비)", "Yield on cost (stabilised EBITDA ÷ cost)")] + [self.pct(yoc(x)) for _, x in cols_a],
-                [self.T("대출 한도 (총사업비 대비)", "Debt (share of cost)")] + [f"{self.money('A', x.debt)} ({self.pct(x.gearing, 0)})" for _, x in cols_a],
-                [self.T("구속 조건", "Binding")] + [self.T("목표 DSCR", "target DSCR") if x.binding == "dscr" else self.T("최대 대출 비율", "max gearing") for _, x in cols_a],
-                [self.T("최소 DSCR · LLCR", "Min DSCR · LLCR")] + [f"{self.x(x.min_dscr)} · {self.x(x.llcr)}" for _, x in cols_a],
-                [self.T("이자유보계좌", "Interest reserve")] + [self.money("A", x.cons.reserve_initial) for _, x in cols_a],
-                ["Project IRR · Equity IRR"] + [f"{self.pct(x.project_irr)} · {self.pct(x.equity_irr)}" for _, x in cols_a]]
-        n_c = len(cols_a)
-        cut_note = ((self.v["sensitivity"].get("power_price_cut") or {}).get("A") or {}).get("note", "")
-        c1 = Cell(title=self.T(f"전력비를 SPC가 내면 원가 대비 수익률 {self.pct(yoc(ga))}, 별도 청구면 {self.pct(yoc(pt))} — 대출 한도 {self.money('A', ga.debt)} vs {self.money('A', pt.debt)}" if pt is not None else
-                               f"원가 대비 수익률 {self.pct(yoc(ga))}",
-                               f"If the SPC pays power, yield on cost is {self.pct(yoc(ga))}; passed through, {self.pct(yoc(pt))} — debt {self.money('A', ga.debt)} vs {self.money('A', pt.debt)}" if pt is not None else
-                               f"Yield on cost {self.pct(yoc(ga))}"),
-                  src=["market", "power", "ksj"],
-                  table=TableSpec([self.T("케이스 A (1단계 20MW)", "Case A (phase 1, 20 MW)")] + [h for h, _ in cols_a], rows,
-                                  [0.34] + [0.66 / n_c] * n_c, ["L"] + ["R"] * n_c, shade_rows={1, 2}, gold_cells={(1, 1), (2, 1)}, font_size=8.0),
-                  note="" if not a.inp.power_modeled() else self.T(f"임대료 25만원/kW·월의 전력 포함 여부는 원문에서 미확인 → 보수적 대주 관점에서 전력 포함(SPC 부담)을 기준으로 삼았다(저자 판단). "
-                              f"전력비 = IT {a.inp.mw:,.0f}MW × 가동률 × IT 부하율 {self.pct(a.inp.it_load_factor, 0)} × PUE {a.inp.pue:.1f} × 8,760시간 × {a.inp.power_price:,.1f}원/kWh(한전 2025년 평균 산업용 판매단가), 연 {self.pct(a.inp.power_escalation, 0)} 인상(저자 판단). "
-                              + (f"단가 {cut_v:+.0f}원 = {cut_note} — 민감도로만 표기" if cut is not None else ""),
-                              f"Whether the KRW 250k/kW-month rent includes power is not confirmed in the source, so the conservative lender case treats it as gross (SPC pays; author's judgment). "
-                              f"Power = IT {a.inp.mw:,.0f} MW × occupancy × IT load {self.pct(a.inp.it_load_factor, 0)} × PUE {a.inp.pue:.1f} × 8,760 h × KRW {a.inp.power_price:,.1f}/kWh (KEPCO 2025 average industrial tariff), +{self.pct(a.inp.power_escalation, 0)}/yr (judgment). "
-                              + (f"Tariff {cut_v:+.0f} KRW = proposed cut for the northern Seoul metro (Incheon, northern Gyeonggi), not yet final — sensitivity only" if cut is not None else "")))
+        pc = self.power_clause()
+        cut = a.alts.get("power_cut")
+        cut_cfg = (self.v["sensitivity"].get("power_price_cut") or {}).get("A") or {}
+        cut_v = cut_cfg.get("value")
+        curve = a.power_curve
+        if pc is not None and curve:
+            pt_r, gr_r, pt_base = pc
+            shares = sorted(curve)
+            labs = [self.T(f"{sh * 100:.0f}%", f"{sh * 100:.0f}%") for sh in shares]
+            notes = [self.T(f"최소 DSCR {curve[sh].min_dscr:.2f}배", f"min DSCR {curve[sh].min_dscr:.2f}x") for sh in shares]
+            dfmt = (lambda v: f"{v:,.0f}") if self.kr else (lambda v: f"{v / 10:,.0f}bn")
+            pw = a.power or {}
+            si = pw.get("stab_year", 1) - 1
+            pcost = float(gr_r.ops["power_cost"].iloc[si])
+            c1 = Cell(title=self.T(f"전력비 포함 비율 0%→100%: Equity IRR {self.pct(curve[shares[0]].equity_irr)} → {self.pct(curve[shares[-1]].equity_irr)}, 대출 한도 {self.money('A', curve[shares[0]].debt)} → {self.money('A', curve[shares[-1]].debt)}",
+                                   f"Power share in rent 0%→100%: equity IRR {self.pct(curve[shares[0]].equity_irr)} → {self.pct(curve[shares[-1]].equity_irr)}; debt {self.money('A', curve[shares[0]].debt)} → {self.money('A', curve[shares[-1]].debt)}"),
+                      src=["market", "power", "ksj"],
+                      legend=[(c["warm_grey_light"], self.T("대출 한도(억원)", "Debt (KRW)")), (c["gold"], "Equity IRR"),
+                              (c["brick"], self.T("잔존가치 제외", "Ex-TV"))],
+                      unit=self.T("x축 = 임대료에 포함된 전력비 비율(SPC 부담), 단계마다 다시 sizing", "x-axis = share of power cost inside rent (SPC-borne), re-sized at each step"),
+                      chart_key="power_curve",
+                      chart=charts.debt_irr_curve(labs, [curve[sh].debt for sh in shares], [curve[sh].equity_irr * 100 for sh in shares],
+                                                  [curve[sh].equity_irr_ex_tv * 100 for sh in shares] if curve[shares[0]].terminal_value else None,
+                                                  notes, c, dfmt, ("debt", "IRR", "ex-TV")),
+                      note=self.T(f"0% = 전력비 별도 청구(기준, 저자 판단: 대형 임대 계약의 일반 구조, 한·미 임대료 모두 CBRE 계열이라 같은 전력 제외 정의로 처리 — CBRE 정의는 원문 미확인), 100% = 전력 포함 임대(SPC 부담, 스트레스). "
+                                  f"전력비 = IT {a.inp.mw:,.0f}MW × 가동률 × IT 부하율 {self.pct(a.inp.it_load_factor, 0)} × PUE {a.inp.pue:.1f} × 8,760시간 × {a.inp.power_price:,.1f}원/kWh(한전 2025년 평균 산업용, 시대일보 2026-08-27), 연 {self.pct(a.inp.power_escalation, 0)} 인상 — 안정화 첫해 {self.money('A', pcost)}. "
+                                  + (f"전력 포함 시 단가 {cut_v:+.0f}원({cut_cfg.get('note', '')}, 시대일보 {cut_cfg.get('published', '')})이면 Equity IRR {self.pct(cut.equity_irr)}·대출 {self.money('A', cut.debt)} — 제안 단계라 민감도로만" if cut is not None else ""),
+                                  f"0% = power billed separately (base; judgment: usual for large leases, and both rents are CBRE-family figures, so one ex-power definition — CBRE definition not verified); 100% = gross rent (SPC pays; stress). "
+                                  f"Power = IT {a.inp.mw:,.0f} MW × occupancy × IT load {self.pct(a.inp.it_load_factor, 0)} × PUE {a.inp.pue:.1f} × 8,760 h × KRW {a.inp.power_price:,.1f}/kWh (KEPCO 2025 avg industrial), +{self.pct(a.inp.power_escalation, 0)}/yr — {self.money('A', pcost)} in the first stabilised year. "
+                                  + (f"With gross rent, a KRW {cut_v:+.0f}/kWh cut (proposal for the northern Seoul metro, Sidae Ilbo {cut_cfg.get('published', '')}) gives equity IRR {self.pct(cut.equity_irr)}, debt {self.money('A', cut.debt)} — proposal only, sensitivity" if cut is not None else "")))
+        else:
+            pt_r = gr_r = None
+            c1 = self.pending(self.T("전력비 포함 비율별 Equity IRR·대출 한도", "Equity IRR and debt by power share"), ["ksj"], Unavailable("전력비 입력 필요", "Power inputs needed", ["pue", "it_load_factor", "power_price"]))
         # 원가 대비 수익률 막대
         cf_ = b.cost_counterfactual
         chg = self.B("capex_yoy_change").value
-        bars_ = [(self.T("A 전력 포함", "A gross"), yoc(ga), a.inp.term_rate, c["brown_dark"])]
-        if pt is not None:
-            bars_.append((self.T("A 전력 별도", "A pass-thru"), yoc(pt), a.inp.term_rate, c["brown_mid"]))
+        bars_ = [(self.T("A 기준", "A base"), a.yoc, a.inp.term_rate, c["brown_dark"])]
+        if pc is not None:
+            other = gr_r if pt_base else pt_r
+            bars_.append((self.T("A 전력 포함", "A gross") if pt_base else self.T("A 전력 별도", "A pass-thru"), yoc(other), a.inp.term_rate, c["brown_mid"]))
         bars_.append((self.T("B 기준", "B base"), b.yoc, b.inp.term_rate, c["gold"]))
         if cf_ is not None:
             bars_.append((self.T("B 공사비 상승 전", "B pre-cost rise"), yoc(cf_), b.inp.term_rate, c["warm_grey"]))
         band = (0.08, 0.14)
-        out_ = [lab for lab, v, _, _ in bars_ if not band[0] <= v <= band[1]]
-        c2 = Cell(title=self.T(f"원가 대비 수익률 " + " · ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — 8~14% 밖: {', '.join(out_)}" if out_ else ""),
-                               "Yield on cost: " + "; ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — outside the 8–14% check range: {', '.join(out_)}" if out_ else "")),
+        out_ = [lab for lab, v, _, _ in bars_ if not band[0] - 0.01 <= v <= band[1] + 0.01]
+        c2 = Cell(title=self.T(f"원가 대비 수익률 " + " · ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — 8~14%(±1%p) 밖: {', '.join(out_)}" if out_ else ""),
+                               "Yield on cost: " + "; ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — outside 8–14% (±1pp): {', '.join(out_)}" if out_ else "")),
                   src=["cost", "ecos", "fred", "ksj"], legend=[(c["warm_grey_light"], self.T("점검 범위 8~14%", "Check range 8–14%")), (c["brick"], self.T("대출금리(기준금리 + 가산)", "Loan rate (base + margin)"))],
                   unit="%", chart_key="yoc",
                   chart=charts.yield_bars([lab for lab, *_ in bars_], [v * 100 for _, v, _, _ in bars_], [col for *_, col in bars_], c,
                                           lambda v: f"{v:.1f}%", band=(8, 14), band_label=self.T("점검 범위", "check range"),
                                           marks=[m * 100 for _, _, m, _ in bars_], mark_label=self.T("대출금리", "loan rate")),
                   note=self.T(f"원가 대비 수익률 = 안정화 첫해 EBITDA ÷ 총사업비(CAPEX + IDC + DSRA + 유보계좌). 대출금리 = {self.base_label('A')} {self.base_value('A'):.2f}% + {self.val_assump('A', 'margin_bp')}, "
-                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp(시나리오). 8~14%는 저자 설정 점검 범위",
+                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp(시나리오). 8~14%(±1%p 허용)는 점검 범위",
                               f"Yield on cost = first stabilised-year EBITDA ÷ total cost (CAPEX + IDC + DSRA + reserve). Loan rate = {self.base_label('A')} {self.base_value('A'):.2f}% + {self.val_assump('A', 'margin_bp')}; "
-                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp (scenario). 8–14% is an author-set check range"))
+                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp (scenario). 8–14% (±1pp) is the check range"))
         # 케이스 B: 전체 매출 vs 계약 매출 sizing
         ct = b.alts.get("contracted")
         bb = b.base
@@ -1192,12 +1275,12 @@ class Story:
                                   f"Pre-rise = CAPEX per MW ÷ (1 + {self.pct(chg, 0)}), rent ÷ (1 + {self.pct(b.inp.rent_escalation, 0)}), same OPEX ratio. {self.pct(chg, 0)} per reporting on the C&W 2026 Data Center Development Cost Guide"))
         else:
             c4 = self.pending(self.T("공사비와 임대료", "Build cost vs rent"), ["cost"], Unavailable("공사비 상승률 입력 필요", "Cost change needed", ["capex_yoy_change"]))
-        title = self.T(f"개발 수익률: 한국은 전력비 부담 주체가 수익률을 가르고({self.pct(yoc(ga))} vs {self.pct(yoc(pt))}), 미국은 대출금리와의 격차가 {(b.yoc - b.inp.term_rate) * 100:.1f}%p로 좁혀졌다"
-                       if pt is not None else "개발 수익률",
-                       f"Development yield: in Korea who pays for power decides it ({self.pct(yoc(ga))} vs {self.pct(yoc(pt))}); in the U.S. the spread over debt is down to {(b.yoc - b.inp.term_rate) * 100:.1f}pp"
-                       if pt is not None else "Development yield")
-        sub = self.T("케이스 A 전력 포함 vs 별도 청구 · 원가 대비 수익률 점검(8~14%) · 케이스 B 계약 매출 sizing · 공사비 vs 임대료",
-                     "Case A gross vs pass-through · yield-on-cost check (8–14%) · Case B contracted sizing · build cost vs rent")
+        cs = self.clause_sentence()
+        spread = (b.yoc - b.inp.term_rate) * 100
+        title = self.T(f"개발 수익률: 한국은 {cs}, 미국은 대출금리와의 격차가 {spread:.1f}%p로 좁혀졌다" if cs else "개발 수익률",
+                       f"Development yield: in Korea {cs[0].lower() + cs[1:]}; in the U.S. the spread over debt is down to {spread:.1f}pp" if cs else "Development yield")
+        sub = self.T("전력비 포함 비율(0~100%)별 대출 한도·Equity IRR·최소 DSCR · 원가 대비 수익률 점검(8~14%) · 케이스 B 계약 매출 sizing · 공사비 vs 임대료",
+                     "Debt, equity IRR and min DSCR by power share in rent (0–100%) · yield-on-cost check (8–14%) · Case B contracted sizing · build cost vs rent")
         return Page("body", "7", title, sub, [c1, c2, c3, c4])
 
     # --- p8 시사점 ------------------------------------------------------------
@@ -1208,7 +1291,14 @@ class Story:
             be = a.breakeven
             hit = be[(be["variable"] == "prelease") & (be["level"] == 1.0)]["value"]
             pre_be = hit.iloc[0] if len(hit) and hit.iloc[0] == hit.iloc[0] else None
+        pc = self.power_clause()
+        power_row = [self.T("① 전력비 부담", "① Power-cost clause"),
+                     (self.T(f"별도 청구 vs 전력 포함: Equity IRR {self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}, 대출 {self.money('A', pc[0].debt)} vs {self.money('A', pc[1].debt)}",
+                             f"Pass-through vs gross: equity IRR {self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}; debt {self.money('A', pc[0].debt)} vs {self.money('A', pc[1].debt)}")
+                      if pc is not None else self.T("패스스루 조항 · 예외(공용부) 확인", "Pass-through clause; carve-outs")),
+                     self.T("패스스루 조항 · 버지니아 요금 상승 시 임차인 부담 (오른쪽 아래 표)", "Pass-through clause; tenant burden as Virginia prices rise (table below right)"), "7, 8"]
         rows = [
+            power_row,
             [self.T("계통 승인", "Grid approval"), self.T(f"1단계 확정 승인 필수 · 2단계는 옵션 (승인률 {self.grid_short()})", f"Phase 1 approval a must; phase 2 as an option ({self.grid_short()})"),
              self.T("접속 일정 확인", "Confirm connection timing"), "1, 5"],
             [self.T("사전 임대율", "Pre-leasing"),
@@ -1223,11 +1313,6 @@ class Story:
              self.T("규모가 커 절대 금액 위험 큼", "Large absolute exposure"), "2, 4"],
             [self.T("운영비", "OPEX"), self.T("근거 없는 저자 판단 → ±20% 스트레스", "Unsourced judgment → ±20% stress"),
              self.T("근거 없는 저자 판단 → ±20% 스트레스", "Unsourced judgment → ±20% stress"), "4"],
-            [self.T("전력비", "Power cost"),
-             (self.T(f"임대료의 전력 포함 여부 확인 — 원가 대비 수익률 {self.pct(a.yoc)}(포함) vs {self.pct(pf_yoc(a.alts['passthrough']))}(별도)",
-                     f"Confirm whether rent includes power — yield on cost {self.pct(a.yoc)} (gross) vs {self.pct(pf_yoc(a.alts['passthrough']))} (pass-through)")
-              if ok(a) and "passthrough" in a.alts else self.T("패스스루 조항 · 예외(공용부) 확인", "Pass-through clause; carve-outs")),
-             self.T("버지니아 요금 상승 시 임차인 부담 (오른쪽 아래 표)", "Tenant burden as Virginia prices rise (table below right)"), "2, 7, 8"],
             [self.T("램프업", "Ramp-up"),
              (self.T(f"이자유보계좌 {self.money('A', a.base.cons.reserve_initial)}(사업비 포함) · 램프업 {a.inp.grace_years}년 이자만",
                      f"Interest reserve {self.money('A', a.base.cons.reserve_initial)} (in cost); {a.inp.grace_years}-yr interest-only")
@@ -1236,17 +1321,25 @@ class Story:
                      f"Contracted sizing {self.money('B', b.alts['contracted'].debt)} vs total {self.money('B', b.base.debt)}")
               if ok(b) and "contracted" in b.alts else self.T("앵커 임차인 계약 기간", "Anchor lease term")), "3, 7"],
         ]
-        c1 = Cell(title=self.T("대주 체크리스트: 한국은 '승인과 임차인', 미국은 '금리와 공사비'를 먼저 본다", "Lender checklist: Korea — approval and tenants first; U.S. — rates and cost first"),
+        c1 = Cell(title=self.T("대주 체크리스트: 첫 번째 확인 항목은 전력비 부담 구조, 그다음 한국은 '승인과 임차인', 미국은 '금리와 공사비'",
+                               "Lender checklist: check the power-cost structure first; then Korea — approval and tenants, U.S. — rates and cost"),
                   src=["grid", "market", "cost", "finance", "ksj"],
                   table=TableSpec([self.T("항목", "Item"), self.T("한국 40MW", "Korea 40 MW"), self.T("미국 100MW", "U.S. 100 MW"), self.T("근거 쪽", "Pages")], rows,
-                                  [0.15, 0.40, 0.33, 0.12], ["L", "L", "L", "C"], shade_rows={0, 1}, font_size=8.2),
+                                  [0.15, 0.40, 0.33, 0.12], ["L", "L", "L", "C"], shade_rows={0}, gold_cells={(0, 1)}, font_size=8.0),
                   note=self.T("가상 케이스 기준의 점검 항목. 숫자는 본문 계산값", "Checklist for the hypothetical cases; figures from the body"))
         limits = [self.T("두 케이스 모두 실존 프로젝트가 아니며, 저자 판단 가정은 가정표(A2·A3)에 '저자 판단'으로 구분했다", "Both cases are hypothetical; author's judgments are flagged as such in A2–A3")]
         if self.A("dep_years").value and self.A("exit_cap_rate").value:
-            limits.append(self.T(f"감가상각(정액 {self.A('dep_years').value:.0f}년)·PUE {self.A('pue').value:.1f}·IT 부하율 {self.pct(self.A('it_load_factor').value, 0)}·cap rate는 출처 없는 저자 판단 — IRR은 잔존가치 비중이 커 cap rate에 민감",
-                                 f"Depreciation ({self.A('dep_years').value:.0f} yrs), PUE {self.A('pue').value:.1f}, IT load {self.pct(self.A('it_load_factor').value, 0)} and cap rates are unsourced judgments — IRRs lean on terminal value"))
+            tv_kr = tv_en = ""
+            if ok(a) and ok(b):
+                tv_kr = f": 잔존가치 제외 시 Equity IRR 한국 {self.pct(a.base.equity_irr)} → {self.pct(a.base.equity_irr_ex_tv)}, 미국 {self.pct(b.base.equity_irr)} → {self.pct(b.base.equity_irr_ex_tv)}"
+                tv_en = f": ex-TV equity IRR Korea {self.pct(a.base.equity_irr)} → {self.pct(a.base.equity_irr_ex_tv)}, U.S. {self.pct(b.base.equity_irr)} → {self.pct(b.base.equity_irr_ex_tv)}"
+            limits.append(self.T(f"감가상각(정액 {self.A('dep_years').value:.0f}년)·PUE {self.A('pue').value:.1f}·IT 부하율 {self.pct(self.A('it_load_factor').value, 0)}·cap rate는 출처 없는 저자 판단 — IRR은 cap rate에 민감{tv_kr}",
+                                 f"Depreciation ({self.A('dep_years').value:.0f} yrs), PUE {self.A('pue').value:.1f}, IT load {self.pct(self.A('it_load_factor').value, 0)} and cap rates are unsourced judgments — IRRs depend on cap rates{tv_en}"))
         else:
             limits.append(self.T("감가상각·잔존가치 미입력 → 법인세 과대, IRR 보수적", "No depreciation or terminal value → tax overstated, IRRs conservative"))
+        if not self.a_gross() and self.power_clause() is not None:
+            limits.append(self.T("케이스 A 임대료 25만원은 전력 제외(별도 청구)로 보고 미국 CBRE 수치와 같은 정의로 처리했다 — CBRE 임대료 정의는 원문 미확인, 전력 포함이면 p7 스트레스",
+                                 "Case A's KRW 250k rent is treated as ex-power (billed separately), the same definition as the U.S. CBRE figures — CBRE's definition not verified; gross rent is the p7 stress"))
         if self.a_gross():
             limits.append(self.T("케이스 A 임대료 25만원의 전력 포함 여부는 원문에서 미확인 — 전력 포함(SPC 부담)을 기준으로 두고 별도 청구를 비교(p7)",
                                  "Whether Case A's KRW 250k rent includes power is unconfirmed — gross is the base, pass-through compared (p7)"))
@@ -1293,8 +1386,8 @@ class Story:
                                   + (f"Shaded = base PUE {pue_b:.1f} (judgment); other rows are sensitivities" if pue_b else "PUE is a sensitivity axis")))
         else:
             c4 = self.pending(self.T("케이스 B 전력비 민감도", "Case B power-cost sensitivity"), ["eia"], va if not ok(va) else Unavailable("", "", []))
-        title = self.T("시사점: 한국 AI 데이터센터 PF는 '얼마나 빌리나'보다 '언제 빌릴 수 있나' — 계통 승인과 앵커 임차인이 먼저다",
-                       "Implication: for Korean AI data-centre PF, 'when' comes before 'how much' — grid approval and an anchor tenant first")
+        title = self.T("시사점: 데이터센터 PF 심사의 첫 번째 확인 항목은 전력비 부담 구조 — 그다음이 계통 승인과 앵커 임차인",
+                       "Implication: the first item in data-centre PF credit review is the power-cost structure — then grid approval and an anchor tenant")
         sub = self.T("대주 체크리스트 · 한계 · Vol.3 예고(IPO 공모가·해외 피어) · 케이스 B 전력비 민감도(버지니아 요금)",
                      "Lender checklist · limitations · next: Vol.3 (IPO pricing, overseas peers) · Case B power-cost sensitivity (Virginia prices)")
         return Page("body", "8", title, sub, [c1, c2, c3, c4])
@@ -1373,6 +1466,17 @@ class Story:
                      + (f"(버지니아 상업용 평균 {p:.2f}¢/kWh, {y}; 민감도 p8)" if ok(va) else ""),
                      f"A {pt * 100:.0f}% pass-through: the tenant pays usage × tariff, so the SPC's net power cost is zero and tariff risk becomes a tenant-affordability question"
                      + (f" (Virginia commercial average {p:.2f}¢/kWh, {y}; sensitivity on p8)" if ok(va) else ""))
+        pc = self.power_clause()
+        if pc is not None and not self.a_gross():
+            pt_r, gr_r, _ = pc
+            pcs = float(gr_r.ops["power_cost"].iloc[a.power["stab_year"] - 1]) if a.power else float("nan")
+            ans = self.T(f"케이스 A·B 모두 임차인이 사용량 × 단가로 낸다(별도 청구, 대형 임대 계약의 일반 구조 — 한·미 임대료가 모두 CBRE 계열이라 같은 정의로 처리). "
+                         f"임대료에 전력이 포함되면 SPC가 안정화 첫해 {self.money('A', pcs)}을 부담해 Equity IRR {self.pct(pt_r.equity_irr)} → {self.pct(gr_r.equity_irr)}, 대출 한도 {self.money('A', pt_r.debt)} → {self.money('A', gr_r.debt)}. "
+                         "그래서 대주가 가장 먼저 확인할 조항이다",
+                         f"In both cases the tenant pays usage × tariff (billed separately, usual for large leases; both rents are CBRE-family figures, so one definition). "
+                         f"If rent included power, the SPC would bear {self.money('A', pcs)} in the first stabilised year: equity IRR {self.pct(pt_r.equity_irr)} → {self.pct(gr_r.equity_irr)}, debt {self.money('A', pt_r.debt)} → {self.money('A', gr_r.debt)}. "
+                         "That makes it the first clause a lender checks")
+            key.add(len(qa))
         if self.a_gross() and ok(a) and "passthrough" in a.alts:
             ptr = a.alts["passthrough"]
             ans = self.T(f"케이스 A는 임대료 25만원을 전력 포함(gross)으로 보고 SPC가 낸다(원문에서 전력 포함 여부 미확인 → 보수적 대주 관점). 안정화 첫해 전력비 {self.money('A', a.power['power_cost_stab'])}"
@@ -1386,9 +1490,9 @@ class Story:
             g_ = a.inp.grace_years
             gap = float((a.base.ops["interest"][:g_] - a.base.ops["cfads"][:g_]).clip(lower=0).sum())
             ans = self.T(f"준공 후 램프업 {g_}년은 원금 없이 이자만 낸다. CFADS가 이자에 못 미치는 금액(기준 시나리오 합계 {self.money('A', gap)})에 {self.pct(a.inp.reserve_buffer, 0)}를 더한 {self.money('A', a.base.cons.reserve_initial)}을 "
-                         f"금융 종결 때 사업비 안에 이자유보계좌로 적립해 지급한다. 이자를 원금에 붙이지 않으므로 잔액이 늘지 않고, 원금은 {g_ + 1}년차부터 목표 DSCR {a.inp.target_dscr:.2f}배로 sculpting한다",
+                         f"금융 종결 때 사업비 안에 이자유보계좌로 적립해 지급한다. 이자를 원금에 붙이지 않으므로 잔액이 늘지 않고, 원금은 {g_ + 1}년차부터 CFADS에 맞춰(sculpting) 갚는다",
                          f"For {g_} ramp-up years after COD only interest is paid. The gap where CFADS falls short of interest (base-case total {self.money('A', gap)}) plus {self.pct(a.inp.reserve_buffer, 0)} — {self.money('A', a.base.cons.reserve_initial)} — "
-                         f"is funded at financial close inside project cost as an interest reserve. Interest is never capitalised, so the balance does not grow; principal is sculpted at {a.inp.target_dscr:.2f}x from year {g_ + 1}")
+                         f"is funded at financial close inside project cost as an interest reserve. Interest is never capitalised, so the balance does not grow; principal is sculpted to CFADS from year {g_ + 1}")
             key.add(len(qa))
             qa.append([self.T("램프업 기간 이자는 어떻게 내나?", "How is interest paid during ramp-up?"), ans, "1, 3"])
         # 7 지금 vs 기다리기

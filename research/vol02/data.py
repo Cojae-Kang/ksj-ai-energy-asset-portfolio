@@ -592,12 +592,18 @@ class CaseResult:
     margin_scenarios: dict = field(default_factory=dict)   # bp → CaseResult (가산금리 미확정 시 3개 시나리오)
     interest_cover_debt: float = float("nan")  # 진단: 매년 이자 현금 지급 제약 시 대출 한도
     negative_amort: list[int] = field(default_factory=list)   # 원리금 < 이자인 연차
-    alts: dict = field(default_factory=dict)    # 대안 sizing: passthrough(전력비 별도 청구) · power_cut(단가 인하 제안) · contracted(계약 매출 sizing)
+    alts: dict = field(default_factory=dict)    # 대안 sizing: gross(전력 포함 임대) · passthrough(별도 청구) · power_cut(단가 인하 제안) · contracted(계약 매출)
+    power_curve: dict = field(default_factory=dict)   # 전력비 포함 비율(SPC 부담, 0~1) → 다시 sizing한 결과
     cost_counterfactual: pf.PFResult | None = None   # 공사비 1년 상승 전(÷(1+상승률))·임대료 1년 전(÷(1+인상률)) 재계산
 
     @property
     def yoc(self) -> float:
         return pf.yield_on_cost(self.base)
+
+    def power_pair(self) -> tuple[pf.PFResult, pf.PFResult] | None:
+        """(전력비 별도 청구, 전력 포함 임대) 결과 — 전력비 조항 비교용. 곡선이 없으면 None."""
+        c = self.power_curve
+        return (c[0.0], c[1.0]) if 0.0 in c and 1.0 in c else None
 
 
 def capex_multipliers(a: Mapping[str, Assumption], pp: PeerPricing | Unavailable) -> dict[str, float] | Unavailable:
@@ -631,6 +637,12 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
         "opex_up": pf.Stress(opex_mult=1 + xp), "opex_down": pf.Stress(opex_mult=1 - xp),
     }
     spc_power = inp.power_modeled() and inp.power_passthrough < 1     # SPC가 전력비를 부담하는 케이스
+    clause = case in (sc.get("power_inclusion_grid") or {})   # 전력비 조항을 비교하는 케이스 (A)
+    if inp.power_modeled() and not spc_power and clause:   # 별도 청구가 기준 → 전력 포함 임대(SPC 부담)는 스트레스
+        st["power_gross"] = pf.Stress(passthrough=0.0)
+    mid = ((sc.get("capex_mid") or {}).get(case) or {}).get("value")
+    if mid and cx.value:
+        st["capex_mid"] = pf.Stress(capex_mult=float(mid) / cx.value)
     if spc_power:
         pw = float(sc.get("power_pct", 0.1))
         st["power_up"], st["power_down"] = pf.Stress(power_mult=1 + pw), pf.Stress(power_mult=1 - pw)
@@ -679,7 +691,8 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
     be = pd.DataFrame(be_rows)
     hm_cm = sc["heatmap"]["capex_mult"]
     if cx.low is not None and cx.high is not None and cx.value:   # CAPEX 축 = 가정 범위(하단~상단)
-        hm_cm = sorted({round(cx.low / cx.value, 4), 1.0, round((cx.value + cx.high) / 2 / cx.value, 4), round(cx.high / cx.value, 4)})
+        hm_cm = sorted({round(cx.low / cx.value, 4), 1.0, round(cx.high / cx.value, 4)}
+                       | ({round(float(mid) / cx.value, 4)} if mid else {round((cx.value + cx.high) / 2 / cx.value, 4)}))
     hm = pf.heatmap(base, sc["heatmap"]["rent_mult"], hm_cm) if case == "A" else None
     power = None
     if inp.power_modeled():
@@ -708,12 +721,19 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
             b0 = pf.run(no_tax)
             r_, c_ = odd[0]
             hm_tt = pf.stress(b0, pf.Stress(rent_mult=r_, capex_mult=c_)).min_dscr >= b0.min_dscr - 1e-6
-    alts = {}
-    if spc_power:                                       # 전력비 별도 청구(pass-through) 시 다시 sizing
-        alts["passthrough"] = pf.run(replace(inp, power_passthrough=1.0))
+    alts, curve = {}, {}
+    if inp.power_modeled() and (clause or spc_power):
+        for sh in (sc.get("power_inclusion_grid") or {}).get(case, []):   # 전력비 포함 비율 곡선 (부분 패스스루)
+            sh = float(sh)
+            curve[sh] = base if abs((1 - sh) - inp.power_passthrough) < 1e-12 else pf.run(replace(inp, power_passthrough=1 - sh))
+        if spc_power:                                   # 전력비 별도 청구(pass-through) 시 다시 sizing
+            alts["passthrough"] = curve.get(0.0) or pf.run(replace(inp, power_passthrough=1.0))
+        else:                                           # 전력 포함 임대(SPC 부담) 시 다시 sizing
+            alts["gross"] = curve.get(1.0) or pf.run(replace(inp, power_passthrough=0.0))
         cut = (sc.get("power_price_cut") or {}).get(case)
-        if cut and cut.get("value") is not None:        # 확정 전 인하 제안 → 민감도
-            alts["power_cut"] = pf.run(replace(inp, power_price=inp.power_price + float(cut["value"])))
+        if cut and cut.get("value") is not None:        # 확정 전 인하 제안 → SPC가 전력비를 낼 때의 민감도
+            alts["power_cut"] = pf.run(replace(inp, power_passthrough=min(inp.power_passthrough, 0.0),
+                                               power_price=inp.power_price + float(cut["value"])))
     if case in (sc.get("contracted_sizing") or []):     # 계약 매출(사전 임대분) CFADS로 sculpting
         alts["contracted"] = pf.run(replace(inp, sizing_basis="contracted"))
     cf_ = None
@@ -723,7 +743,7 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
                              rent_per_kw_month=inp.rent_per_kw_month / (1 + inp.rent_escalation)))
     return CaseResult(case, inp, base, scen, stresses, torn, be, hm, cm, power, pf.identity_checks(base), tax_timing, hm_tt,
                       margin_bp=margin_bp, interest_cover_debt=pf.interest_cover_cap(base),
-                      negative_amort=pf.negative_amortization_years(base), alts=alts, cost_counterfactual=cf_)
+                      negative_amort=pf.negative_amortization_years(base), alts=alts, cost_counterfactual=cf_, power_curve=curve)
 
 
 def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float], load: float = 1.0) -> pd.DataFrame | None:

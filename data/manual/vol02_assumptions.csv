@@ -1,7 +1,7 @@
 ﻿case,item,value,low,high,unit,tag,source_name,url,published,page,current,hint
 A,phase1_mw,,,,MW,,,,,,20,1단계 용량 / 가상 케이스: 1단계 확정 개발
 A,phase2_mw,,,,MW,,,,,,20,2단계(옵션) 용량 / 가상 케이스: 추가 계통 승인·임차 수요 확인 시 착공하는 증설 옵션
-A,capex_per_mw,120,86,145,억원/MW,judgment,"저자 판단: 중간값 — 공사비 86억원/MW(시공 계약 기준, 다올투자증권 리포트 인용)와 군산 60MW 약 145억원/MW(확장 기반시설·금융비용 포함 추정) 사이",https://www.etoday.co.kr/news/view/2631186 ; https://en.edaily.co.kr/news/eda202610125649/,2026-10-01 ; 2026-10-12,,120,"MW당 CAPEX / TODO(source): 국내 데이터센터 MW당 총사업비 — DART 신규시설투자 공시(투자금액 ÷ 수전·IT 용량), 업계 공사비 보고서"
+A,capex_per_mw,145,86,145,억원/MW,sourced,"이데일리: 군산 60MW 데이터센터 실제 PF 마감 딜 총사업비 약 8,700억원 ÷ 60MW ≈ 145억원/MW (확장 기반시설·금융비용 포함 가능성). 범위 하단 86억원/MW = 공사비(다올투자증권 리포트 인용, 이투데이), 120억원/MW는 중간 민감도",https://en.edaily.co.kr/news/eda202610125649/ ; https://www.etoday.co.kr/news/view/2631186,2026-10-12 ; 2026-10-01,,145,"MW당 CAPEX / TODO(source): 국내 데이터센터 MW당 총사업비 — DART 신규시설투자 공시(투자금액 ÷ 수전·IT 용량), 업계 공사비 보고서"
 A,power_equipment_share,,,,%,,,,,,null,CAPEX 중 전력설비 비중 / TODO(source): 총사업비 중 전력설비(변압기·배전반·UPS·발전기) 비중 — 공사비 보고서 항목별 분해
 A,construction_quarters,8,,,분기,judgment,저자 판단: 건설기간 24개월,,,,8,건설기간 / TODO(source): 착공~준공 기간 — 국내 준공 사례 공시·보도
 A,rent_per_kw_month,250000,,,원/kW·월,sourced,블록미디어(CBRE 인용): 코로케이션 임대료 kW당 월 약 25만원(2025),https://www.blockmedia.co.kr/archives/1141412,,,250000,"임대료(kW·월) / CBRE 인용 보도(2025) 코로케이션 임대료 kW당 월 약 25만원 / TODO(source): 보도 원문 URL·발행일, CBRE 보고서 쪽수"
@@ -18,7 +18,7 @@ A,opex_escalation,2.5,,,%/년,judgment,저자 판단,,,,2.5,OPEX 연 인상률 /
 A,pue,1.3,,,배,judgment,저자 판단: 신규 대형 데이터센터 설계값 범위의 중간 (사업 계획 공시로 확인 필요),,,,1.3,"PUE / TODO(source): 설계 PUE — 사업 계획·공시 사례, Uptime Institute 조사"
 A,it_load_factor,70,,,%,judgment,저자 판단: 임차 IT 용량 대비 실사용 70% (계약·운영 자료로 확인 필요),,,,70,IT 부하율 / TODO(source): 임차 IT 용량 대비 실제 사용률
 A,power_price,181.9,,,원/kWh,sourced,한전 2025년 평균 산업용 판매단가 181.9원/kWh (시대일보),https://www.sidae.com/article/2026082717032378136,2026-08-27,,181.9,전력 단가 / TODO(source): 한국전력 전기요금표(산업용·일반용 고압) 기준일 단가
-A,power_passthrough,0,,,%,judgment,저자 판단(보수적 대주 관점): 임대료 25만원/kW·월을 전력 포함(gross) 임대료로 보고 SPC가 전력비 부담. 원문에서 전력 포함 여부 미확인 → 전력비 별도 청구(pass-through) 시나리오 병기,,,,0,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
+A,power_passthrough,100,,,%,judgment,"저자 판단: 대형 임대 계약은 전력비 별도 청구가 일반적이고, 한국 25만원·미국 190~235달러 임대료가 모두 CBRE 계열 수치이므로 같은 정의(전력 제외)로 일관 처리. CBRE 임대료 정의(전력 포함 여부)는 원문 미확인 → 전력 포함 임대(SPC 부담)는 스트레스 시나리오",,,,100,전력비 패스스루 비율 / 전력비 패스스루: 임차인이 사용 전력비 전액 부담 (계약 구조 가정)
 A,power_escalation,2,,,%/년,judgment,저자 판단: 전력단가 연 2% 인상,,,,2,전력단가 연 인상률 / TODO(source): 전력단가 연 인상률 — 한전 판매단가 시계열
 A,tax_brackets,"2:10,200:20,3000:22,inf:25",,,억원:%,sourced,"법인세법 제55조(2026 사업연도부터 1%p 인상, 국가법령정보센터 원문 확인), 택스가이드",https://taxguide.im/blog/corptax-rate,,,"2:10,200:20,3000:22,inf:25","법인세 누진세율(국세) / TODO(source): 법인세법 제55조 누진세율 '상한:세율' (예: 2:10,200:20,3000:22,inf:25)"
 A,tax_rate_local,10,,,법인세 대비 %,sourced,지방소득세 = 법인세의 10% (택스가이드),https://taxguide.im/blog/corptax-rate,,,10,지방세(지방소득세·주세) / 지방세법 — 법인지방소득세(법인세율의 10% 수준) / TODO(source): 조문 확인

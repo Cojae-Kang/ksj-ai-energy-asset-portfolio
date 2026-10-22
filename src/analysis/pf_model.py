@@ -385,6 +385,22 @@ class PFResult:
     project_flows: pd.DataFrame
     warnings: list[str] = field(default_factory=list)
     min_icr_grace: float = float("nan")   # 거치기간 최소 CFADS ÷ 이자 (이자유보계좌 인출 전)
+    terminal_value: float = 0.0           # 잔존가치 (마지막 분기 현금흐름에 포함)
+
+    def _irr_ex_tv(self, flows: pd.DataFrame) -> float | None:
+        f = flows["flow"].to_numpy().copy()
+        f[-1] -= self.terminal_value
+        return irr(f)
+
+    @property
+    def project_irr_ex_tv(self) -> float | None:
+        """잔존가치 제외 Project IRR (운영기간 현금흐름만)."""
+        return self._irr_ex_tv(self.project_flows) if self.terminal_value else self.project_irr
+
+    @property
+    def equity_irr_ex_tv(self) -> float | None:
+        """잔존가치 제외 Equity IRR."""
+        return self._irr_ex_tv(self.equity_flows) if self.terminal_value else self.equity_irr
 
     @property
     def gearing(self) -> float:
@@ -411,6 +427,7 @@ class PFResult:
                 "equity_irr": self.equity_irr, "payback_years": self.payback_years, "uses": self.cons.uses,
                 "equity": self.cons.equity, "idc": self.cons.idc, "reserve": self.cons.reserve_initial,
                 "reserve_used": self.reserve_used, "min_icr_grace": self.min_icr_grace,
+                "project_irr_ex_tv": self.project_irr_ex_tv, "equity_irr_ex_tv": self.equity_irr_ex_tv,
                 "min_dscr_contracted": self.min_dscr_contracted}
 
 
@@ -632,7 +649,7 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
     return PFResult(inp, st, ops, cons, debt, sculpt_debt, gearing_debt, binding, eff_dscr, min_dscr, avg_dscr, llcr,
                     min_dscr_c, irr(pj), irr(eq),
                     npv_annual_rate(eq, inp.discount_rate) if inp.discount_rate is not None else float("nan"), payback(eq), eq_df, pj_df,
-                    warnings, icr_g)
+                    warnings, icr_g, tv)
 
 
 def yield_on_cost(r: PFResult) -> float:

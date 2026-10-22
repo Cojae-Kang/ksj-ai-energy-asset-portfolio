@@ -362,3 +362,15 @@ def test_yield_on_cost_definition():
     inp = replace(BASE_INP, ramp_years=3, prelease=0.3)
     r = pf.run(inp)
     assert pf.yield_on_cost(r) == pytest.approx(float(r.ops["ebitda"].iloc[3]) / r.cons.uses)  # 램프업 3년 → 4년차
+
+
+def test_irr_ex_terminal_value():
+    r = pf.run(VARIANTS["exit_value"])
+    assert r.terminal_value > 0
+    f = r.equity_flows["flow"].to_numpy().copy()
+    f[-1] -= r.terminal_value
+    assert r.equity_irr_ex_tv == pytest.approx(pf.irr(f)) and r.equity_irr_ex_tv < r.equity_irr
+    assert r.project_irr_ex_tv < r.project_irr
+    r0 = pf.run(BASE_INP)                                                  # 잔존가치 없음 → 같은 값
+    assert r0.terminal_value == 0 and r0.equity_irr_ex_tv == r0.equity_irr
+    assert r0.project_irr_ex_tv == pytest.approx(pf.run(replace(VARIANTS["exit_value"], exit_cap_rate=None)).project_irr)
