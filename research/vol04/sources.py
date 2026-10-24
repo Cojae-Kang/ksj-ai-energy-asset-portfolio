@@ -135,10 +135,125 @@ def run(as_of: str = "2026-10-20") -> dict:
     return out
 
 
+TOU_PDF = "계절*시간대별*개편안*.pdf"
+TOU_PAGE = 8          # PDF 8쪽(전체 9쪽) [붙임2]
+
+
+def tou_from_pdf() -> dict | None:
+    """요금표 기계 추출: pdftotext -layout으로 8쪽을 읽어 '경·중간·최대부하' 줄(숫자 6개 = 개편 전 3계절 + 개편 후 3계절) 27개를
+    고압A·B·C × 선택Ⅰ·Ⅱ·Ⅲ × 경·중간·최대 순서로 읽는다. pdftotext가 없으면 None (손 입력 표만 사용)."""
+    import re
+    import shutil
+    import subprocess
+
+    from . import tou
+    if shutil.which("pdftotext") is None:
+        return None
+    f = _one(TOU_PDF)
+    txt = subprocess.run(["pdftotext", "-layout", "-f", str(TOU_PAGE), "-l", str(TOU_PAGE), str(f), "-"],
+                         capture_output=True, text=True, check=True).stdout
+    band_re = re.compile(r"(경|중간|최대)\s*부\s*하")
+    lines = [ln for ln in txt.splitlines() if band_re.search(ln) and len(re.findall(r"\b\d{2,3}\.\d\b", ln)) == 6]
+    if len(lines) != 27:
+        raise ValueError(f"요금 줄 {len(lines)}개 (27개여야 함) — PDF 형식 확인")
+    out: dict = {"before": {}, "after": {}}
+    word = {"경": "off", "중간": "mid", "최대": "peak"}
+    i = 0
+    for v in tou.VOLTAGES:
+        for o in tou.OPTIONS:
+            bands_b, bands_a, basic = {}, {}, None
+            for b in tou.BANDS:
+                ln = lines[i]
+                i += 1
+                if word[band_re.search(ln).group(1)] != b:
+                    raise ValueError(f"줄 순서 어긋남: {ln}")
+                x = [float(s) for s in re.findall(r"\b\d{2,3}\.\d\b", ln)]
+                bands_b[b], bands_a[b] = tuple(x[:3]), tuple(x[3:])
+                ks = re.findall(r"\b\d,\d{3}\b", ln)
+                if ks:
+                    if len(ks) != 2 or ks[0] != ks[1]:
+                        raise ValueError(f"기본요금 읽기 실패: {ln}")
+                    basic = int(ks[0].replace(",", ""))
+            if basic is None:
+                raise ValueError(f"기본요금 없음: {v} {o}")
+            out["before"][(v, o)] = (basic, bands_b)
+            out["after"][(v, o)] = (basic, bands_a)
+    return out
+
+
+def solar_monthly(year: int = 2025) -> pd.DataFrame:
+    """전력통계월보 16-1: 월별 태양광 발전량(MWh) = 전력시장 참여(실적) + 한전PPA(실적) + 자가용(추계).
+    엑셀에서 10월이 숫자 2025.1로 읽혀 행 순서(1~12월)로 월을 매기고 첫 행이 'YYYY.01'인지 확인한다."""
+    f = _one("*전력통계월보*.xlsx")
+    g = pd.read_excel(f, sheet_name="16-1.태양광 발전량 추계정보", header=None)
+    r = g[g[0].astype(str).str.startswith(f"{year}.")]
+    if len(r) != 12 or str(r.iloc[0, 0]).strip() != f"{year}.01":
+        raise ValueError(f"{year}년 월별 행 12개가 아님: {r[0].tolist()}")
+    num = lambda v: float(str(v).replace(",", ""))  # noqa: E731
+    d = pd.DataFrame({"month": range(1, 13), "market_mwh": [num(v) for v in r[1]], "kepco_ppa_mwh": [num(v) for v in r[2]],
+                      "self_use_mwh": [num(v) for v in r[3]]})
+    d["total_mwh"] = d[["market_mwh", "kepco_ppa_mwh", "self_use_mwh"]].sum(axis=1)
+    d = d.round(3)
+    d.attrs["file"] = f.name
+    return d
+
+
+def tou_run(year: int = 2025) -> dict:
+    """요금표·시간대·월별 태양광 → data/processed/vol04_tou_tariff.csv · vol04_tou_timebands.csv · vol04_solar_monthly.csv (+ .meta.json).
+    손 입력 표와 PDF 기계 추출이 한 칸이라도 다르거나, 개편 전후 차이가 PDF 문구와 다르면 저장하지 않고 멈춘다."""
+    from . import tou
+    hand = tou.rates_frame(tou.HAND_RATES)
+    pdf = tou_from_pdf()
+    machine = "pdftotext 미설치 — 손 입력 표만 사용"
+    if pdf is not None:
+        m = tou.rates_frame(pdf)
+        key = ["regime", "voltage", "option", "season", "band"]
+        j = hand.merge(m, on=key, suffixes=("_hand", "_pdf"))
+        diff = j[(j.krw_per_kwh_hand != j.krw_per_kwh_pdf) | (j.basic_krw_per_kw_hand != j.basic_krw_per_kw_pdf)]
+        if len(j) != len(hand) or not diff.empty:
+            raise ValueError(f"손 입력 ≠ PDF 추출:\n{diff}")
+        machine = f"pdftotext 기계 추출 {len(m)}칸 = 손 입력 {len(hand)}칸 (전부 일치)"
+    bad = tou.check_stated_change(hand)
+    if bad:
+        raise ValueError("개편 전후 차이가 PDF 문구와 다름: " + "; ".join(bad))
+    bands = tou.bands_frame()
+    sol = solar_monthly(year)
+    f_pdf = _one(TOU_PDF).name
+    out = resolve_path("data/processed")
+    common = {"endpoint": None, "fetched_at": utc_now_iso(), "license_note": "정부·공공기관 공개 자료(기후에너지환경부·한전) — 출처 표시"}
+    files = {
+        "vol04_tou_tariff.csv": (hand, {
+            "source": "기후에너지환경부·한국전력공사 보도참고자료 「계절·시간대별 전기요금 체계 개편안 공개」(2026-03-13)",
+            "file": f_pdf, "page": f"PDF {TOU_PAGE}쪽(전체 9쪽) [붙임2] 산업용(을) 전기요금 개편 내용 — 하단 요금표(개편 前·後)",
+            "params": {"regime": "before = 개편 전(현재), after = 개편 후(2026-04-16 시행, 유예 신청 시 2026-10-01)"},
+            "as_of": "2026-03-13",
+            "columns": {"basic_krw_per_kw": "기본요금 원/kW", "krw_per_kwh": "전력량요금 원/kWh", "season": "summer 6~8월 · spring_autumn 3~5, 9~10월 · winter 11~2월",
+                        "band": "off 경부하 · mid 중간부하 · peak 최대부하"},
+            "check": [machine, "개편 후 − 개편 전 = 8쪽 머리 문구(경부하 +5.1, 중간 0, 최대 여름·겨울 −16.9·봄가을 −13.2) 81칸 전부 일치",
+                      "PDF 8쪽 이미지(130dpi 렌더링)와 육안 대조"]}),
+        "vol04_tou_timebands.csv": (bands, {
+            "source": "기후에너지환경부·한국전력공사 보도참고자료(2026-03-13)", "file": f_pdf,
+            "page": f"PDF {TOU_PAGE}쪽 [붙임2] 상단 시간대 구분표(평일) · 2쪽 본문(11~12·13~15시 최대→중간, 18~21시 중간→최대) · 7쪽 [붙임1] 그림",
+            "params": {"hour": "h = h:00~h+1:00 (한국 표준시)", "day": "평일 기준. 일요일·공휴일·토요일 규칙은 research/vol04/tou.py day_rates 주석"},
+            "as_of": "2026-03-13"}),
+        "vol04_solar_monthly.csv": (sol, {
+            "source": "한국전력공사 전력통계월보 제566호(2025.12)", "file": sol.attrs["file"], "page": "시트 '16-1.태양광 발전량 추계정보'",
+            "params": {"year": year, "total_mwh": "전력시장 참여(실적) + 한전PPA(실적) + 자가용태양광(추계) — 시트 주4: 자가용은 전력거래소 추정치"},
+            "as_of": "2026-02"}),
+    }
+    for name, (df, meta) in files.items():
+        p = out / name
+        df.to_csv(p, index=False, encoding="utf-8-sig")
+        p.with_suffix(".meta.json").write_text(json.dumps({**meta, **common}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"rates": len(hand), "machine": machine, "solar_total_mwh": float(sol["total_mwh"].sum())}
+
+
 def main() -> int:
     r = run()
     for k, v in r.items():
         print(f"{k}: {v if not isinstance(v, float) else round(v, 4)}")
+    for k, v in tou_run().items():
+        print(f"{k}: {v}")
     return 0
 
 
