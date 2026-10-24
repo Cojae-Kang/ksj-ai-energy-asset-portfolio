@@ -1,0 +1,19 @@
+{
+  "source": "김·장 법률사무소(Kim & Chang) 뉴스레터 「직접 PPA 고시 시행」 (2022-09-13) — 웹페이지 브라우저 PDF 저장",
+  "endpoint": "https://www.kimchang.com/ko/insights/detail.kc?sch_section=4&idx=25739",
+  "params": null,
+  "fetched_at": "2026-10-25",
+  "as_of": "2022-09-13",
+  "page": "PDF 2쪽(전체 3쪽) '4. 전력거래대금의 산정 및 지급' · '5. 시사점' 셋째",
+  "values": {
+    "regulation": "재생에너지전기공급사업자의 직접전력거래 등에 관한 고시 (2021-12-17 행정예고, 2022-09-01 시행)",
+    "direct_ppa_user_payment": "전력량 단가 × 시간대별 재생에너지전기 거래량 + i) 송·배전용 전기설비 이용규정에 따른 망 이용요금 + ii) 전력거래소 거래수수료 + iii) 전력시장운영규칙에 따른 부가정산금액 + iv) 전력산업기반기금 부담금, 전력 손실률 적용",
+    "not_listed": "연료비조정요금·기후환경요금 — 직접 PPA 대금 반영 항목으로 열거되지 않음",
+    "incentives": "전력거래소 거래수수료 3년 면제 · 중소·중견기업 망 이용요금 1년 지원(녹색프리미엄 재원)"
+  },
+  "tier": "B",
+  "official_todo": "고시 원문(국가법령정보센터 행정규칙) 대조 전",
+  "used_by": "research/vol04 같은 기준 비교 각주 (net_charge_example · fuel_adj · climate_env)",
+  "commit": "0152603",
+  "license_note": "법률사무소 공개 뉴스레터 — 출처 표시, 요지 인용"
+}

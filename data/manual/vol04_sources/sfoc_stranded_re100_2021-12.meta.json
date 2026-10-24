@@ -1,0 +1,32 @@
+{
+  "source": "사단법인 기후솔루션(SFOC) 「좌초되는 RE100 제도 — 높은 망이용료와 불합리한 제3자 PPA 지침을 중심으로」 (발간 2021-12, 저자 권경락·김예지·양예빈·조은별)",
+  "endpoint": "https://content.forourclimate.org/files/research/4YZjFUe.pdf",
+  "params": null,
+  "fetched_at": "2026-10-25",
+  "as_of": "2021-12",
+  "page": "인쇄 9쪽(PDF 11쪽) 표 2 '재생에너지 시나리오별 부대비용 산정' · 인쇄 10쪽(PDF 12쪽) Case 1 대표성·40원 서술 · 인쇄 7쪽(PDF 9쪽) 그림 3(2020년 기준 발전단가)",
+  "extraction_note": "CID 글꼴(Adobe-Korea1) 미내장 — pdftotext 실패, pdfplumber(pdfminer) 추출로 판독",
+  "values": {
+    "case": "태양광 Case 1 (중대형): 발전 비수도권·고압 배전망 접속, 사용자 수도권(배전망, 타 변전소)",
+    "basis": "한전 중개 제3자 PPA — 한전 에너지마켓플레이스 '제3자간 계약 요금계산 시뮬레이션'",
+    "generation_cost_krw_per_kwh": 136,
+    "generation_cost_basis": "2020년 기준 태양광 발전단가 136.1 (PDF 9쪽 그림 3)",
+    "ancillary_total_krw_per_kwh": 40,
+    "items_krw_per_kwh": {
+      "network_base": 18,
+      "network_usage": 7,
+      "loss": 3,
+      "ancillary_settlement": 4,
+      "trading_fee": 0,
+      "welfare_special_discount": 3,
+      "power_industry_fund": 6
+    },
+    "items_sum_krw_per_kwh": 41,
+    "rounding_note": "표 총계 40 vs 항목 합 41 — 원문 반올림 차이(원문 그대로 기록)",
+    "all_in_krw_per_kwh": 176
+  },
+  "tier": "B",
+  "used_by": "data/manual/vol04_inputs.csv net_charge_example",
+  "commit": "0152603",
+  "license_note": "비영리 연구기관 공개 보고서 — 출처 표시, 수치 인용"
+}
