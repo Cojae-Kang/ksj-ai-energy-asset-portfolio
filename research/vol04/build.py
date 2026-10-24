@@ -94,9 +94,9 @@ def _p(x: float | None, d: int = 1) -> str:
 def key_conclusions(f: data.Facts, hz: float) -> list[str]:
     irr = {k: r.irr for k, r in f.base.items()}
     p = next(x for x in f.premium if abs(x["hazard"] - hz) < 1e-12)
-    out = [f"지분 IRR: 직접 PPA(회랑 중간 {f.ppa_mid:,.1f}원) {_p(irr['ppa'])} · 한전 CfD {_p(irr['cfd'])} · 시장 SMP {_p(irr['merchant'])}",
-           f"필요 PPA 가격(연 해지 {hz * 100:.0f}%) {p['price']:,.1f}원/kWh = 한전 계약 +{p['premium']:,.1f}원 → 망이용료 여유 {p['max_fee']:,.1f}원/kWh "
-           f"(구매자 상한 = 태양광 시간대 회피 요금 {f.corridor[1]:,.1f}원; 평균 판매단가 {f.extra['avg_tariff']:,.1f}원 기준이면 {p['max_fee_avg']:,.1f}원)"]
+    out = [f"지분 IRR: 직접 PPA(회랑 중간 {f.ppa_mid:,.1f}원) {_p(irr['ppa'], 2)} · 한전 CfD {_p(irr['cfd'], 2)} · 시장 SMP {_p(irr['merchant'])}",
+           f"필요 PPA 가격(연 해지 {hz * 100:.0f}%) {p['price']:,.1f}원/kWh = 한전 계약 +{p['premium']:,.1f}원 → 망이용료 여유 {p['max_fee']:+,.1f}원/kWh "
+           f"(구매자 상한 = 태양광 시간대 회피 요금 {f.corridor[1]:,.1f}원 = 에너지요금 {f.extra['tou']['energy']:,.1f} + 추가 요금 {f.extra['tou']['adder']:,.1f}; 평균 판매단가 {f.extra['avg_tariff']:,.1f}원 기준이면 {p['max_fee_avg']:,.1f}원)"]
     if ok(f.mc):
         s, m = mc_stats(f.mc["ppa"], f.V("equity_hurdle")), mc_stats(f.mc["merchant"], f.V("equity_hurdle"))
         out.append(f"몬테카를로: 직접 PPA P10/P50 {_p(s['p10'])}/{_p(s['p50'])}, 시장 판매 손실 확률 {_p(m['neg'], 0)}")
@@ -113,7 +113,15 @@ def tou_section(f: data.Facts) -> list[str]:
          f"- 요금: 기후에너지환경부·한전 보도참고자료(2026-03-13) PDF 8쪽 [붙임2] 산업용(을) {v} {o} 개편 후 전력량요금 (data/processed/vol04_tou_tariff.csv)",
          "- 월 가중치: 한전 전력통계월보 제566호 시트 '16-1.태양광 발전량 추계정보' 2025년 월별(시장+한전PPA+자가용)",
          "- 요일: 2025년 달력. 평일 = 시간대 구분표, 일요일 = 전 시간 경부하, 토요일 = 평일 시간대(J), 봄·가을 토·일 11~14시 50% 할인. 평일 공휴일 미반영(TODO)",
-         "- 하루 형상: max(cos 천정각, 0)^p (Spencer 1971, 북위 36°·동경 127°) — 저자 판단(J). 기후환경·연료비조정요금 미포함(TODO)", ""]
+         "- 하루 형상: max(cos 천정각, 0)^p (Spencer 1971, 북위 36°·동경 127°) — 저자 판단(J)",
+         "- kWh당 추가 요금: 연료비조정 = 입력 fuel_adj(B, 보도) · 기후환경 = 입력 climate_env(원문 대기 → 미포함, TODO)", ""]
+    # 3단 상한 × 단계별 망이용료 여유 (스프레드 0, 해지 확률별)
+    nm = {"energy": "① 에너지요금만", "fuel": "② + 연료비조정", "climate": "③ + 기후환경"}
+    L += ["#### 구매자 상한 3단과 망이용료 여유 (위험 스프레드 0)", "",
+          markdown_table([{"단계": nm[k], "상한(원/kWh)": f"{v:,.2f}" if v is not None else "TODO(data)",
+                           **{f"여유 @해지 {p['hazard'] * 100:.1f}%": (f"{p['max_fee_stage'][k]:+,.2f}" if p['max_fee_stage'][k] is not None else "TODO") for p in f.premium}}
+                          for k, v in t["stages"]]), "",
+          f"- 보고서 상한 = {t['annual']:,.2f}원 (에너지 {t['energy']:,.2f} + 추가 요금 {t['adder']:,.2f}), 아래 계절·월별 표는 에너지요금만", ""]
     L += [markdown_table([{"계절": SEASON_KR[k], "회피 요금(원/kWh)": f"{b['season'][k]:,.2f}", "발전량 비중": f"{b['gen_share'][k] * 100:.1f}%",
                            "한전 계약가 대비": f"{b['season'][k] - f.corridor[0]:+,.2f}",
                            **{f"평일 {BAND_KR[x]} 비중": f"{t['band_share'][k][x] * 100:.1f}%" for x in ("off", "mid", "peak")}}
@@ -123,9 +131,12 @@ def tou_section(f: data.Facts) -> list[str]:
     L += ["월별(원/kWh): " + " · ".join(f"{m}월 {x:,.1f}" for m, x in b["month"].items()), ""]
     lab = {"opt1": "고압A 선택Ⅰ", "opt3": "고압A 선택Ⅲ", "hvb": "고압B 선택Ⅱ", "sat_mid": "토요일 최대→중간부하",
            "no_discount": "봄·가을 주말 할인 종료(2031~)", "before": "개편 전 요금(참고)"}
-    L += [markdown_table([{"민감도": f"형상 p = {p:g}", "연간 회피 요금": f"{x:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x - f.premium[[q['hazard'] for q in f.premium].index(0.01)]['price']:+,.2f}"}
+    p1 = f.premium[[q['hazard'] for q in f.premium].index(0.01)]['price']
+    ad = t["adder"]
+    L += [f"민감도 (에너지요금 기준값 → 추가 요금 {ad:,.2f}원 포함 상한, 여유 = 상한 − 필요 PPA {p1:,.2f}원):", "",
+          markdown_table([{"민감도": f"형상 p = {p:g}", "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x + ad - p1:+,.2f}"}
                           for p, x in t["shape"].items()]
-                         + [{"민감도": lab.get(k, k), "연간 회피 요금": f"{x:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x - f.premium[[q['hazard'] for q in f.premium].index(0.01)]['price']:+,.2f}"}
+                         + [{"민감도": lab.get(k, k), "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x + ad - p1:+,.2f}"}
                             for k, x in t["sens"].items()]), ""]
     return L
 

@@ -857,6 +857,7 @@ research:
       bands_csv: "data/processed/vol04_tou_timebands.csv"
       solar_monthly_csv: "data/processed/vol04_solar_monthly.csv"   # 한전 전력통계월보 제566호 16-1
       calendar_year: 2025               # ASSUMPTION(judgment): 요일 구성·태양 위치 = 월 발전량 가중치와 같은 해
+      ceiling_stage: "most_inclusive"   # ASSUMPTION(judgment): 구매자 상한 = 에너지요금 + 확보된 kWh당 추가 요금(연료비조정 B · 기후환경 TODO) — 3단 모두 보고서에 병기
       site_lat: 36.0                    # ASSUMPTION(judgment): 표준 발전 형상의 대표 지점(국토 중앙 근사) — 입력 solar_shape_p와 함께 J 등급
       site_lon: 127.0
       sensitivities:                    # 회피 요금 민감도 (라벨 키는 story.py)

@@ -212,3 +212,26 @@ def test_avoided_rate_logic():
     w = np.array([sol[m] for m in range(1, 13)])
     assert base["annual"] == pytest.approx(float((np.array(list(base["month"].values())) * w).sum() / w.sum()))
     assert sum(base["gen_share"].values()) == pytest.approx(1.0)
+
+
+def test_vol04_ceiling_three_stages():
+    """구매자 상한 3단: 에너지요금 → +연료비조정(입력값) → +기후환경(값 없으면 None·TODO). 상한 = 가장 포괄적인 확보 단계, 여유 = 단계 − 필요 가격."""
+    from src.data_fetch.base import load_config
+    from research.vol04 import data as D
+    f = D.load_facts(load_config(), mc_n=0)
+    t = f.extra["tou"]
+    st = dict(t["stages"])
+    assert list(st) == ["energy", "fuel", "climate"]
+    assert st["energy"] == pytest.approx(t["base"]["annual"])
+    fa, ce = f.inputs["fuel_adj"].value, f.inputs["climate_env"].value
+    assert st["fuel"] == pytest.approx(st["energy"] + float(fa))
+    if isinstance(ce, (int, float)):
+        assert st["climate"] == pytest.approx(st["fuel"] + float(ce))
+    else:
+        assert st["climate"] is None and f.inputs["climate_env"].pending_official      # 추정값 넣지 않음, TODO만
+    last = [v for v in st.values() if v is not None][-1]
+    assert f.corridor[1] == pytest.approx(last) and t["adder"] == pytest.approx(last - st["energy"])
+    for p in f.extra["premium_grid"]:
+        for k, v in st.items():
+            m = p["max_fee_stage"][k]
+            assert (m is None) if v is None else m == pytest.approx(v - p["price"])

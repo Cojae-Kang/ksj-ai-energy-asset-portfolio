@@ -38,7 +38,7 @@ LABELS: dict[str, tuple[str, str]] = {
     "tou_weekend_discount": ("봄·가을 주말 낮 할인", "Spring/autumn weekend midday discount"),
     "tou_sunday_holiday": ("일요일·공휴일 요금 적용", "Sunday/holiday rate rule"), "tou_saturday": ("토요일 시간대 적용", "Saturday time-band rule"),
     "solar_month_weights": ("월별 태양광 발전량 가중치", "Monthly solar output weights"), "solar_shape_p": ("하루 발전 형상 지수", "Daily output shape exponent"),
-    "tou_kwh_adders": ("kWh당 추가 요금(기후환경·연료비조정)", "Per-kWh add-ons (climate, fuel adjustment)"),
+    "fuel_adj": ("연료비조정요금(2026년 4분기)", "Fuel cost adjustment (Q4 2026)"), "climate_env": ("기후환경요금", "Climate & environment charge"),
     "smp_base": ("SMP 기준값", "SMP base"), "smp_escalation": ("SMP 추세", "SMP trend"),
     "smp_sigma": ("SMP 변동성", "SMP volatility"), "smp_phi": ("SMP 평균회귀(AR1)", "SMP mean reversion (AR1)"),
     "rec_eligible": ("REC 수익 여부", "REC revenue"), "cf_sd_annual": ("발전량 연 변동", "Annual output variation"),
@@ -190,7 +190,18 @@ def tou_ceiling(cfg: Mapping, I: Mapping[str, Input]) -> dict:
     run = lambda p, **kw: tou.avoided_rate(rates, bands, sol, shape[p], days, **{**base_kw, **kw})  # noqa: E731
     base = run(p0)
     sens = {s["key"]: run(p0, **{k: v for k, v in s.items() if k != "key"})["annual"] for s in t["sensitivities"]}
-    return {"base": base, "annual": base["annual"], "shape": {p: run(p)["annual"] for p in shape}, "sens": sens,
+    # 3단 상한: 에너지요금(시간대별 전력량요금) → + 연료비조정요금 → + 기후환경요금. kWh당 같은 단가라 단순 합. 값이 없으면 None(TODO)
+    stages, cur = [("energy", base["annual"])], base["annual"]
+    for key, inp in (("fuel", "fuel_adj"), ("climate", "climate_env")):
+        v = I[inp].value if inp in I else None
+        if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)):
+            cur = cur + float(v)
+            stages.append((key, cur))
+        else:
+            stages.append((key, None))
+    ceiling = cur                                         # ASSUMPTION(judgment): 상한 = 확보된 단계 중 가장 포괄적인 값 (config tou.ceiling_stage)
+    return {"base": base, "annual": ceiling, "energy": base["annual"], "adder": ceiling - base["annual"], "stages": stages,
+            "shape": {p: run(p)["annual"] for p in shape}, "sens": sens,
             "band_share": tou.band_shares(bands, shape[p0], sol), "month_gen": {int(m): float(v) for m, v in sol.items()},
             "contract": (volt, opt), "rates": rates[(rates.regime == "after") & (rates.voltage == volt) & (rates.option == opt)]}
 
@@ -242,7 +253,8 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
         for h in v["hazards"]:
             p = ppa_for_npv_match(a, m, debts["ppa"], float(h), hurdle + float(sp), cfd_npv, 60.0, 400.0)
             premium_grid.append({"hazard": float(h), "spread": float(sp), "price": p, "premium": (p - lo_c) if p is not None else None,
-                                 "max_fee": (hi_c - p) if p is not None else None, "max_fee_avg": (avg_c - p) if p is not None else None})
+                                 "max_fee": (hi_c - p) if p is not None else None, "max_fee_avg": (avg_c - p) if p is not None else None,
+                                 "max_fee_stage": {k: (v - p) if (v is not None and p is not None) else None for k, v in tc["stages"]}})
     premium = [x for x in premium_grid if x["spread"] == 0.0]
     # PPA 대출 비율 민감도 (연 해지 = 몬테카를로 값, 스프레드 0)
     hz = float(v["monte_carlo"]["hazard"])
