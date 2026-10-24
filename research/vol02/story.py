@@ -214,6 +214,20 @@ class Story:
         return self.T(f"({self.GB_KR[r.inp.gearing_basis]} 기준)", f" (on {self.GB_EN[r.inp.gearing_basis]})")
 
     GB_KR = {"total": "총사업비", "ex_financing": "CAPEX+DSRA", "capex": "CAPEX"}
+
+    def bench_note(self, case: str, b, kr: bool) -> str:
+        """총사업비 대비 환산 대출 비율 vs 비교 사례(군산 본PF, 보도 B) — 비교 사례가 있는 케이스만."""
+        cr = self.case(case)
+        bm = cr.gearing_bench if ok(cr) else None
+        if not bm:
+            return ""
+        G = {"A": "공식 원문", "B": "보도", "J": "저자 판단"}
+        more = b.gearing < bm["ratio"]
+        if kr:
+            return (f" 총사업비 대비 환산 시 {self.pct(b.gearing)} — {bm['source_kr']} ≈ {self.pct(bm['ratio'], 0)}(신뢰 등급: {G.get(bm['tier'], bm['tier'])})"
+                    + ("보다 보수적." if more else "보다 공격적."))
+        return (f" On total cost this is {self.pct(b.gearing)} — " + ("more conservative than" if more else "more aggressive than")
+                + f" {bm['source_en']} ≈ {self.pct(bm['ratio'], 0)} (grade: {'press report' if bm['tier'] == 'B' else bm['tier']}).")
     GB_EN = {"total": "total cost", "ex_financing": "CAPEX + DSRA", "capex": "CAPEX"}
 
     def lease_up_years(self, s: str = "base") -> float | None:
@@ -822,10 +836,12 @@ class Story:
                   table=TableSpec([self.T("항목", "Item"), self.T("값", "Value")], rows, [0.48, 0.52], ["L", "R"],
                                   shade_rows={2} | ({len(rows) - 1} if neg else set()) | ({5} if res else set()),
                                   gold_cells={(2, 1)} | ({(5, 1)} if res else set()), brick_cells={(len(rows) - 1, 1)} if neg else set(), font_size=8.0),
-                  note=self.T("대출 한도 = min(sculpting, 최대 대출 비율 × 총사업비). 총사업비에 건설이자(IDC)·초기 DSRA" + ("·이자유보계좌" if res else "") + " 포함, 반복 계산."
+                  note=self.T(f"대출 한도 = min(sculpting, 최대 대출 비율 × {self.GB_KR[inp.gearing_basis]}). 총사업비 = CAPEX + 건설이자(IDC) + 초기 DSRA" + ("·이자유보계좌" if res else "") + ", 반복 계산."
+                              + self.bench_note(case, b, True)
                               + (" 최소·평균 DSCR = 원금 상환 기간 기준. 램프업 구조는 이자 원금 가산 대신 유보계좌(저자 판단, Gridlines 2026: 램프업 의존 사업은 초기 레버리지가 낮고 지분이 더 필요)" if res else "")
                               + (f". LLCR {self.x(b.llcr)} < 최소 DSCR {self.x(b.min_dscr)}: LLCR에는 램프업 {g}년 적자(유보계좌로 충당)가 포함되기 때문" if res and b.llcr < b.min_dscr - 1e-6 else ""),
-                              "Debt = min(sculpting, max gearing × total cost); cost includes IDC and initial DSRA" + (" and the interest reserve" if res else "") + ", solved iteratively."
+                              f"Debt = min(sculpting, max gearing × {self.GB_EN[inp.gearing_basis]}); total cost = CAPEX + IDC + initial DSRA" + (" + interest reserve" if res else "") + ", solved iteratively."
+                              + self.bench_note(case, b, False)
                               + (" Min/avg DSCR over principal repayment years. Ramp-up uses a reserve, not capitalised interest (author's judgment; Gridlines 2026: ramp-up-dependent projects carry lower initial leverage and more equity)" if res else "")
                               + (f". LLCR {self.x(b.llcr)} < min DSCR {self.x(b.min_dscr)} because LLCR includes the {g}-yr ramp-up deficit (covered by the reserve)" if res and b.llcr < b.min_dscr - 1e-6 else "")) + neg_note)
         pick = sorted({1, 2, 3, min(5, inp.tenor_years), min(10, inp.tenor_years), inp.tenor_years} | ({g + 1} if res else set()))
@@ -879,6 +895,13 @@ class Story:
             if gb == "total" and self.money(case, ad[0]) != self.money(case, ad[-1]):
                 alt_note_kr = f" 총사업비 기준이면 시나리오별 대출 {self.money(case, ad[0])}~{self.money(case, ad[-1])}(하단 시나리오가 가장 큼 — 유보계좌·IDC가 분모에 들어가 위험이 클수록 대출이 늘어남)."
                 alt_note_en = f" On total cost, debt runs {self.money(case, ad[0])}–{self.money(case, ad[-1])} by scenario (largest in the downside, as reserves and IDC enter the base)."
+        bm = a.gearing_bench
+        if bm:
+            g0 = bm["result"]
+            srows.append([self.T(f"민감도: 총사업비 {self.pct(bm['ratio'], 0)} 수준(비교 사례, 보도)", f"Sensitivity: {self.pct(bm['ratio'], 0)} of total cost (benchmark, press)"),
+                          self.money(case, g0.debt), self.x(g0.min_dscr), self.x(g0.llcr), self.pct(g0.project_irr), self.pct(g0.equity_irr), self.x(g0.min_dscr_contracted)])
+            alt_note_kr += f" 총사업비 {self.pct(bm['ratio'], 0)} 수준이면 {self.binding_text(g0)}(대출 {self.money(case, g0.debt)})."
+            alt_note_en += f" At {self.pct(bm['ratio'], 0)} of total cost, {self.binding_text(g0)} (debt {self.money(case, g0.debt)})."
         dd = sorted(x.debt for x in a.scenarios.values())
         same_b = all(x.binding == "gearing" for x in a.scenarios.values())
         dtxt = self.money(case, dd[-1]) if self.money(case, dd[0]) == self.money(case, dd[-1]) else (

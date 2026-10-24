@@ -600,6 +600,7 @@ class CaseResult:
     power_curve: dict = field(default_factory=dict)   # 전력비 포함 비율(SPC 부담, 0~1) → 다시 sizing한 결과
     cost_counterfactual: pf.PFResult | None = None   # 공사비 1년 상승 전(÷(1+상승률))·임대료 1년 전(÷(1+인상률)) 재계산
     gearing_alt: dict = field(default_factory=dict)   # 최대 대출 비율 분모를 바꾼 sizing {분모: {base, scenarios}}
+    gearing_bench: dict | None = None           # 비교 사례 수준(총사업비 기준 대출 비율) sizing {ratio, result, source…}
 
     @property
     def yoc(self) -> float:
@@ -631,6 +632,11 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
     base = pf.run(inp)
     scen = {s: (base if s == "base" else pf.run(scenario_inputs(inp, d, s))) for s in SCENARIOS}
     # 최대 대출 비율 분모 민감도: 기준 외의 분모(총사업비 · CAPEX+DSRA · CAPEX)로 다시 sizing — 기준 + 수요 시나리오
+    bm = cfg["research"]["vol02"].get("gearing_benchmark") or {}
+    gearing_bench = None
+    if bm and bm.get("case") == case:              # 비교 사례 수준(총사업비 기준 대출 비율)으로 다시 sizing — 민감도
+        ratio = float(bm["debt"]) / float(bm["cost"])
+        gearing_bench = {"ratio": ratio, "result": pf.run(replace(inp, gearing_basis="total", max_gearing=ratio)), **bm}
     gearing_alt = {g: {"base": pf.run(replace(inp, gearing_basis=g)),
                        "scenarios": {s: pf.run(replace(scenario_inputs(inp, d, s), gearing_basis=g)) for s in SCENARIOS}}
                    for g in pf.GEARING_BASES if g != inp.gearing_basis}
@@ -753,7 +759,7 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
     return CaseResult(case, inp, base, scen, stresses, torn, be, hm, cm, power, pf.identity_checks(base), tax_timing, hm_tt,
                       margin_bp=margin_bp, interest_cover_debt=pf.interest_cover_cap(base),
                       negative_amort=pf.negative_amortization_years(base), alts=alts, cost_counterfactual=cf_, power_curve=curve,
-                      gearing_alt=gearing_alt)
+                      gearing_alt=gearing_alt, gearing_bench=gearing_bench)
 
 
 def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float], load: float = 1.0) -> pd.DataFrame | None:

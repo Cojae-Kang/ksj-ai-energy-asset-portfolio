@@ -476,6 +476,14 @@ research:
   vol02:
     output_dir: "research/vol02"
     gearing_basis: "capex"             # ASSUMPTION(judgment): 최대 대출 비율의 분모 = CAPEX. 금융비용(IDC·이자유보계좌·DSRA) 제외 — 금리에 연동되는 항목을 빼 위험↑→대출↑ 왜곡과 순환 참조 제거. 기존 두 방식(total 총사업비, ex_financing CAPEX+DSRA)은 p3 민감도 행·build_summary에 유지
+    gearing_benchmark:                  # 비교 사례(케이스 A): 총사업비 대비 대출 비율 — p3 각주·민감도 행 (가정 아님)
+      case: "A"
+      debt: 6576                        # 억원, 군산 데이터센터 본PF
+      cost: 8700                        # 억원, 사업비
+      tier: "B"                         # 보도(이데일리) — 원문(대주단 공시 등) 대조 전
+      source_kr: "이데일리(2026-10-12): 군산 데이터센터 본PF 6,576억원 ÷ 사업비 8,700억원"
+      source_en: "Edaily (12 Oct 2026): Gunsan data-centre PF KRW 657.6bn ÷ project cost KRW 870bn"
+      url: "https://en.edaily.co.kr/news/eda202610125649/"
     yoc_check_band: [0.08, 0.14]        # ASSUMPTION(judgment): 원가 대비 수익률 점검 범위(저자 설정, 공개 출처 없음) — p7 차트 음영, ±1%p 허용
     build_dir: "research/vol02/_build"
     page_pt: [960, 720]

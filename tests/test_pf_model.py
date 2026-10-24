@@ -395,3 +395,20 @@ def test_gearing_basis_capex_vol02():
     assert tot.gearing == pytest.approx(a.inp.max_gearing, rel=1e-6)                            # 기존: 총사업비의 65%
     assert tot.debt >= exf.debt >= b.debt                                                        # 분모가 작을수록 대출 감소
     assert a.gearing_alt["total"]["scenarios"]["downside"].debt > tot.debt                       # 총사업비 기준의 왜곡(기록용)
+
+
+def test_gearing_benchmark_vol02():
+    """비교 사례(군산 본PF, 보도 B) 수준 = 총사업비 대비 6,576/8,700 상한으로 재sizing — 상한 또는 목표 DSCR 중 작은 값."""
+    from src.data_fetch.base import load_config
+    from research.vol02 import data as D
+    cfg = load_config()
+    bm_cfg = cfg["research"]["vol02"]["gearing_benchmark"]
+    a = D.load_facts(cfg).cases[bm_cfg["case"]]
+    bm = a.gearing_bench
+    assert bm["ratio"] == pytest.approx(6576 / 8700) and bm["tier"] == "B"
+    g = bm["result"]
+    assert g.inp.gearing_basis == "total" and g.inp.max_gearing == pytest.approx(bm["ratio"])
+    assert g.debt == pytest.approx(min(g.sculpt_debt, g.gearing_debt), rel=1e-6)
+    assert g.gearing <= bm["ratio"] + 1e-9 and a.base.gearing < bm["ratio"]                  # 기준(CAPEX 65%)이 비교 사례보다 보수적
+    if g.binding == "dscr":
+        assert g.min_dscr == pytest.approx(a.inp.target_dscr, abs=1e-6)

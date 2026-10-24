@@ -337,6 +337,10 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
             b = cr.base
             den = pf.gearing_base(cr.inp.gearing_basis, b.cons.uses, b.cons.capex, b.cons.dsra_initial)
             L.append(f"- 검산({c}): 대출 {b.debt:,.1f} = {cr.inp.max_gearing * 100:.0f}% × 분모 {den:,.1f}({gname[cr.inp.gearing_basis]}) = {cr.inp.max_gearing * den:,.1f}")
+        if data.ok(cr) and cr.gearing_bench:
+            bm, g = cr.gearing_bench, cr.gearing_bench["result"]
+            L.append(f"- 비교 사례({c}): {bm['source_kr']} = {bm['ratio'] * 100:.1f}% (등급 {bm['tier']}) → 총사업비 {bm['ratio'] * 100:.1f}% 상한으로 재sizing: "
+                     f"대출 {g.debt:,.1f} (구속 {g.binding}, 총사업비 대비 {g.gearing * 100:.1f}%) · 최소 DSCR {g.min_dscr:.3f} · Equity IRR {g.equity_irr * 100:.2f}% — 기준(CAPEX) 대출은 총사업비 대비 {cr.base.gearing * 100:.1f}%")
         if data.ok(cr) and cr.power_pair():
             pt, gr_ = cr.power_pair()
             L.append(f"- 전력비 조항({c}): 별도 청구 대출 {pt.debt:,.1f} · 최소 DSCR {pt.min_dscr:.3f} · Equity IRR {pt.equity_irr * 100:.2f}% / "
