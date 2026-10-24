@@ -841,13 +841,27 @@ research:
     page_pt: [960, 720]
     title_kr: "데이터센터에 전기를 파는 법"
     title_en: "Selling Power to a Data Centre"
-    subtitle_kr: "가상 태양광 100MW의 지분투자 — 한전 계약(CfD) · 데이터센터 직접 PPA · 시장 판매, 어느 쪽이 위험 대비 더 버나"
-    subtitle_en: "Equity in a hypothetical 100 MW solar asset — KEPCO contract (CfD), direct PPA with a data centre, or merchant: which pays for its risk?"
+    subtitle_kr: "가상 태양광 {mw}MW의 지분투자 — 한전 계약(CfD) · 데이터센터 직접 PPA · 시장 판매, 어느 쪽이 위험 대비 더 버나"
+    subtitle_en: "Equity in a hypothetical {mw} MW solar asset — KEPCO contract (CfD), direct PPA with a data centre, or merchant: which pays for its risk?"
     date_label: "2026.10"
     as_of: "2026-10-20"                 # 시리즈 기준일 (고정)
     inputs_csv: "data/manual/vol04_inputs.csv"   # 항목별 신뢰 등급(A 공식 원문 · B 공식 발표 보도 · C 민간 2차 · J 저자 판단)과 출처
     inputs:
       ktb: "data/processed/ecos_ktb_daily.csv"
+    tou:                                # 구매자 상한 = 태양광 시간대 회피 전력량요금 (research/vol04/tou.py)
+      tariff_csv: "data/processed/vol04_tou_tariff.csv"        # 기후부·한전 2026-03-13 PDF 8쪽 [붙임2]
+      bands_csv: "data/processed/vol04_tou_timebands.csv"
+      solar_monthly_csv: "data/processed/vol04_solar_monthly.csv"   # 한전 전력통계월보 제566호 16-1
+      calendar_year: 2025               # ASSUMPTION(judgment): 요일 구성·태양 위치 = 월 발전량 가중치와 같은 해
+      site_lat: 36.0                    # ASSUMPTION(judgment): 표준 발전 형상의 대표 지점(국토 중앙 근사) — 입력 solar_shape_p와 함께 J 등급
+      site_lon: 127.0
+      sensitivities:                    # 회피 요금 민감도 (라벨 키는 story.py)
+        - {key: "opt1", voltage: "고압A", option: "선택Ⅰ"}
+        - {key: "opt3", voltage: "고압A", option: "선택Ⅲ"}
+        - {key: "hvb", voltage: "고압B", option: "선택Ⅱ"}
+        - {key: "sat_mid", saturday: "peak_to_mid"}
+        - {key: "no_discount", discount: 0.0}
+        - {key: "before", regime: "before"}
     hazards: [0.0, 0.005, 0.01, 0.02, 0.03, 0.05]
     risk_spreads: [0.0, 0.01, 0.02]     # ASSUMPTION(judgment): PPA 지분 할인율 = 요구수익률 + 스프레드 (민간 오프테이커 위험 프리미엄, 공개 근거 없음 → 격자)
     ppa_gearing_check: [0.65, 0.75, 0.80]   # PPA 대출 비율 민감도 (결과를 움직이는 저자 판단 입력)   # PPA 오프테이커 연 해지 확률 격자 (ASSUMPTION(judgment): 공개 부도율 근거 없음 → 손익분기로 제시)

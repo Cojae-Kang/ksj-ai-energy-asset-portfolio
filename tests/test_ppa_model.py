@@ -92,7 +92,11 @@ def test_vol04_facts_build(tmp_path):
     p = {x["hazard"]: x for x in f.premium}
     assert p[0.0]["price"] < p[0.01]["price"] < p[0.05]["price"]                     # 해지 위험 ↑ → 필요 가격 ↑
     assert p[0.01]["max_fee"] == pytest.approx(f.corridor[1] - p[0.01]["price"])
-    assert f.corridor[0] <= f.be_price <= f.corridor[1]
+    assert f.be_price > f.corridor[0]                                                 # 한전 계약 IRR을 맞추려면 계약가보다 비싸야
+    assert f.corridor[1] == pytest.approx(f.extra["tou"]["annual"])                   # 구매자 상한 = 태양광 시간대 회피 요금
+    assert f.extra["avg_tariff"] == pytest.approx(f.V("kepco_industrial_price"))      # 평균 판매단가는 참고선·전력비 계산용
+    assert f.dc["power_cost"] == pytest.approx(f.dc["consumption_gwh"] * f.V("kepco_industrial_price") / 100)
+    assert p[0.01]["max_fee_avg"] - p[0.01]["max_fee"] == pytest.approx(f.V("kepco_industrial_price") - f.corridor[1])
     assert all(f.inputs[k].tier in "ABCDJ" for k in f.inputs)
     assert all(f.inputs[k].official_todo for k in f.provisional)                      # 교체 대기 = 원문 할 일이 적힌 항목
     g = {(x["hazard"], x["spread"]): x["price"] for x in f.extra["premium_grid"]}
@@ -123,3 +127,88 @@ def test_irr_handles_negative_terminal_flow():
     f = np.array([-100.0] + [15.0] * 15 + [-5.0])
     r = pm.pf.irr(f, periods_per_year=1)
     assert r is not None and pm.npv(f, r) == pytest.approx(0, abs=1e-6)
+
+
+# --- Vol.4 구매자 상한: 산업용(을) 계절·시간대별 요금 -------------------------------------------------
+def _tou():
+    import pandas as pd
+    from src.data_fetch.base import load_config, resolve_path
+    t = load_config()["research"]["vol04"]["tou"]
+    rd = lambda k: pd.read_csv(resolve_path(t[k]), encoding="utf-8-sig")  # noqa: E731
+    return rd("tariff_csv"), rd("bands_csv"), rd("solar_monthly_csv").set_index("month")["total_mwh"], t
+
+
+def test_tou_tariff_csv_equals_hand_and_pdf():
+    """요금 CSV = 손 입력 표 = (pdftotext가 있으면) PDF 8쪽 기계 추출, 개편 전후 차이 = PDF 머리 문구."""
+    from research.vol04 import sources as S, tou as T
+    rates, *_ = _tou()
+    hand = T.rates_frame()
+    key = ["regime", "voltage", "option", "season", "band"]
+    j = rates.merge(hand, on=key, suffixes=("", "_h"))
+    assert len(j) == len(hand) == 162
+    assert (j["krw_per_kwh"] == j["krw_per_kwh_h"]).all() and (j["basic_krw_per_kw"] == j["basic_krw_per_kw_h"]).all()
+    assert T.check_stated_change(hand) == []
+    pdf = S.tou_from_pdf()
+    if pdf is not None:
+        m = T.rates_frame(pdf)
+        jj = hand.merge(m, on=key, suffixes=("", "_p"))
+        assert len(jj) == 162 and (jj["krw_per_kwh"] == jj["krw_per_kwh_p"]).all()
+    # 원문 대표값 (PDF 8쪽): 고압A 선택Ⅱ 개편 후
+    r = rates[(rates.regime == "after") & (rates.voltage == "고압A") & (rates.option == "선택Ⅱ")].set_index(["season", "band"])["krw_per_kwh"]
+    assert (r[("spring_autumn", "mid")], r[("summer", "peak")], r[("winter", "off")]) == (133.4, 229.0, 123.0)
+
+
+def test_tou_bands_reform_matches_text():
+    """봄·여름·가을 평일: 11~12·13~15시 최대→중간, 18~21시 중간→최대 (PDF 2·3쪽), 겨울은 그대로."""
+    _, bands, *_ = _tou()
+    for s in ("summer", "spring_autumn"):
+        b = bands[bands.season == s].pivot(index="hour", columns="regime", values="band")
+        ch = b[b["before"] != b["after"]]
+        assert sorted(ch.index[ch["after"] == "mid"]) == [11, 13, 14]
+        assert sorted(ch.index[ch["after"] == "peak"]) == [18, 19, 20]
+    w = bands[bands.season == "winter"].pivot(index="hour", columns="regime", values="band")
+    assert (w["before"] == w["after"]).all()
+    assert (bands.groupby(["regime", "season"]).size() == 24).all()
+
+
+def test_solar_monthly_weights():
+    _, _, sol, _ = _tou()
+    assert list(sol.index) == list(range(1, 13))
+    assert sol.sum() == pytest.approx(45_452_754, abs=1)                               # 월보 16-1, 2025년 합계
+
+
+def test_solar_shape_and_days():
+    from research.vol04 import tou as T
+    sh = T.solar_hourly_shape(2025, 36.0, 127.0, 1.0)
+    assert np.allclose(sh.sum(axis=1), 1.0)
+    assert (sh[[0, 1, 2, 3, 21, 22, 23]].values == 0).all()                            # 밤 발전 없음
+    assert sh.loc[7, list(range(0, 8))].sum() > sh.loc[1, list(range(0, 8))].sum()     # 여름은 아침 일찍 시작
+    peak = {m: int(sh.loc[m].idxmax()) for m in range(1, 13)}
+    assert all(p in (12, 13) for p in peak.values())                                   # 동경 127° → 태양 남중 12시 반 무렵
+    d = T.day_counts(2025)
+    assert d.sum().sum() == 365 and d.loc[1, "weekday"] == 23                          # 2025-01: 평일 23일
+
+
+def test_avoided_rate_logic():
+    """회피 요금 성질: 형상을 한 시간에 몰면 그 시간 요금, 할인 끄면 오르고, 개편 전이 개편 후보다 높다(낮 최대부하 → 중간)."""
+    import pandas as pd
+    from research.vol04 import tou as T
+    rates, bands, sol, t = _tou()
+    days = T.day_counts(2025)
+    noon = pd.DataFrame(0.0, index=range(1, 13), columns=range(24))
+    noon[12] = 1.0
+    a = T.avoided_rate(rates, bands, sol, noon, days)
+    wd = days.loc[4]
+    exp_apr = (wd["weekday"] * 133.4 + wd["saturday"] * 133.4 * 0.5 + wd["sunday"] * 116.0 * 0.5) / wd.sum()   # 4월 12시: 평일 중간, 주말 50%
+    assert a["month"][4] == pytest.approx(exp_apr)
+    exp_jul = (days.loc[7, "weekday"] * 163.8 + days.loc[7, "saturday"] * 163.8 + days.loc[7, "sunday"] * 116.0) / days.loc[7].sum()
+    assert a["month"][7] == pytest.approx(exp_jul)
+    sh = T.solar_hourly_shape(2025, 36.0, 127.0, 1.0)
+    base = T.avoided_rate(rates, bands, sol, sh, days)
+    assert T.avoided_rate(rates, bands, sol, sh, days, discount=0.0)["annual"] > base["annual"]
+    assert T.avoided_rate(rates, bands, sol, sh, days, regime="before")["annual"] > base["annual"]
+    assert T.avoided_rate(rates, bands, sol, sh, days, saturday="peak_to_mid")["annual"] < base["annual"]
+    assert base["season"]["spring_autumn"] < base["season"]["summer"] < base["season"]["winter"]
+    w = np.array([sol[m] for m in range(1, 13)])
+    assert base["annual"] == pytest.approx(float((np.array(list(base["month"].values())) * w).sum() / w.sum()))
+    assert sum(base["gen_share"].values()) == pytest.approx(1.0)

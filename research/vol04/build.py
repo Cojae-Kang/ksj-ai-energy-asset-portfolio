@@ -77,7 +77,7 @@ def export_figures(cfg: Mapping, st, pages, lang: str) -> list[Path]:
     from . import charts
     out, fig_dir, dpi = [], resolve_path(cfg["paths"]["figures"]), int(cfg["figures"]["dpi"])
     by = {p.label: p for p in pages}
-    for label, key in (("3", "corridor"), ("5", "price_irr")):
+    for label, key in (("3", "corridor"), ("5", "price_irr"), ("5", "tou")):
         cell = next((c_ for c_ in by[label].cells if c_.chart_key == key), None)
         if cell is None or cell.chart is None:
             continue
@@ -95,11 +95,39 @@ def key_conclusions(f: data.Facts, hz: float) -> list[str]:
     irr = {k: r.irr for k, r in f.base.items()}
     p = next(x for x in f.premium if abs(x["hazard"] - hz) < 1e-12)
     out = [f"지분 IRR: 직접 PPA(회랑 중간 {f.ppa_mid:,.1f}원) {_p(irr['ppa'])} · 한전 CfD {_p(irr['cfd'])} · 시장 SMP {_p(irr['merchant'])}",
-           f"필요 PPA 가격(연 해지 {hz * 100:.0f}%) {p['price']:,.1f}원/kWh = 한전 계약 +{p['premium']:,.1f}원 → 망이용료 상한 {p['max_fee']:,.1f}원/kWh"]
+           f"필요 PPA 가격(연 해지 {hz * 100:.0f}%) {p['price']:,.1f}원/kWh = 한전 계약 +{p['premium']:,.1f}원 → 망이용료 여유 {p['max_fee']:,.1f}원/kWh "
+           f"(구매자 상한 = 태양광 시간대 회피 요금 {f.corridor[1]:,.1f}원; 평균 판매단가 {f.extra['avg_tariff']:,.1f}원 기준이면 {p['max_fee_avg']:,.1f}원)"]
     if ok(f.mc):
         s, m = mc_stats(f.mc["ppa"], f.V("equity_hurdle")), mc_stats(f.mc["merchant"], f.V("equity_hurdle"))
         out.append(f"몬테카를로: 직접 PPA P10/P50 {_p(s['p10'])}/{_p(s['p50'])}, 시장 판매 손실 확률 {_p(m['neg'], 0)}")
     return out
+
+
+def tou_section(f: data.Facts) -> list[str]:
+    """구매자 상한(태양광 시간대 회피 전력량요금) 근거표."""
+    from .tou import BAND_KR, SEASON_KR
+    t = f.extra["tou"]
+    b = t["base"]
+    v, o = t["contract"]
+    L = ["### 구매자 상한: 태양광 시간대 회피 전력량요금", "",
+         f"- 요금: 기후에너지환경부·한전 보도참고자료(2026-03-13) PDF 8쪽 [붙임2] 산업용(을) {v} {o} 개편 후 전력량요금 (data/processed/vol04_tou_tariff.csv)",
+         "- 월 가중치: 한전 전력통계월보 제566호 시트 '16-1.태양광 발전량 추계정보' 2025년 월별(시장+한전PPA+자가용)",
+         "- 요일: 2025년 달력. 평일 = 시간대 구분표, 일요일 = 전 시간 경부하, 토요일 = 평일 시간대(J), 봄·가을 토·일 11~14시 50% 할인. 평일 공휴일 미반영(TODO)",
+         "- 하루 형상: max(cos 천정각, 0)^p (Spencer 1971, 북위 36°·동경 127°) — 저자 판단(J). 기후환경·연료비조정요금 미포함(TODO)", ""]
+    L += [markdown_table([{"계절": SEASON_KR[k], "회피 요금(원/kWh)": f"{b['season'][k]:,.2f}", "발전량 비중": f"{b['gen_share'][k] * 100:.1f}%",
+                           "한전 계약가 대비": f"{b['season'][k] - f.corridor[0]:+,.2f}",
+                           **{f"평일 {BAND_KR[x]} 비중": f"{t['band_share'][k][x] * 100:.1f}%" for x in ("off", "mid", "peak")}}
+                          for k in ("spring_autumn", "summer", "winter")]
+                         + [{"계절": "연간(발전량 가중)", "회피 요금(원/kWh)": f"{t['annual']:,.2f}", "발전량 비중": "100.0%",
+                             "한전 계약가 대비": f"{t['annual'] - f.corridor[0]:+,.2f}"}]), ""]
+    L += ["월별(원/kWh): " + " · ".join(f"{m}월 {x:,.1f}" for m, x in b["month"].items()), ""]
+    lab = {"opt1": "고압A 선택Ⅰ", "opt3": "고압A 선택Ⅲ", "hvb": "고압B 선택Ⅱ", "sat_mid": "토요일 최대→중간부하",
+           "no_discount": "봄·가을 주말 할인 종료(2031~)", "before": "개편 전 요금(참고)"}
+    L += [markdown_table([{"민감도": f"형상 p = {p:g}", "연간 회피 요금": f"{x:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x - f.premium[[q['hazard'] for q in f.premium].index(0.01)]['price']:+,.2f}"}
+                          for p, x in t["shape"].items()]
+                         + [{"민감도": lab.get(k, k), "연간 회피 요금": f"{x:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x - f.premium[[q['hazard'] for q in f.premium].index(0.01)]['price']:+,.2f}"}
+                            for k, x in t["sens"].items()]), ""]
+    return L
 
 
 def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
@@ -120,8 +148,9 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
                            "지분(억원)": f"{x.equity:,.1f}", "지분 IRR": _p(x.irr, 2), "MOIC": f"{x.moic:.2f}",
                            f"{int(f.V('exit_year'))}년 매각 IRR": _p(f.exit[k][0], 2), "매각가(억원)": f"{f.exit[k][1]:,.1f}"} for k, x in f.base.items()]), ""]
     L += ["### 해지 확률별 필요 PPA 가격", "", markdown_table([{"연 해지": _p(p["hazard"]), "필요 가격": f"{p['price']:,.2f}", "프리미엄": f"{p['premium']:,.2f}",
-                                                            "망이용료 상한": f"{p['max_fee']:,.2f}"} for p in f.premium]), ""]
+                                                            "망이용료 여유": f"{p['max_fee']:,.2f}", "여유(평균 판매단가 기준, 참고)": f"{p['max_fee_avg']:,.2f}"} for p in f.premium]), ""]
     L += [f"- 해지 없음 IRR 손익분기 PPA 가격: {f.be_price:,.2f}원/kWh", ""]
+    L += tou_section(f)
     if ok(f.mc):
         L += ["### 몬테카를로", "", markdown_table([{"경로": k, **{a: _p(b) for a, b in mc_stats(f.mc[k], f.V('equity_hurdle')).items()}} for k in ("cfd", "ppa", "merchant")]), ""]
     v2 = r.get("vol2") or {}

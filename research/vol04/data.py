@@ -33,7 +33,12 @@ LABELS: dict[str, tuple[str, str]] = {
     "operating_years": ("운영기간", "Operating life"), "dep_years": ("감가상각 기간", "Depreciation life"),
     "tax_brackets": ("법인세 누진세율", "Corporate tax brackets"), "tax_rate_local": ("지방소득세", "Local income tax"),
     "cfd_price": ("한전 계약가(2026년 1차 입찰 상한)", "KEPCO contract price (2026 round-1 cap)"), "cfd_term": ("계약기간", "Contract term"),
-    "kepco_industrial_price": ("한전 산업용 판매단가(2025)", "KEPCO industrial tariff (2025)"),
+    "kepco_industrial_price": ("한전 산업용 평균 판매단가(2025, 참고)", "KEPCO industrial average tariff (2025, reference)"),
+    "tou_tariff": ("산업용(을) 시간대별 요금표", "Industrial (B) time-of-use rates"), "tou_contract": ("구매자 계약종별", "Buyer's tariff class"),
+    "tou_weekend_discount": ("봄·가을 주말 낮 할인", "Spring/autumn weekend midday discount"),
+    "tou_sunday_holiday": ("일요일·공휴일 요금 적용", "Sunday/holiday rate rule"), "tou_saturday": ("토요일 시간대 적용", "Saturday time-band rule"),
+    "solar_month_weights": ("월별 태양광 발전량 가중치", "Monthly solar output weights"), "solar_shape_p": ("하루 발전 형상 지수", "Daily output shape exponent"),
+    "tou_kwh_adders": ("kWh당 추가 요금(기후환경·연료비조정)", "Per-kWh add-ons (climate, fuel adjustment)"),
     "smp_base": ("SMP 기준값", "SMP base"), "smp_escalation": ("SMP 추세", "SMP trend"),
     "smp_sigma": ("SMP 변동성", "SMP volatility"), "smp_phi": ("SMP 평균회귀(AR1)", "SMP mean reversion (AR1)"),
     "rec_eligible": ("REC 수익 여부", "REC revenue"), "cf_sd_annual": ("발전량 연 변동", "Annual output variation"),
@@ -162,6 +167,34 @@ def capex_actual(I: Mapping[str, Input], per_kw: float | None = None) -> float:
     return float(I["asset_mw"].value) * 1000 * (float(I["capex_per_kw"].value) if per_kw is None else per_kw) * 1000 / 1e8
 
 
+SAT_RULE = {"평일과 같음": "weekday", "최대→중간": "peak_to_mid"}
+
+
+def tou_ceiling(cfg: Mapping, I: Mapping[str, Input]) -> dict:
+    """구매자 상한 = 태양광 시간대 회피 전력량요금(원/kWh, 2025년 월별 발전량 가중) + 민감도. 기본요금은 PPA로 줄지 않아 제외."""
+    from . import tou
+    t = cfg["research"]["vol04"]["tou"]
+    rates = pd.read_csv(resolve_path(t["tariff_csv"]), encoding="utf-8-sig")
+    bands = pd.read_csv(resolve_path(t["bands_csv"]), encoding="utf-8-sig")
+    sol = pd.read_csv(resolve_path(t["solar_monthly_csv"]), encoding="utf-8-sig").set_index("month")["total_mwh"]
+    yr = int(t["calendar_year"])
+    if int(float(I["solar_month_weights"].value)) != yr:
+        raise ValueError("solar_month_weights 연도와 config tou.calendar_year가 다름")
+    volt, opt = str(I["tou_contract"].value).split()
+    p0 = float(I["solar_shape_p"].value)
+    days = tou.day_counts(yr)
+    shape = {p: tou.solar_hourly_shape(yr, float(t["site_lat"]), float(t["site_lon"]), p)
+             for p in sorted({p0, I["solar_shape_p"].low or p0, I["solar_shape_p"].high or p0})}
+    base_kw = {"voltage": volt, "option": opt, "saturday": SAT_RULE[str(I["tou_saturday"].value)],
+               "discount": float(I["tou_weekend_discount"].value)}
+    run = lambda p, **kw: tou.avoided_rate(rates, bands, sol, shape[p], days, **{**base_kw, **kw})  # noqa: E731
+    base = run(p0)
+    sens = {s["key"]: run(p0, **{k: v for k, v in s.items() if k != "key"})["annual"] for s in t["sensitivities"]}
+    return {"base": base, "annual": base["annual"], "shape": {p: run(p)["annual"] for p in shape}, "sens": sens,
+            "band_share": tou.band_shares(bands, shape[p0], sol), "month_gen": {int(m): float(v) for m, v in sol.items()},
+            "contract": (volt, opt), "rates": rates[(rates.regime == "after") & (rates.voltage == volt) & (rates.option == opt)]}
+
+
 def ppa_for_npv_match(a: pm.Asset, m: pm.Market, d: pm.Debt, hazard: float, hurdle: float, target_npv: float,
                       lo: float, hi: float) -> float | None:
     """지분 NPV 기대값(PPA 쪽 할인율 hurdle) = target_npv(한전 계약 지분 NPV)가 되는 PPA 가격."""
@@ -182,7 +215,9 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
         raise RuntimeError("ECOS 국고채 3년 데이터 없음 (data/processed/ecos_ktb_daily.csv)")
     rate = ktb + V("margin_bp") / 1e4
     a = build_asset(I)
-    lo_c, hi_c = V("cfd_price"), V("kepco_industrial_price")
+    tc = tou_ceiling(cfg, I)
+    lo_c, hi_c = V("cfd_price"), tc["annual"]          # 하한 = 한전 계약가, 상한 = 태양광 시간대 회피 전력량요금(평균 판매단가는 참고선)
+    avg_c = V("kepco_industrial_price")
     mid = (lo_c + hi_c) / 2
     m = pm.Market(smp0=V("smp_base"), smp_escalation=V("smp_escalation"), cfd_price=lo_c, cfd_term=int(V("cfd_term")),
                   ppa_price=mid, ppa_term=int(V("ppa_term")), ppa_escalation=V("ppa_escalation"))
@@ -207,7 +242,7 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
         for h in v["hazards"]:
             p = ppa_for_npv_match(a, m, debts["ppa"], float(h), hurdle + float(sp), cfd_npv, 60.0, 400.0)
             premium_grid.append({"hazard": float(h), "spread": float(sp), "price": p, "premium": (p - lo_c) if p is not None else None,
-                                 "max_fee": (hi_c - p) if p is not None else None})
+                                 "max_fee": (hi_c - p) if p is not None else None, "max_fee_avg": (avg_c - p) if p is not None else None})
     premium = [x for x in premium_grid if x["spread"] == 0.0]
     # PPA 대출 비율 민감도 (연 해지 = 몬테카를로 값, 스프레드 0)
     hz = float(v["monte_carlo"]["hazard"])
@@ -263,14 +298,14 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
 
     # 데이터센터(Vol.2) 연결
     cons = V("dc_it_mw") * V("dc_it_load") * V("dc_pue") * pm.HOURS / 1000          # GWh
-    dc = {"consumption_gwh": cons, "power_cost": cons * hi_c / 100, "solar_gwh": float(base["cfd"].gen[0]),
+    dc = {"consumption_gwh": cons, "power_cost": cons * avg_c / 100, "solar_gwh": float(base["cfd"].gen[0]),
           "share": float(base["cfd"].gen[0]) / cons}
     # 미국 비교: Talen–AWS 명목 매출 ÷ (전량 MW × 8,760h × 년) = 전량·전시간 기준 평균 단가(하한 추정)
     us = {"talen_floor": V("talen_notional_usd_bn") * 1e9 / (V("talen_mw") * pm.HOURS * V("talen_years")),
           "levelten": V("levelten_solar_na")}
     prov = [k for k, x in I.items() if x.pending_official]
     a_act = build_asset(I, capex=capex_actual(I))
-    extra = {"premium_grid": premium_grid, "gearing_check": gear_chk, "downside": down}
+    extra = {"premium_grid": premium_grid, "gearing_check": gear_chk, "downside": down, "tou": tc, "avg_tariff": avg_c}
     lc = {"actual_capex": a_act.capex, "actual_lcoe": pm.lcoe(a_act, V("lcoe_discount_rate")), "keei": (I["lcoe_target"].low, I["lcoe_target"].high),
           "base_capex": a.capex, "base_lcoe": pm.lcoe(a, V("lcoe_discount_rate")),
           "actual_irr": {k: pm.run(k, a_act, m, debts[k]).irr for k in pm.ROUTES}}

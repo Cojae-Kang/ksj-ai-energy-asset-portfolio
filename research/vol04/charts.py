@@ -71,10 +71,14 @@ def line_ref(xs: Sequence[float], series: Sequence[tuple[str, Sequence[float | N
             ax.axvspan(shade[0], shade[1], color=c["gold"], alpha=0.14, lw=0, zorder=0)
             ax.text((shade[0] + shade[1]) / 2, hi + pad * 1.9, shade[2], ha="center", va="top", fontsize=FS - 0.2,
                     color=c["gold"], fontweight="bold")
+        hv_all = [hv for hv, _, _ in hlines]
         for hv, lab, col in hlines:     # 라벨: 왼쪽 끝 선 위(곡선과 겹치지 않게) 또는 오른쪽 축 밖
             ax.axhline(hv, color=col, lw=0.9, ls="--")
             if label_left:
-                ax.text(xs[0], hv + pad * 0.12, lab, va="bottom", ha="left", fontsize=FS - 0.2, color=col, fontweight="bold",
+                # 바로 위에 다른 기준선이 가까우면(라벨 높이 안) 라벨을 선 아래로
+                below = any(0 < o - hv < pad * 0.9 for o in hv_all)
+                ax.text(xs[0], hv - pad * 0.12 if below else hv + pad * 0.12, lab, va="top" if below else "bottom", ha="left",
+                        fontsize=FS - 0.2, color=col, fontweight="bold",
                         bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.4, "alpha": 0.85})
             else:
                 ax.text(1.005, hv, " " + lab, va="center", ha="left", fontsize=FS - 0.2, color=col, fontweight="bold", clip_on=False,
@@ -96,3 +100,31 @@ def line_ref(xs: Sequence[float], series: Sequence[tuple[str, Sequence[float | N
 def irr_boxes(series: Sequence[tuple[str, Sequence[float]]], c: Mapping, marks: Sequence[tuple[float, str, str]]) -> Draw:
     """경로별 지분 IRR 분포 상자그림 (Vol.3 discount_boxes 재사용 — 단위 %)."""
     return discount_boxes(series, c, marks)
+
+
+def month_bars(labels: Sequence[str], values: Sequence[float], colors: Sequence[str], c: Mapping, fmt: Callable[[float], str],
+               hlines: Sequence[tuple[float, str, str]], ylim: tuple[float, float]) -> Draw:
+    """월별 막대(값 라벨) + 수평 기준선(값, 라벨, 색). 기준선 라벨은 오른쪽 축 밖에, 가까우면 위아래로 벌린다."""
+    def draw(path: Path, w: float, h: float) -> None:
+        fig = _fig(w, h)
+        ax = fig.add_axes([0.07, 0.11, 0.70, 0.84])
+        x = np.arange(len(labels))
+        ax.bar(x, values, color=colors, width=0.62, zorder=2)
+        for i, v in enumerate(values):
+            ax.text(i, v + (ylim[1] - ylim[0]) * 0.012, fmt(v), ha="center", va="bottom", fontsize=FS - 0.6, color=c["text"], zorder=4)
+        ys = []
+        span = ylim[1] - ylim[0]
+        for hv, lab, col in sorted(hlines, key=lambda t: t[0]):
+            ax.axhline(hv, color=col, lw=1.1, ls="--", zorder=3)
+            y = hv if not ys or hv - ys[-1] >= span * 0.055 else ys[-1] + span * 0.055
+            ys.append(y)
+            ax.text(1.01, y, lab, va="center", ha="left", fontsize=FS - 0.3, color=col, fontweight="bold", clip_on=False,
+                    transform=ax.get_yaxis_transform())
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.set_ylim(*ylim)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+        ax.tick_params(labelsize=FS - 0.4, colors=c["note"])
+        _style(ax, c, grid_y=True)
+        _save(fig, path)
+    return draw
