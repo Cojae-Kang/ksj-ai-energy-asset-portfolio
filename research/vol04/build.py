@@ -103,6 +103,25 @@ def key_conclusions(f: data.Facts, hz: float) -> list[str]:
     return out
 
 
+def net_basis_lines(f: data.Facts) -> list[str]:
+    """공개 사례 부대비용 비교 기준: 사례 성격·내역(반올림 차이) · 직접 PPA 사용자 부담 항목(B) · 기반기금 비대칭(요율 TODO면 문장만)."""
+    n, t = f.extra["net"], f.extra["tou"]
+    nb = n["basis"]
+    nm = {"fuel": "연료비조정", "climate": "기후환경요금"}
+    adds = [nm[k] for k, v in t["stages"] if k != "energy" and v is not None]
+    items = " · ".join(f"{k} {v:g}" for k, v in n["items"])
+    L = [f"- 공개 사례 부대비용 {n['total']:.0f}원(B) = {nb['case_kr']}({nb['conditions_kr']}) — {nb['table_ref_kr']}(2021-12): {items}"
+         + (f" (표 총계 {n['total']:.0f} vs 항목 합 {n['item_sum']:.0f}, 원문 반올림)" if abs(n["item_sum"] - n["total"]) >= 0.5 else ""),
+         f"- 같은 기준 비교: 직접 PPA 사용자 추가 부담 = {'·'.join(nb['direct_ppa_items_kr'])}"
+         + (f", {'·'.join(adds)}은 해당 항목 아님({nb['direct_ppa_source_kr']}, B; 직접 PPA 고시 원문 TODO) → 상한 = 에너지요금 + 추가 요금 {t['adder']:,.1f}원" if adds
+            else f"({nb['direct_ppa_source_kr']}, B; 직접 PPA 고시 원문 TODO)")]
+    if n["fund"] is not None:
+        L.append(f"- 기반기금 비대칭: 사례 {n['total']:.0f}원에 전력산업기반기금 {n['fund']:g}원 포함, 회피 요금에는 미포함 → "
+                 + ("기준을 맞추면 여유가 기반기금만큼 커짐 (요율 TODO(data): 입력 power_fund_rate 비어 있음, 추정하지 않음)" if n["fund_add"] is None
+                    else f"요율 {n['fund_rate']:g}% 포함 시 상한 {t['annual'] + n['fund_add']:,.2f}원(여유 +{n['fund_add']:,.2f})"))
+    return L
+
+
 def tou_section(f: data.Facts) -> list[str]:
     """구매자 상한(태양광 시간대 회피 전력량요금) 근거표."""
     from .tou import BAND_KR, SEASON_KR
@@ -116,7 +135,7 @@ def tou_section(f: data.Facts) -> list[str]:
          "- 하루 형상: max(cos 천정각, 0)^p (Spencer 1971, 북위 36°·동경 127°) — 저자 판단(J)",
          f"- kWh당 추가 요금: 연료비조정 = 입력 fuel_adj {f.inputs['fuel_adj'].value}원(B, 보도) · 기후환경 = 입력 climate_env "
          + (f"{f.inputs['climate_env'].value}원(A, 한전ON {f.inputs['climate_env'].published} 적용)" if isinstance(f.inputs['climate_env'].value, (int, float)) else "(원문 대기 → 미포함, TODO)"),
-         "- 공개 사례 망이용료 40원(B) 비교 기준: 입력 파일의 내역에 기후환경요금 항목 없음 — '기타' 구성·직접 PPA 구매자의 kWh당 추가 요금 부과 여부는 원문 대조 전(TODO)", ""]
+         *net_basis_lines(f), ""]
     # 3단 상한 × 단계별 망이용료 여유 (스프레드 0, 해지 확률별)
     nm = {"energy": "① 에너지요금만", "fuel": "② + 연료비조정", "climate": "③ + 기후환경"}
     L += ["#### 구매자 상한 3단과 망이용료 여유 (위험 스프레드 0)", "",
@@ -139,7 +158,11 @@ def tou_section(f: data.Facts) -> list[str]:
           markdown_table([{"민감도": f"형상 p = {p:g}", "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x + ad - p1:+,.2f}"}
                           for p, x in t["shape"].items()]
                          + [{"민감도": lab.get(k, k), "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x + ad - p1:+,.2f}"}
-                            for k, x in t["sens"].items()]), ""]
+                            for k, x in t["sens"].items()]
+                         + ([{"민감도": "회피 요금에 기반기금 포함", "에너지요금": f"{t['energy']:,.2f}",
+                              "상한(추가 요금 포함)": f"{t['annual'] + fa:,.2f}" if (fa := f.extra["net"]["fund_add"]) is not None else "TODO(data)",
+                              "여유(연 해지 1%·스프레드 0)": f"{t['annual'] + fa - p1:+,.2f}" if fa is not None else "TODO(data)"}]
+                            if f.extra["net"]["fund"] is not None else [])), ""]
     return L
 
 
@@ -176,7 +199,7 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
     L += ["## 한계 · 공식 원문 교체 대기 (공신력 원칙)", ""]
     for k in f.provisional:
         x = f.inputs[k]
-        L.append(f"- [{TIER_KR[x.tier]}] {k} = {x.value} — {x.official_todo}")
+        L.append(f"- [{TIER_KR[x.tier]}] {k} = {x.value if x.value != '' else '(비어 있음)'} — {x.official_todo}")
     L += ["", "## 검산", ""]
     for k, x in f.base.items():
         cf_chk = abs(float((x.cfads - (x.ebitda - x.tax)).sum()))

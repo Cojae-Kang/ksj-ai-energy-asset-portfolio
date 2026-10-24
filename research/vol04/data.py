@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -54,7 +55,8 @@ LABELS: dict[str, tuple[str, str]] = {
     "dc_pue": ("PUE", "PUE"), "dc_it_load": ("IT 부하율", "IT load factor"),
     "talen_notional_usd_bn": ("Talen–AWS PPA 명목 매출", "Talen–AWS PPA notional revenue"), "talen_years": ("Talen–AWS 계약기간", "Talen–AWS term"),
     "talen_mw": ("Talen–AWS 계약 용량", "Talen–AWS contract capacity"),
-    "net_charge_example": ("부대비용 공개 사례(제3자 PPA, 2021)", "Ancillary charges, public example (3rd-party PPA, 2021)"),
+    "net_charge_example": ("부대비용 공개 사례(한전 중개 제3자 PPA, 태양광 Case 1)", "Ancillary charges, public example (KEPCO-brokered 3rd-party PPA, solar Case 1)"),
+    "power_fund_rate": ("전력산업기반기금 요율", "Power-industry fund levy rate"),
     "kpx_ancillary": ("직접 PPA 부가정산금(2023.7~2024.6)", "Direct-PPA ancillary settlement (Jul 2023–Jun 2024)"), "levelten_solar_na": ("LevelTen 북미 태양광 PPA", "LevelTen N. America solar PPA"),
 }
 
@@ -206,6 +208,29 @@ def tou_ceiling(cfg: Mapping, I: Mapping[str, Input]) -> dict:
             "contract": (volt, opt), "rates": rates[(rates.regime == "after") & (rates.voltage == volt) & (rates.option == opt)]}
 
 
+def _num_or_none(v: Any) -> float | None:
+    return float(v) if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)) else None
+
+
+def net_breakdown(cfg: Mapping, I: Mapping[str, Input], ceiling: float) -> dict:
+    """공개 사례 부대비용 내역(입력 source_name 괄호 '항목 값 · …') → 항목·항목 합·반올림 차이·기반기금, 그리고 같은 기준 비교용 기반기금 민감도.
+
+    기반기금: 사례 부대비용에는 들어 있으나 회피 요금(에너지요금 + 추가 요금)에는 없다. 요율 입력이 비어 있으면 None(TODO, 추정 금지)."""
+    nb = cfg["research"]["vol04"]["net_charge_basis"]
+    x = I["net_charge_example"]
+    m = re.search(r"\(([^()]*송배전[^()]*)\)", x.source)
+    items = []
+    for part in (m.group(1).split("·") if m else []):
+        mm = re.match(r"\s*(.+?)\s+(-?\d+(?:\.\d+)?)\s*$", part)
+        if mm:
+            items.append((mm.group(1), float(mm.group(2))))
+    rate_in = I.get(nb["fund_rate_key"])
+    rate = _num_or_none(rate_in.value) if rate_in is not None else None
+    fund_add = ceiling * rate / 100 if rate is not None else None   # ASSUMPTION(judgment): 부과 기준 = 회피 전기요금 전체 (입력 power_fund_rate 출처란)
+    return {"items": items, "total": float(x.value), "item_sum": sum(v for _, v in items),
+            "fund": dict(items).get(nb["fund_item"]), "fund_rate": rate, "fund_add": fund_add, "basis": dict(nb)}
+
+
 def ppa_for_npv_match(a: pm.Asset, m: pm.Market, d: pm.Debt, hazard: float, hurdle: float, target_npv: float,
                       lo: float, hi: float) -> float | None:
     """지분 NPV 기대값(PPA 쪽 할인율 hurdle) = target_npv(한전 계약 지분 NPV)가 되는 PPA 가격."""
@@ -317,7 +342,8 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
           "levelten": V("levelten_solar_na")}
     prov = [k for k, x in I.items() if x.pending_official]
     a_act = build_asset(I, capex=capex_actual(I))
-    extra = {"premium_grid": premium_grid, "gearing_check": gear_chk, "downside": down, "tou": tc, "avg_tariff": avg_c}
+    extra = {"premium_grid": premium_grid, "gearing_check": gear_chk, "downside": down, "tou": tc, "avg_tariff": avg_c,
+             "net": net_breakdown(cfg, I, tc["annual"])}
     lc = {"actual_capex": a_act.capex, "actual_lcoe": pm.lcoe(a_act, V("lcoe_discount_rate")), "keei": (I["lcoe_target"].low, I["lcoe_target"].high),
           "base_capex": a.capex, "base_lcoe": pm.lcoe(a, V("lcoe_discount_rate")),
           "actual_irr": {k: pm.run(k, a_act, m, debts[k]).irr for k in pm.ROUTES}}

@@ -235,3 +235,45 @@ def test_vol04_ceiling_three_stages():
         for k, v in st.items():
             m = p["max_fee_stage"][k]
             assert (m is None) if v is None else m == pytest.approx(v - p["price"])
+
+
+def test_vol04_net_charge_breakdown():
+    """공개 사례 부대비용 내역: 기후솔루션 표 2(인쇄 9쪽) 항목 그대로 파싱 — 총계 40 vs 항목 합 41(반올림), 기반기금 6.
+    기반기금 요율이 비어 있으면 민감도는 None(TODO) — 숫자를 추정하지 않는다."""
+    from src.data_fetch.base import load_config, resolve_path
+    from research.vol04 import data as D
+    cfg = load_config()
+    I = D.load_inputs(resolve_path(cfg["research"]["vol04"]["inputs_csv"]))
+    n = D.net_breakdown(cfg, I, 165.0)
+    names = [k for k, _ in n["items"]]
+    assert "복지/특례할인" in names and "거래수수료" in names and "기타" not in names
+    assert n["total"] == pytest.approx(float(I["net_charge_example"].value))
+    assert n["item_sum"] == pytest.approx(sum(v for _, v in n["items"]))
+    assert n["fund"] == pytest.approx(dict(n["items"])["전력산업기반기금"])
+    rate = I["power_fund_rate"].value
+    if isinstance(rate, (int, float)):
+        assert n["fund_add"] == pytest.approx(165.0 * rate / 100)
+    else:
+        assert n["fund_rate"] is None and n["fund_add"] is None and I["power_fund_rate"].pending_official
+    # 요율이 주어지면 회피 요금 × 요율 (입력 사본으로만 검증)
+    import dataclasses
+    I2 = {**I, "power_fund_rate": dataclasses.replace(I["power_fund_rate"], value=2.0)}
+    assert D.net_breakdown(cfg, I2, 150.0)["fund_add"] == pytest.approx(3.0)
+
+
+def test_vol04_net_basis_note_like_for_like():
+    """비교 기준 각주: 사례 성격·조건·표 위치, 직접 PPA 부담 항목(B), 상한에 추가 요금을 더한 것이 같은 기준, 기반기금 문장(요율 TODO)."""
+    from src.data_fetch.base import load_config
+    from research.vol04 import data as D
+    from research.vol04.story import Story
+    cfg = load_config()
+    f = D.load_facts(cfg, mc_n=0)
+    s = Story(cfg, f, "kr")
+    full, short = s.net_basis_note(), s.net_basis_note(items_shown=False)
+    nb = cfg["research"]["vol04"]["net_charge_basis"]
+    for t in (full, short):
+        assert nb["case_kr"] in t and nb["conditions_kr"] in t and "인쇄 9쪽(PDF 11쪽)" in t
+        assert "망이용요금·거래수수료·부가정산금·전력산업기반기금" in t and "같은 기준 비교" in t
+        assert f"{f.extra['tou']['adder']:,.1f}원을 더한" in t
+    assert "항목 합 41" in full and "기준을 맞추면 여유가 기반기금만큼 커짐" in full
+    assert "송배전 기본" not in short
