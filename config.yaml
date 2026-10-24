@@ -834,3 +834,22 @@ research:
       outlier_low: 0.10
       qa_report: docs/qa/vol03_ipo_discounts.md   # 구간·시장·규모별 표본 요약 (ipo_discounts 실행 시 갱신)
       estimate_report: docs/qa/vol03_ipo_pit_estimate.md   # --estimate-log: 예전 corp_cls 제외분 중 IPO 추정 (로그만 사용)
+
+  vol04:
+    output_dir: "research/vol04"
+    build_dir: "research/vol04/_build"
+    page_pt: [960, 720]
+    title_kr: "데이터센터에 전기를 파는 법"
+    title_en: "Selling Power to a Data Centre"
+    subtitle_kr: "가상 태양광 100MW의 지분투자 — 한전 계약(CfD) · 데이터센터 직접 PPA · 시장 판매, 어느 쪽이 위험 대비 더 버나"
+    subtitle_en: "Equity in a hypothetical 100 MW solar asset — KEPCO contract (CfD), direct PPA with a data centre, or merchant: which pays for its risk?"
+    date_label: "2026.10"
+    as_of: "2026-10-20"                 # 시리즈 기준일 (고정)
+    inputs_csv: "data/manual/vol04_inputs.csv"   # 항목별 신뢰 등급(A 공식 원문 · B 공식 발표 보도 · C 민간 2차 · J 저자 판단)과 출처
+    inputs:
+      ktb: "data/processed/ecos_ktb_daily.csv"
+    hazards: [0.0, 0.005, 0.01, 0.02, 0.03, 0.05]   # PPA 오프테이커 연 해지 확률 격자 (ASSUMPTION(judgment): 공개 부도율 근거 없음 → 손익분기로 제시)
+    monte_carlo:
+      n: 5000
+      seed: 42
+      hazard: 0.01                      # ASSUMPTION(judgment): 몬테카를로의 PPA 연 해지 확률 (격자 결과와 함께 공개)

@@ -1,0 +1,8 @@
+{
+  "source": "공개 자료 수기 입력 (항목별 출처·URL·발표일은 CSV의 source_name·url·published 열)",
+  "endpoint": null,
+  "params": null,
+  "fetched_at": "2026-10-24",
+  "as_of": "2026-10-20",
+  "license_note": "정부 보도자료·법령·SEC 공시·언론 보도의 사실 수치 인용. 신뢰 등급 tier: A 공식 원문, B 공식 발표 보도, C 민간 2차(잠정, 확정 전 교체), J 저자 판단. official_todo가 있으면 공식 원문 교체 대기"
+}

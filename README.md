@@ -27,6 +27,7 @@ IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오입�
 | 1 | AI 전력 수요는 진짜인가, 시장은 이미 알고 있나 | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) | [LinkedIn](https://lnkd.in/p/g48PyHjZ) |
 | 2 | AI 데이터센터, 대출은 얼마까지 가능한가 — 대주의 눈으로 본 한국 40MW와 미국 100MW | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7518930802538201088/) |
 | 3 | PER 40배 섹터의 IPO — 가상 전력기기 기업의 희망공모가 밴드 | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | — |
+| 4 | 데이터센터에 전기를 파는 법 — 가상 태양광 100MW의 지분투자: 한전 계약·직접 PPA·시장 판매 (초안, 공식 원문 교체 중) | 2026.10 | [PDF](research/vol04/KSJ_Research_Vol04_KR.pdf) | [PDF](research/vol04/KSJ_Research_Vol04_EN.pdf) | — |
 
 **시리즈 로드맵**: Vol.1 수요·시장 → Vol.2 데이터센터 PF(한국 40MW·미국 100MW) → Vol.3 IPO 공모가·해외 피어 → Vol.4 데이터센터 전력 공급(발전 자산·PPA) → Vol.5 완결: AI 에너지 자산 투자 지도
 
@@ -59,6 +60,7 @@ python -m research.vol03.ipo_discounts --estimate-log              # 기존 로�
 python -m src.data_fetch.dart --debt-candidates 267260             # 총차입금 계정 매핑 점검 (로컬 원자료, API 호출 없음; 회사별 대용 계정은 config total_debt.company_overrides)
 python -m src.data_fetch.dart --da-candidates 298040               # D&A(감가상각비·상각비) 계정 후보 점검 (로컬 원자료) → 없으면 data/manual/vol03_peer_manual.csv
 python -m research.vol03.build                                      # Vol.3 IPO 희망공모가 밴드 국문·영문 PDF (가정: data/manual/vol03_assumptions.csv)
+python -m research.vol04.build                                      # Vol.4 발전자산 지분투자(한전 CfD·직접 PPA·SMP) 국문·영문 PDF (입력·신뢰 등급: data/manual/vol04_inputs.csv)
 pytest -q                                                           # 네트워크 없이 도는 테스트
 ```
 
@@ -119,6 +121,7 @@ Recalculated from official-source data each time the report is built.
 | 1 | Is AI Power Demand Real, and Does the Market Already Know? | 2026.10 | [PDF](research/vol01/KSJ_Research_Vol01_KR.pdf) | [PDF](research/vol01/KSJ_Research_Vol01_EN.pdf) | [LinkedIn](https://lnkd.in/p/g48PyHjZ) |
 | 2 | How Much Can an AI Data Centre Borrow? A lender's view of a 40 MW Korean and a 100 MW U.S. project | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7518930802538201088/) |
 | 3 | Pricing an IPO in a 40x P/E Sector — an indicative price range for a hypothetical power-equipment maker | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | — |
+| 4 | Selling Power to a Data Centre — equity in a hypothetical 100 MW solar asset: KEPCO contract, direct PPA or merchant (draft, official sources being swapped in) | 2026.10 | [PDF](research/vol04/KSJ_Research_Vol04_KR.pdf) | [PDF](research/vol04/KSJ_Research_Vol04_EN.pdf) | — |
 
 **Series roadmap**: Vol.1 demand and market → Vol.2 data-centre PF (Korea 40 MW, U.S. 100 MW) → Vol.3 IPO pricing and overseas peers → Vol.4 powering data centres (generation assets, PPAs) → Vol.5 finale: an AI energy asset investment map
 
