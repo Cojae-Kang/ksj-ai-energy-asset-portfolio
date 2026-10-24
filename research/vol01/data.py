@@ -408,6 +408,7 @@ class Decomposition:
     n_valid: int
     n_multiple_led: int     # 멀티플 기여가 이익 기여보다 큰 회사 수
     excluded: list[dict] = field(default_factory=list)   # 분해 제외 회사 (사유, 시작 시총 비중)
+    op_all: dict | None = None      # 대안: 전 종목(4사) 영업이익 기준 분해 — Δln(시총) = Δln(영업이익) + Δln(시총/영업이익)
 
     @property
     def valid_rows(self) -> pd.DataFrame:
@@ -459,10 +460,19 @@ def decompose(cfg: Mapping, mk: Market | Unavailable, fin: Financials | Unavaila
     d_mcap = m1 - m0
     agg = {"mcap0": m0, "mcap1": m1, "ni0": n0, "ni1": n1, "per0": m0 / n0, "per1": m1 / n1, "dln_mcap": dm,
            "dln_ni": dn, "dln_per": dp, "earn_share": dn / dm, "mult_share": dp / dm, "d_mcap": d_mcap,
-           "earn_part": d_mcap * dn / dm, "mult_part": d_mcap * dp / dm, "n_in_agg": len(v)}
+           "earn_part": d_mcap * dn / dm, "mult_part": d_mcap * dp / dm, "n_in_agg": len(v),
+           "coverage_t0": m0 / mk.total_t0}            # 분해 대상(순이익 흑자 회사)의 시작 시총 비중
     excluded = t[~t["valid"]][["company", "company_en", "ticker", "reason", "reason_en", "share_t0", "ni0", "ni1"]]
+    # 대안 분해: 영업이익은 4사 모두 흑자 → 바스켓 전체(시작 시총 100%)를 같은 방식으로 분해
+    ops = [(fin.value(r["ticker"], fy0, "op"), fin.value(r["ticker"], fy1, "op")) for _, r in mk.table.iterrows()]
+    op_all = None
+    if all(a is not None and b is not None and a > 0 and b > 0 for a, b in ops):
+        o0, o1 = sum(a for a, _ in ops), sum(b for _, b in ops)
+        dm4, do4 = math.log(mk.total_t1 / mk.total_t0), math.log(o1 / o0)
+        op_all = {"n": len(ops), "mcap0": mk.total_t0, "mcap1": mk.total_t1, "op0": o0, "op1": o1, "pop0": mk.total_t0 / o0,
+                  "pop1": mk.total_t1 / o1, "earn_share": do4 / dm4, "mult_share": (dm4 - do4) / dm4}
     return Decomposition(t, d["fy_start"], d["fy_end"], agg, len(v), int((v["dln_per"] > v["dln_ni"]).sum()),
-                         excluded.to_dict("records"))
+                         excluded.to_dict("records"), op_all)
 
 
 @dataclass

@@ -221,9 +221,9 @@ class Story:
         if ok(mk) and led is not None:
             if ok(dc):
                 parts.append(self.T("시장은 이미 알고 있고 이익보다 멀티플이 앞서 달렸다" if led else
-                                    f"시장 상승은 이익이 이끌었지만 PER도 {self.x(dc.agg['per0'])}에서 {self.x(dc.agg['per1'])}로 올랐다",
+                                    f"시장 상승은 이익이 이끌었지만({self.head_scope()}) PER도 {self.x(dc.agg['per0'])}에서 {self.x(dc.agg['per1'])}로 올랐다",
                                     "the market already knows, and multiples ran ahead of earnings" if led else
-                                    f"earnings led the market, but P/E also rose from {self.x(dc.agg['per0'])} to {self.x(dc.agg['per1'])}"))
+                                    f"earnings led the market ({self.head_scope()}), but P/E also rose from {self.x(dc.agg['per0'])} to {self.x(dc.agg['per1'])}"))
             else:
                 parts.append(self.T("시장은 이미 알고 있고 이익보다 멀티플이 앞서 달렸다" if led else "시장은 반영했고 이익이 이를 뒷받침한다",
                                     "the market already knows, and multiples ran ahead of earnings" if led else "the market has priced it, backed by earnings"))
@@ -334,7 +334,8 @@ class Story:
             a, g = dc.agg, self.dc_short()
             title = (self.T(f"시장은 이미 알고 있다 — {g} 시총 증가의 {self.share(a['mult_share'])}가 멀티플 확대", f"The market already knows — {self.share(a['mult_share'])} of the gain for {g} is multiple expansion")
                      if led else
-                     self.T(f"이익이 이끌었다 — {g} 시총 증가의 {self.share(a['earn_share'])}가 이익 증가", f"Earnings led — {self.share(a['earn_share'])} of the gain for {g} is earnings growth")) + self.view()
+                     self.T(f"이익이 이끌었다 — {g} 시총 증가의 {self.share(a['earn_share'])}가 이익 증가({self.scope_text()}) · {self.op_alt_text()}",
+                            f"Earnings led — {self.share(a['earn_share'])} of the gain for {g} is earnings growth ({self.scope_text()}) · {self.op_alt_text()}")) + self.view()
             bl.append(self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])} (2023 초 ↔ {dc.fy0}, 최근 ↔ {dc.fy1})",
                              f"{dc.n_valid}-name aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])} (start-2023 ↔ {dc.fy0}, latest ↔ {dc.fy1})"))
             bl.append(self.contrib_sentence())
@@ -641,6 +642,30 @@ class Story:
         ex = ", ".join(self.ename(e) for e in dc.excluded)
         return self.T(f"{dc.n_valid}사" + (f"({ex} 제외)" if ex else ""), f"{dc.n_valid} names" + (f" (ex. {ex})" if ex else ""))
 
+    def scope_text(self) -> str:
+        """'3사 순이익 기준, 시작 시총의 28%' 범위 표기."""
+        dc = self.f.decomp
+        return self.T(f"{dc.n_valid}사 순이익 기준, 시작 시총의 {dc.agg['coverage_t0'] * 100:.0f}%",
+                      f"{dc.n_valid}-name net-income basis, {dc.agg['coverage_t0'] * 100:.0f}% of starting cap")
+
+    def head_scope(self) -> str:
+        """헤드라인용 짧은 병기: '3사 순이익 기준·시작 시총의 28% — 4사 영업이익 기준이면 멀티플 주도'."""
+        o, a = self.f.decomp.op_all, self.f.decomp.agg
+        alt_kr = (f" — {o['n']}사 영업이익 기준이면 " + ("멀티플 주도" if o["mult_share"] > o["earn_share"] else "이익 주도")) if o else ""
+        alt_en = (f"; {'multiple' if o['mult_share'] > o['earn_share'] else 'earnings'}-led on {o['n']}-name operating income") if o else ""
+        return self.T(f"{self.f.decomp.n_valid}사 순이익 기준·시작 시총의 {a['coverage_t0'] * 100:.0f}%{alt_kr}",
+                      f"{self.f.decomp.n_valid}-name net income, {a['coverage_t0'] * 100:.0f}% of starting cap{alt_en}")
+
+    def op_alt_text(self) -> str:
+        """대안 분해(4사 영업이익 기준) 한 줄 — 없으면 빈 문자열."""
+        o = self.f.decomp.op_all if ok(self.f.decomp) else None
+        if not o:
+            return ""
+        lead_kr = "멀티플 주도" if o["mult_share"] > o["earn_share"] else "이익 주도"
+        lead_en = "multiple-led" if o["mult_share"] > o["earn_share"] else "earnings-led"
+        return self.T(f"{o['n']}사 영업이익 기준이면 이익 기여 {self.share(o['earn_share'])}·멀티플 {self.share(o['mult_share'])}({lead_kr})",
+                      f"on {o['n']}-name operating income: earnings {self.share(o['earn_share'])}, multiple {self.share(o['mult_share'])} ({lead_en})")
+
     def dc_excl_sentence(self) -> str:
         """'두산에너빌리티(시작 시총의 72%)는 FY2022 지배순손실로 분해에서 제외 — 4사 합계 시총 배수 7.7배와 별도'."""
         dc, mk = self.f.decomp, self.f.market
@@ -686,8 +711,8 @@ class Story:
             title = (self.T(f"시장은 이미 알고 있다: {g} 시총 증가의 {self.share(a['mult_share'])}는 멀티플 확대, {self.share(a['earn_share'])}는 이익 증가",
                             f"The market already knows: {self.share(a['mult_share'])} of the gain for {g} is multiple expansion, {self.share(a['earn_share'])} earnings")
                      if led else
-                     self.T(f"이익이 주도했다: {g} 시총 증가의 {self.share(a['earn_share'])}는 이익 증가, {self.share(a['mult_share'])}는 멀티플 확대",
-                            f"Earnings led: for {g}, {self.share(a['earn_share'])} of the gain is earnings growth, {self.share(a['mult_share'])} multiple expansion")) + self.view()
+                     self.T(f"{g} 순이익 기준으로는 이익 주도({self.share(a['earn_share'])}) — 시작 시총의 {a['coverage_t0'] * 100:.0f}%만 대상, " + self.op_alt_text(),
+                            f"On {g} net income, earnings led ({self.share(a['earn_share'])}) — only {a['coverage_t0'] * 100:.0f}% of starting cap; " + self.op_alt_text())) + self.view()
             excl = self.dc_excl_sentence()
             sub = self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])}" + (f" · {excl}" if excl else ""),
                          f"{dc.n_valid}-name aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])}" + (f" · {excl}" if excl else ""))
@@ -790,6 +815,13 @@ class Story:
             rows.append([self.T(f"{dc.n_valid}사 합산", f"{dc.n_valid}-name total"), self.x(a["mcap1"] / a["mcap0"]), self.x(a["ni1"] / a["ni0"]),
                          f"{a['per0']:.1f} → {a['per1']:.1f}", self.share(a["earn_share"]), self.share(a["mult_share"])])
             k = len(rows) - 1
+            oa = dc.op_all
+            if oa:
+                rows.append([self.T(f"참고: {oa['n']}사 영업이익 기준", f"Ref.: {oa['n']}-name operating income"), self.x(oa["mcap1"] / oa["mcap0"]),
+                             self.x(oa["op1"] / oa["op0"]) + self.T("(영업)", " (OP)"), f"{oa['pop0']:.1f} → {oa['pop1']:.1f}" + self.T("(시총/영업)", " (cap/OP)"),
+                             self.share(oa["earn_share"]), self.share(oa["mult_share"])])
+                if oa["mult_share"] > oa["earn_share"]:
+                    gold.add((len(rows) - 1, 5))
             cells.append(Cell(
                 title=self.T(f"{dc.n_valid}사 합산 PER {self.x(a['per0'])} → {self.x(a['per1'])}: 지배순이익 {self.x(a['ni1'] / a['ni0'])} × PER {self.x(a['per1'] / a['per0'])} = 시총 {self.x(a['mcap1'] / a['mcap0'])}",
                              f"{dc.n_valid}-name aggregate P/E {self.x(a['per0'])} → {self.x(a['per1'])}: NI {self.x(a['ni1'] / a['ni0'])} × P/E {self.x(a['per1'] / a['per0'])} = cap {self.x(a['mcap1'] / a['mcap0'])}"),
@@ -798,8 +830,10 @@ class Story:
                                  self.T("이익 기여", "Earnings"), self.T("멀티플 기여", "Multiple")], rows,
                                 [0.22, 0.12, 0.15, 0.19, 0.17, 0.15], shade_rows=shade | {k}, bold_rows={k}, gold_cells=gold | {(k, 5)},
                                 brick_cells=brick, font_size=8.4, spans=spans),
-                note=self.T("PER = 시총 ÷ 지배순이익(2023 초 ↔ FY2022A, 최근 ↔ FY2025A). 시총 배수 = 지배순이익 배수 × PER 배수. 음영 = 멀티플 기여가 더 큰 회사. 기준 이익이 0 이하인 회사는 배수 대신 라벨",
-                            "P/E = cap ÷ NI (start-2023 ↔ FY2022A, latest ↔ FY2025A). Cap x = NI x × P/E x. Shaded = multiple-led. A label replaces the multiple when the base NI is ≤0")))
+                note=self.T("PER = 시총 ÷ 지배순이익(2023 초 ↔ FY2022A, 최근 ↔ FY2025A). 시총 배수 = 지배순이익 배수 × PER 배수. 음영 = 멀티플 기여가 더 큰 회사. 기준 이익이 0 이하인 회사는 배수 대신 라벨. "
+                            "참고 행 = 영업이익은 4사 모두 흑자라 바스켓 전체(시작 시총 100%)를 같은 로그 방식으로 분해 — 이익 정의(순이익 vs 영업이익)와 대상 범위에 따라 결론이 갈린다",
+                            "P/E = cap ÷ NI (start-2023 ↔ FY2022A, latest ↔ FY2025A). Cap x = NI x × P/E x. Shaded = multiple-led. A label replaces the multiple when the base NI is ≤0. "
+                            "Ref. row = all four names have positive operating income, so the whole basket (100% of starting cap) is split the same way — the verdict depends on the earnings definition and scope")))
         else:
             cells.append(self.pending_cell(self.T("시총 변화 분해: 이익 기여 vs 멀티플 기여 (FY2022A 기준)", "Market-cap change split: earnings vs multiple (FY2022A base)"),
                                            ["krx", "dart"], dc, note=decomp_note))
@@ -928,8 +962,11 @@ class Story:
         if per_up:
             a = dc.agg
             g = self.dc_short()
-            return self.T(f"{g} 기준 시총 상승은 이익이 주로 설명하지만 PER도 {self.x(a['per0'])}→{self.x(a['per1'])}로 올랐다. 피어 PER을 그대로 쓰기보다 이익 지속성 검증과 공모 할인으로 방어해야 한다",
-                          f"For {g}, earnings explain most of the gain, but P/E also rose {self.x(a['per0'])}→{self.x(a['per1'])}. Rather than applying peer P/E as is, test earnings durability and apply an IPO discount")
+            alt = self.f.decomp.op_all
+            alt_kr = " 4사 영업이익 기준이면 멀티플 주도라 단정하지 않는다." if alt and alt["mult_share"] > alt["earn_share"] else ""
+            alt_en = " On 4-name operating income it is multiple-led, so no firm verdict." if alt and alt["mult_share"] > alt["earn_share"] else ""
+            return self.T(f"{g} 기준 시총 상승은 이익이 주로 설명하지만 PER도 {self.x(a['per0'])}→{self.x(a['per1'])}로 올랐다." + alt_kr + " 피어 PER을 그대로 쓰기보다 이익 지속성 검증과 공모 할인으로 방어해야 한다",
+                          f"For {g}, earnings explain most of the gain, but P/E also rose {self.x(a['per0'])}→{self.x(a['per1'])}." + alt_en + " Rather than applying peer P/E as is, test earnings durability and apply an IPO discount")
         return self.T("피어 멀티플이 이익을 따라온 구간이라 이익 추정의 신뢰성이 공모가의 핵심이다",
                       "With multiples tracking earnings, the credibility of the earnings forecast drives pricing")
 
@@ -968,8 +1005,10 @@ class Story:
         if ok(mk):
             if ok(dc):
                 a = dc.agg
-                ans = self.T(f"{self.dc_short()} 시총 증가 중 이익 기여 {self.share(a['earn_share'])}, 멀티플 기여 {self.share(a['mult_share'])}. PER은 {self.x(a['per0'])} → {self.x(a['per1'])}로 올랐다{self.view()}",
-                             f"For {self.dc_short()}, earnings explain {self.share(a['earn_share'])} and multiples {self.share(a['mult_share'])}; P/E rose {self.x(a['per0'])} → {self.x(a['per1'])}{self.view()}")
+                ans = self.T(f"{self.dc_short()} 시총 증가 중 이익 기여 {self.share(a['earn_share'])}, 멀티플 기여 {self.share(a['mult_share'])}({self.scope_text()}). PER은 {self.x(a['per0'])} → {self.x(a['per1'])}로 올랐다{self.view()}. "
+                             + (f"다만 {self.op_alt_text()} — 이익 정의와 범위에 따라 결론이 갈린다" if self.f.decomp.op_all else ""),
+                             f"For {self.dc_short()}, earnings explain {self.share(a['earn_share'])} and multiples {self.share(a['mult_share'])} ({self.scope_text()}); P/E rose {self.x(a['per0'])} → {self.x(a['per1'])}{self.view()}. "
+                             + (f"But {self.op_alt_text()} — the verdict depends on the earnings definition and scope" if self.f.decomp.op_all else ""))
             else:
                 n, tot = self.n_mcap_beats_ni() if ok(val) else (0, 0)
                 ans = self.T(f"4사 시총 {self.market_basis()}. 가용 실적으로도 {tot}사 중 {n}곳은 시총이 이익보다 빨랐다{self.view()}. FY2022 기준 분해는 수집 후",

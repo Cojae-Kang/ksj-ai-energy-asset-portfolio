@@ -504,7 +504,7 @@ def test_three_name_labels_and_doosan_rows(cfg):
     assert pages["4"].grid == "3-2" and len(pages["4"].cells) == 5
     t4 = pages["4"].cells[4].table
     assert any("분해 불가(FY2022A 지배순손실)" in v for r in t4.rows for v in r)
-    assert t4.rows[-1][0] == "3사 합산"
+    assert t4.rows[-2][0] == "3사 합산" and t4.rows[-1][0] == "참고: 4사 영업이익 기준"   # 합산 행 + 대안 분해(영업이익) 참고 행
     per_cell = pages["4"].cells[2]
     assert "4사 합산 64.2배" in per_cell.note and "분모 왜곡" in per_cell.note    # 4사 값은 p4 각주에만
 
@@ -570,3 +570,22 @@ def test_public_text_clean(cfg, fy2022):
         assert url in a3.note and "GitHub" in a3.note
         assert a3.strip == (Story.BUILT_WITH_KR if lang == "kr" else Story.BUILT_WITH_EN)
         assert "Claude Code" in a3.strip
+
+
+def test_vol01_decomposition_scope_and_op_alternative():
+    """'이익 주도'는 순이익 흑자 회사(시작 시총 일부)만의 결론 → 대상 비중과 4사 영업이익 기준 대안 분해를 함께 계산."""
+    import math
+    from src.data_fetch.base import load_config
+    from research.vol01 import data as D
+    cfg = load_config()
+    f = D.load_facts(cfg, cfg["data_fetch"]["as_of_default"])
+    dc, mk = f.decomp, f.market
+    a = dc.agg
+    assert a["coverage_t0"] == pytest.approx(a["mcap0"] / mk.total_t0)
+    assert 0 < a["coverage_t0"] < 1 and dc.excluded                                   # 적자 회사 제외 → 부분 범위
+    o = dc.op_all
+    assert o is not None and o["n"] == len(mk.table)
+    assert o["earn_share"] == pytest.approx(math.log(o["op1"] / o["op0"]) / math.log(mk.total_multiple))
+    assert o["earn_share"] + o["mult_share"] == pytest.approx(1.0)
+    # 커밋 데이터 기준 값(손계산: ln(29,314/15,699) / ln(7.706) = 0.306, 38,039/135,381 = 0.281)
+    assert o["earn_share"] == pytest.approx(0.306, abs=0.002) and a["coverage_t0"] == pytest.approx(0.281, abs=0.002)
