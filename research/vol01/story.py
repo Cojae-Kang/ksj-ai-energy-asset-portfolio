@@ -124,6 +124,17 @@ class Story:
                 "loss_both": (f"FY{y0}·FY{y1} 지배순손실", f"FY{y0} and FY{y1} net loss"),
                 "missing": ("데이터 없음", "data missing")}[e["kind"]]
 
+    def ni_fallback_note(self) -> str:
+        """지배순이익 계정이 없어 당기순이익(총계)으로 대체한 회사·연도 각주 (없으면 빈 문자열)."""
+        fin = self.f.fin
+        fb = fin.ni_fallback if ok(fin) else []
+        if not fb:
+            return ""
+        kr = ", ".join(f"{c} FY{y}A" for c, _, y in fb)
+        en = ", ".join(f"{e} FY{y}A" for _, e, y in fb)
+        return self.T(f" {kr}: 공시에 지배순이익 계정이 없어 연결 당기순이익(비지배지분 포함)으로 대체.",
+                      f" {en}: no NI-to-parent line in the filing, consolidated net income (incl. minorities) used.")
+
     def excl_note(self, sg: SumGrowth, y0: int, y1: int) -> str:
         """'두산에너빌리티 제외: FY2022 지배순손실' (제외 없으면 빈 문자열)."""
         parts = [f"{self.ename(e)} {self.T('제외', 'excluded')}: {self.T(*self.loss_reason(e, y0, y1))}" for e in sg.excluded]
@@ -265,7 +276,7 @@ class Story:
         r = f.rates
         if ok(r) and r.ktb10_t0 is not None:
             add(self.T("국고채 10년 (2023 초→최근)", "KTB 10y (start-2023→latest)"), f"{r.ktb10_t0:.2f} → {r.ktb10_t1:.2f}%", "5")
-        table = TableSpec([self.T("핵심 지표", "Key metric"), self.T("값", "Value"), self.T("쪽", "Page")], rows,
+        table = TableSpec([self.T("핵심 지표", "Key metric"), self.T("값", "Value"), self.T("쪽", "p.")], rows,
                           [0.58, 0.33, 0.09], ["L", "R", "C"], shade_rows=shade, gold_cells=gold, font_size=8.6,
                           single_line_cols={1})
         left = Cell(title=self.T("핵심 지표", "Key metrics"), src=["iea_ai", "iea_kq", "eia", "krx", "dart"],
@@ -581,8 +592,8 @@ class Story:
             src=["dart"], legend=[(col, lab) for lab, _, col in series] + [(c["brick"], self.T("감소", "Decline"))],
             unit=self.T("전년 대비 %", "% y/y"), chart_key="ni_yoy",
             chart=charts.grouped(cats, series, c, lambda x: f"{x:+.0f}%", zero_line=True),
-            note=self.T("지배기업 소유주 귀속 당기순이익. 직전 연도가 적자면 증가율을 계산하지 않음(막대 없음)." + (f" 합계 배수는 {excl}." if excl else "") + miss_note,
-                        "NI attributable to owners of the parent; no growth rate after a loss year (no bar)." + (f" Combined multiple {excl}." if excl else "") + miss_note)))
+            note=self.T("지배기업 소유주 귀속 당기순이익. 직전 연도가 적자면 증가율을 계산하지 않음(막대 없음)." + (f" 합계 배수는 {excl}." if excl else "") + self.ni_fallback_note() + miss_note,
+                        "NI attributable to owners of the parent; no growth rate after a loss year (no bar)." + (f" Combined multiple {excl}." if excl else "") + self.ni_fallback_note() + miss_note)))
         # 4) 재무 요약표: 기준·최근 지배순이익 실제 값 + 배수(또는 흑자전환 라벨)
         rows, gold, brick = [], set(), set()
         for i, tk in enumerate(peers):
@@ -743,8 +754,8 @@ class Story:
                 chart=charts.grouped([self.name(r) for _, r in v.iterrows()],
                                      [(dc.fy0, list(v["per0"]), c["warm_grey_light"]), (dc.fy1, list(v["per1"]), c["gold"])],
                                      c, lambda x: f"{x:,.1f}", horizontal=True),
-                note=self.T("PER = 시총 ÷ 지배순이익. " + "; ".join(ex_notes) + ". " + self.per4_footnote(),
-                            "P/E = cap ÷ NI to parent. " + "; ".join(ex_notes) + ". " + self.per4_footnote())))
+                note=self.T("PER = 시총 ÷ 지배순이익. " + "; ".join(ex_notes) + ". " + self.per4_footnote() + self.ni_fallback_note(),
+                            "P/E = cap ÷ NI to parent. " + "; ".join(ex_notes) + ". " + self.per4_footnote() + self.ni_fallback_note())))
             # 4) 회사별 이익 vs 멀티플 기여
             cells.append(Cell(
                 title=self.contrib_sentence(),
@@ -847,8 +858,8 @@ class Story:
         lens_rows = [
             [self.T("ECM 공모가", "ECM pricing"), ecm_data, self.ecm_implication(led)],
             [self.T("데이터센터 PF", "Data-centre PF"), pf_data,
-             self.T("물량과 요금이 함께 오른 지역에서는 전력구매계약·계통 접속 일정이 PF 현금흐름의 핵심 변수다",
-                    "Where volume and price rise together, PPAs and grid-connection timing are the key PF cash-flow variables")],
+             self.T("판매 물량이 늘고(버지니아) 상업용 요금도 오르는(미국 평균, 명목) 환경에서는 전력구매계약·계통 접속 일정이 PF 현금흐름의 핵심 변수다",
+                    "With volumes rising (Virginia) and commercial prices rising (U.S. average, nominal), PPAs and grid-connection timing are the key PF cash-flow variables")],
             [self.T("증설 옵션", "Capacity options"), cap_data,
              self.T("2035년 전망 범위가 넓어 한 번에 짓기보다 단계적 증설로 수요 확인 후 확장하는 구조가 유리하다",
                     "With a wide 2035 range, phased capacity additions that expand as demand is confirmed are preferable")],
@@ -916,8 +927,9 @@ class Story:
                           "When peer multiples have run ahead of earnings, defend the price with conservative earnings and an IPO discount rather than raw peer P/E")
         if per_up:
             a = dc.agg
-            return self.T(f"시총 상승은 이익이 주로 설명하지만 PER도 {self.x(a['per0'])}→{self.x(a['per1'])}로 올랐다. 피어 PER을 그대로 쓰기보다 이익 지속성 검증과 공모 할인으로 방어해야 한다",
-                          f"Earnings explain most of the gain, but P/E also rose {self.x(a['per0'])}→{self.x(a['per1'])}. Rather than applying peer P/E as is, test earnings durability and apply an IPO discount")
+            g = self.dc_short()
+            return self.T(f"{g} 기준 시총 상승은 이익이 주로 설명하지만 PER도 {self.x(a['per0'])}→{self.x(a['per1'])}로 올랐다. 피어 PER을 그대로 쓰기보다 이익 지속성 검증과 공모 할인으로 방어해야 한다",
+                          f"For {g}, earnings explain most of the gain, but P/E also rose {self.x(a['per0'])}→{self.x(a['per1'])}. Rather than applying peer P/E as is, test earnings durability and apply an IPO discount")
         return self.T("피어 멀티플이 이익을 따라온 구간이라 이익 추정의 신뢰성이 공모가의 핵심이다",
                       "With multiples tracking earnings, the credibility of the earnings forecast drives pricing")
 
@@ -932,9 +944,15 @@ class Story:
                               f"IEA: {self.num(d.v['dc_2030'])} TWh in 2030E ({self.x(d.mult_2030)} 2024); AI data centres {self.pct(d.v['growth_ai'])} in 2025 vs world {self.pct(d.v['growth_global'])}. "
                               f"The 2035 range ({self.num(d.v['dc_2035_low'])}–{self.num(d.v['dc_2035_high'])} TWh) is wide"), "1"])
         if ok(g):
+            yy = g.yoy.dropna().set_index("period")
+            gap = (yy["VA"] - yy["US"]).loc[lambda x: x.index >= g.recent_from]
+            g0y, g1y = int(gap.index[0]), int(gap.index[-1])
+            shrink = gap.iloc[-1] < gap.iloc[0]
             qa.append([self.T("버지니아만의 특수 사례 아닌가?", "Isn't Virginia a special case?"),
-                       self.T(f"한 주의 사례인 것은 맞다. 다만 상업용 판매가 {g.base_year}년 대비 {self.pct(g.va_change_pct)}(미국 {self.pct(g.us_change_pct)}), 최근 3년 연 {g.va_recent_cagr_pct:.1f}%로 차이가 커지고 있다. 산업용 분류 가능성은 한계로 둔다",
-                              f"It is one state. But commercial sales are {self.pct(g.va_change_pct)} since {g.base_year} (U.S. {self.pct(g.us_change_pct)}) and the gap is widening ({g.va_recent_cagr_pct:.1f}%/yr over 3 years). Industrial classification is a stated limitation"), "2, 5"])
+                       self.T(f"한 주의 사례인 것은 맞다. 다만 상업용 판매가 {g.base_year}년 대비 {self.pct(g.va_change_pct)}(미국 {self.pct(g.us_change_pct)}), 최근 3년 연 {g.va_recent_cagr_pct:.1f}%(미국 {g.us_recent_cagr_pct:.1f}%)다. "
+                              f"누적 격차는 {g.gap_pts:.0f}포인트로 벌어졌지만 연간 증가율 격차는 {g0y}년 {gap.iloc[0]:.1f}%p → {g1y}년 {gap.iloc[-1]:.1f}%p로 " + ("줄고 있다" if shrink else "커지고 있다") + ". 산업용 분류 가능성은 한계로 둔다",
+                              f"It is one state. But commercial sales are {self.pct(g.va_change_pct)} since {g.base_year} (U.S. {self.pct(g.us_change_pct)}), {g.va_recent_cagr_pct:.1f}%/yr over 3 years (U.S. {g.us_recent_cagr_pct:.1f}%). "
+                              f"The cumulative gap has reached {g.gap_pts:.0f} points, but the annual growth gap " + ("narrowed" if shrink else "widened") + f" from {gap.iloc[0]:.1f}pp ({g0y}) to {gap.iloc[-1]:.1f}pp ({g1y}). Industrial classification is a stated limitation"), "2, 5"])
         if ok(fin):
             y0, y1 = fin.years[0], fin.years[-1]
             sg = fin.sum_growth("ni", y0, y1)
@@ -1050,8 +1068,8 @@ class Story:
                   table=TableSpec([self.T("소스", "Source"), self.T("통계", "Dataset"), self.T("항목", "Items"), self.T("기준일", "As of"), self.T("상태", "Status")],
                                   rows, [0.17, 0.36, 0.23, 0.11, 0.13], ["L", "L", "L", "C", "C"], shade_rows=pend,
                                   brick_cells={(i, 4) for i in pend}, font_size=8.4),
-                  note=self.T("기준일 = 데이터 수집 기준일(IEA는 원문 대조일). 해외 피어 비교는 Vol.3에서 다룸",
-                              "As-of = data collection date (IEA: date checked against the source). Overseas peer comparison comes in Vol.3"))
+                  note=self.T("기준일 = 데이터 수집 기준일(IEA는 원문 대조일). 해외 피어 비교는 Vol.3에서 다룸. " + self.cfg["research"]["vol01"].get("source_note_kr", ""),
+                              "As-of = data collection date (IEA: date checked against the source). Overseas peer comparison comes in Vol.3. " + self.cfg["research"]["vol01"].get("source_note_en", "")))
         if ok(mk):
             krows, shade, brick = [], set(), set()
             for i, (_, r) in enumerate(mk.table.iterrows()):

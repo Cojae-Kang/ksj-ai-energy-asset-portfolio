@@ -235,6 +235,7 @@ class Financials:
     table: pd.DataFrame                 # company, company_en, ticker, fiscal_year, fy(int), revenue, op, ni, opm, ni_yoy
     years: list[int]                    # 데이터가 있는 회계연도
     wanted: list[int]                   # config fiscal_years
+    ni_fallback: list[tuple[str, str, int]] = field(default_factory=list)   # (회사, 영문, FY): 지배순이익 계정 없어 당기순이익(총계)으로 대체
 
     @property
     def missing_years(self) -> list[int]:
@@ -292,7 +293,9 @@ def financials(cfg: Mapping) -> Financials | Unavailable:
     df["_o"] = df["ticker"].map(order.index)
     df = df.sort_values(["_o", "fy"]).drop(columns="_o").reset_index(drop=True)
     cols = ["company", "company_en", "ticker", "fiscal_year", "fy", "revenue", "op", "ni", "opm", "ni_yoy"]
-    return Financials(df[cols], years, wanted)
+    fb = [(r["company"], r["company_en"], int(r["fy"])) for _, r in df.iterrows()
+          if "net_income:fallback" in str(r.get("flags", "")) and int(r["fy"]) in years]
+    return Financials(df[cols], years, wanted, fb)
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +545,7 @@ SOURCES = [
     ("eia", "EIA · 미 에너지정보청", "EIA · U.S. EIA", "EIA API v2 electricity/retail-sales",
      "주별·부문별 판매량·가격", "Retail sales and price by state/sector", "vol01_eia_state.csv"),
     ("ecos", "ECOS · 한국은행", "ECOS · Bank of Korea", "ECOS StatisticSearch 817Y002 (시장금리 일별)",
-     "국고채 3·10년, 원/달러", "KTB 3y/10y, USD/KRW", "ecos_ktb_daily.csv"),
+     "국고채 3·10년", "KTB 3y/10y", "ecos_ktb_daily.csv"),
     ("fred", "FRED · St. Louis Fed", "FRED · St. Louis Fed", "FRED series/observations", "DGS10, DEXKOUS",
      "DGS10, DEXKOUS", "fred_series.csv"),
     ("sec", "SEC EDGAR", "SEC EDGAR", "data.sec.gov companyfacts (XBRL)", "해외 peers 재무",
@@ -570,8 +573,9 @@ def source_status(cfg: Mapping) -> list[dict]:
     for sid, org_kr, org_en, api, item_kr, item_en, fname in SOURCES:
         path = (processed / fname).resolve()
         as_of = meta_as_of(path) if path.exists() else None
-        if sid in override:
-            st_kr, st_en, done = override[sid], "In progress", False
+        if sid in override:      # "국문|영문" 또는 국문만
+            o = str(override[sid]).split("|")
+            st_kr, st_en, done = o[0], (o[1] if len(o) > 1 else "In progress"), False
         elif path.exists():
             st_kr, st_en, done = ("원문 대조 완료" if sid == "iea" else "수집 완료"), (
                 "Verified vs source" if sid == "iea" else "Collected"), True
@@ -579,7 +583,7 @@ def source_status(cfg: Mapping) -> list[dict]:
             st_kr, st_en, done = "미수집", "Not collected", False
         rows.append({"id": sid, "org_kr": org_kr, "org_en": org_en, "api": api, "api_en": API_EN[sid], "item_kr": item_kr,
                      "item_en": item_en, "status_kr": st_kr, "status_en": st_en, "ok": done,
-                     "as_of": as_of if done else None})
+                     "as_of": as_of if (done or path.exists()) else None})
     return rows
 
 

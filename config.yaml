@@ -461,6 +461,9 @@ research:
       multiple_led_share: 0.5           # 멀티플 기여 비중이 이 값 초과면 "멀티플이 이익보다 앞서 달렸다"
     source_status_override:
       sec: "Vol.3에서 사용"              # 해외 피어(SEC) 비교는 Vol.3. Vol.1 A2 출처 표에는 싣지 않음
+      krx: "교차검증 미해소|Cross-check open"   # docs/qa/crosscheck_krx.md: 4사 CHECK(−4.6~−8.3%) — 비교일 불일치 추정, TODO(data): 같은 날짜로 재검증
+    source_note_kr: "KRX 종가는 보조 소스(FinanceDataReader) 대비 −4.6~−8.3% 차이가 미해소(비교 날짜 불일치로 추정, 재검증 대기 — docs/qa/crosscheck_krx.md)"
+    source_note_en: "KRX closes differ from the secondary source (FinanceDataReader) by −4.6% to −8.3%, unresolved (likely a date mismatch; re-check pending)"
 
   # -------------------------------------------------------------------
   # Vol.2 — AI 데이터센터 PF (케이스 A 한국 40MW·원화, 케이스 B 미국 100MW·달러). 실존 프로젝트 아님.
