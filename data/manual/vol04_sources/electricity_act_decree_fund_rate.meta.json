@@ -1,0 +1,18 @@
+{
+  "source": "전기사업법 시행령 [시행 2026-09-18] [대통령령 제36587호, 2026-08-18, 타법개정] — 국가법령정보센터 판본 PDF",
+  "endpoint": "https://www.law.go.kr (법령)",
+  "params": null,
+  "fetched_at": "2026-10-25",
+  "as_of": "2026-09-18",
+  "page": "제36조 PDF 17쪽(전체 24쪽)",
+  "values": {
+    "article": "제36조(부담금의 부과기준) 법 제51조제1항에 따른 부담금은 전기요금의 1천분의 27에 해당하는 금액으로 한다. <개정 2024. 6. 4.>",
+    "power_fund_rate": 0.027,
+    "rate_amended": "2024-06-04"
+  },
+  "tier": "A",
+  "assumption": "ASSUMPTION: 전기요금 전체에 부과되는 비율을 kWh당 회피 요금에 곱한 것은 근사",
+  "used_by": "data/manual/vol04_inputs.csv power_fund_rate",
+  "commit": "8356e11",
+  "license_note": "법령(국가법령정보센터) — 공공저작물, 출처 표시"
+}

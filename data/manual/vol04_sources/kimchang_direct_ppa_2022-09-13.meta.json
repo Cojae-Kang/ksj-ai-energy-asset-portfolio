@@ -12,8 +12,8 @@
     "incentives": "전력거래소 거래수수료 3년 면제 · 중소·중견기업 망 이용요금 1년 지원(녹색프리미엄 재원)"
   },
   "tier": "B",
-  "official_todo": "고시 원문(국가법령정보센터 행정규칙) 대조 전",
   "used_by": "research/vol04 같은 기준 비교 각주 (net_charge_example · fuel_adj · climate_env)",
   "commit": "0152603",
-  "license_note": "법률사무소 공개 뉴스레터 — 출처 표시, 요지 인용"
+  "license_note": "법률사무소 공개 뉴스레터 — 출처 표시, 요지 인용",
+  "role": "보조 근거 — 주 근거는 직접 PPA 고시 제2025-61호 제25조③(A, re_direct_ppa_notice_current.meta.json)"
 }
