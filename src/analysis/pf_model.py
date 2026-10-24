@@ -446,7 +446,13 @@ def irr(flows: np.ndarray, periods_per_year: int = QUARTERS_PER_YEAR) -> float |
     if npv(lo) * npv(hi) > 0:
         hi = 10.0
         if npv(lo) * npv(hi) > 0:
-            return None
+            # 끝 현금흐름이 음수 등으로 -99%~1000% 양끝 부호가 같을 때: 격자에서 부호가 바뀌는 첫 구간을 찾는다
+            grid = np.concatenate([np.linspace(-0.9, 0.0, 91)[:-1], np.linspace(0.0, 1.0, 201)])
+            vals = np.array([npv(r) for r in grid])
+            idx = np.where(np.sign(vals[:-1]) * np.sign(vals[1:]) < 0)[0]
+            if idx.size == 0:
+                return None
+            lo, hi = float(grid[idx[0]]), float(grid[idx[0] + 1])
     r_q = brentq(npv, lo, hi, xtol=1e-12, maxiter=500)
     return (1 + r_q) ** periods_per_year - 1
 

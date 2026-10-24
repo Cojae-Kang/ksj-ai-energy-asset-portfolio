@@ -49,11 +49,12 @@ def corridor(points: Sequence[tuple[str, float, str]], bands: Sequence[tuple[str
 
 def line_ref(xs: Sequence[float], series: Sequence[tuple[str, Sequence[float | None], str]], c: Mapping,
              xfmt: Callable[[float], str], yfmt: Callable[[float], str], hlines: Sequence[tuple[float, str, str]] = (),
-             vlines: Sequence[tuple[float, str, str]] = (), shade: tuple[float, float, str] | None = None) -> Draw:
+             vlines: Sequence[tuple[float, str, str]] = (), shade: tuple[float, float, str] | None = None,
+             label_left: bool = False, xticks: Sequence[float] | None = None) -> Draw:
     """선 그래프 + 수평 기준선(값, 라벨, 색) + 수직 표시선 + x 구간 음영(시작, 끝, 라벨). 라벨은 겹치지 않게 줄을 나눔."""
     def draw(path: Path, w: float, h: float) -> None:
         fig = _fig(w, h)
-        ax = fig.add_axes([0.10, 0.13, 0.80, 0.80])
+        ax = fig.add_axes([0.10, 0.13, 0.86 if label_left else 0.76, 0.80])
         ys_all = []
         for name, ys, col in series:
             y = np.array([np.nan if v is None else v for v in ys], float)
@@ -70,13 +71,20 @@ def line_ref(xs: Sequence[float], series: Sequence[tuple[str, Sequence[float | N
             ax.axvspan(shade[0], shade[1], color=c["gold"], alpha=0.14, lw=0, zorder=0)
             ax.text((shade[0] + shade[1]) / 2, hi + pad * 1.9, shade[2], ha="center", va="top", fontsize=FS - 0.2,
                     color=c["gold"], fontweight="bold")
-        for hv, lab, col in hlines:
+        for hv, lab, col in hlines:     # 라벨: 왼쪽 끝 선 위(곡선과 겹치지 않게) 또는 오른쪽 축 밖
             ax.axhline(hv, color=col, lw=0.9, ls="--")
-            ax.text(xs[-1], hv, " " + lab, va="center", ha="left", fontsize=FS - 0.2, color=col, fontweight="bold", clip_on=False)
+            if label_left:
+                ax.text(xs[0], hv + pad * 0.12, lab, va="bottom", ha="left", fontsize=FS - 0.2, color=col, fontweight="bold",
+                        bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.4, "alpha": 0.85})
+            else:
+                ax.text(1.005, hv, " " + lab, va="center", ha="left", fontsize=FS - 0.2, color=col, fontweight="bold", clip_on=False,
+                        transform=ax.get_yaxis_transform())
         for k, (vv, lab, col) in enumerate(vlines):
             ax.axvline(vv, color=col, lw=0.9, ls=":")
             ax.text(vv, lo - pad * 0.6 + k * pad * 0.0, " " + lab, va="bottom", ha="left", fontsize=FS - 0.2, color=col,
                     fontweight="bold", bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.6, "alpha": 0.9})
+        if xticks is not None:
+            ax.set_xticks(list(xticks))
         ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: xfmt(v)))
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: yfmt(v)))
         ax.tick_params(labelsize=FS - 0.4, colors=c["note"])

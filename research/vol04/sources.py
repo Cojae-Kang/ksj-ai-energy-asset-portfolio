@@ -99,6 +99,19 @@ def kepco_industrial(year: int = 2025) -> dict:
             "sheets": "18.계약종별 판매전력량 · 18-2.계약종별 판매수입", "row": key}
 
 
+def solar_cf(year: int = 2025) -> dict:
+    """전력통계월보 16-1(태양광 발전량 추계: 시장·한전PPA·자가용) 연간 합 ÷ 2-1(연말 태양광 설비 kW × 8,760h)."""
+    f = _one("*전력통계월보*.xlsx")
+    g = pd.read_excel(f, sheet_name="16-1.태양광 발전량 추계정보", header=None)
+    r = g[g[0].astype(str).str.startswith(f"{year}.")]
+    num = lambda v: float(str(v).replace(",", ""))  # noqa: E731
+    mwh = sum(num(v) for c in (1, 2, 3) for v in r[c])
+    cap = pd.read_excel(f, sheet_name="2-1. 발전설비용량(발전원별에너지원별)", header=None)
+    row = cap[cap[0].astype(str).str.strip() == "태양에너지"].iloc[0]
+    kw = max(float(v) for v in row.tolist()[1:] if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)))
+    return {"solar_mwh": mwh, "solar_kw_yearend": kw, "solar_cf_check": mwh * 1000 / (kw * 8760), "solar_months": int(len(r))}
+
+
 def run(as_of: str = "2026-10-20") -> dict:
     m = monthly_smp()
     s = smp_stats(m, as_of)
@@ -107,7 +120,7 @@ def run(as_of: str = "2026-10-20") -> dict:
     s.update(hourly_file=hname, hourly_match_err=herr, smp_allhours=float(np.nanmean(w[HOURS].values)),
              smp_daylight=float(np.nanmean(w[[f"{x:02d}시" for x in range(10, 17)]].values)), monthly_file=m.attrs["file"])
     k = kepco_industrial()
-    out = {**s, **k}
+    out = {**s, **k, **solar_cf()}
     rows = [{"key": a, "value": v} for a, v in out.items() if not isinstance(v, dict)]
     p = resolve_path("data/processed/vol04_official.csv")
     p.parent.mkdir(parents=True, exist_ok=True)

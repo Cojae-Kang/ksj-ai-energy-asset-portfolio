@@ -124,18 +124,25 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
     L += [f"- 해지 없음 IRR 손익분기 PPA 가격: {f.be_price:,.2f}원/kWh", ""]
     if ok(f.mc):
         L += ["### 몬테카를로", "", markdown_table([{"경로": k, **{a: _p(b) for a, b in mc_stats(f.mc[k], f.V('equity_hurdle')).items()}} for k in ("cfd", "ppa", "merchant")]), ""]
-    L += ["### Vol.2 연결", "", f"- {r.get('vol2') or 'Vol.2 결과 없음'}", ""]
+    v2 = r.get("vol2") or {}
+    L += ["### Vol.2 연결", "", (f"- 데이터센터 SPV 최소 DSCR {v2['min_dscr']:.2f}배 · 지분 IRR {v2['equity_irr'] * 100:.1f}%" if v2 else "- Vol.2 결과 없음"), ""]
+    L += ["### 위험 스프레드 격자 (PPA 할인율 = 요구수익률 + 스프레드)", "",
+          markdown_table([{"연 해지": _p(p["hazard"]), "스프레드": _p(p["spread"], 0), "필요 가격": f"{p['price']:,.2f}", "프리미엄": f"{p['premium']:,.2f}",
+                           "망이용료 여유": f"{p['max_fee']:,.2f}"} for p in f.extra.get("premium_grid", [])]), "",
+          f"- PPA 대출 비율별 프리미엄(연 해지 {hz * 100:.0f}%, 스프레드 0): " + ", ".join(f"{g * 100:.0f}% → {v:,.2f}원" for g, v in f.extra.get("gearing_check", {}).items()),
+          f"- 하방: 1년 차 해지 후 최소 DSCR {f.extra['downside']['base']:.3f} (SMP 기준) · {f.extra['downside']['low']:.3f} (SMP {f.extra['downside']['low_smp']})", ""]
     L += ["## 한계 · 공식 원문 교체 대기 (공신력 원칙)", ""]
     for k in f.provisional:
         x = f.inputs[k]
         L.append(f"- [{TIER_KR[x.tier]}] {k} = {x.value} — {x.official_todo}")
     L += ["", "## 검산", ""]
     for k, x in f.base.items():
-        gap = abs((x.revenue - (x.ebitda + x.revenue - x.ebitda)).sum())
         cf_chk = abs(float((x.cfads - (x.ebitda - x.tax)).sum()))
-        L.append(f"- {k}: CFADS = EBITDA − 세금 오차 {cf_chk:.2e} · 대출 비율 ≤ 상한 {x.gearing <= f.debts[k].gearing + 1e-9} · 최소 DSCR ≥ 목표 {x.min_dscr >= f.debts[k].dscr - 1e-6} {gap:.0e}")
-    if r.get("render_warnings"):
-        L += ["", "## 렌더링 점검", ""] + [f"- {lg}: {w}" for lg, ws in r["render_warnings"].items() for w in ws] or ["- 없음"]
+        rev_chk = abs(float((x.revenue - x.gen * x.price / 100).sum()))
+        L.append(f"- {k}: 매출 = 발전량 × 가격 오차 {rev_chk:.1e} · CFADS = EBITDA − 세금 오차 {cf_chk:.1e} · 대출 비율 ≤ 상한 {x.gearing <= f.debts[k].gearing + 1e-9} · "
+                 f"최소 DSCR ≥ 목표 {x.min_dscr >= f.debts[k].dscr - 1e-6}")
+    warns = [f"- {lg}: {w}" for lg, ws in (r.get("render_warnings") or {}).items() for w in ws]
+    L += ["", "## 렌더링 점검", ""] + (warns or ["- 없음"])
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
 
 

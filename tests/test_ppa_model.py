@@ -93,8 +93,11 @@ def test_vol04_facts_build(tmp_path):
     assert p[0.0]["price"] < p[0.01]["price"] < p[0.05]["price"]                     # 해지 위험 ↑ → 필요 가격 ↑
     assert p[0.01]["max_fee"] == pytest.approx(f.corridor[1] - p[0.01]["price"])
     assert f.corridor[0] <= f.be_price <= f.corridor[1]
-    assert all(f.inputs[k].tier in "ABCJ" for k in f.inputs)
-    assert all(f.inputs[k].tier in "BC" for k in f.provisional)                      # 교체 대기는 보도·민간 2차뿐
+    assert all(f.inputs[k].tier in "ABCDJ" for k in f.inputs)
+    assert all(f.inputs[k].official_todo for k in f.provisional)                      # 교체 대기 = 원문 할 일이 적힌 항목
+    g = {(x["hazard"], x["spread"]): x["price"] for x in f.extra["premium_grid"]}
+    assert g[(0.01, 0.0)] < g[(0.01, 0.01)] < g[(0.01, 0.02)]                          # 위험 스프레드 ↑ → 필요 가격 ↑
+    assert f.asset.mw * 1000 <= f.V("dc_it_mw") * 1000 * f.V("dc_it_load") * f.V("dc_pue")   # 최대 출력 ≤ 데이터센터 평균 부하
     assert not any(x.tier == "C" for x in f.inputs.values())                           # 민간 2차 자료는 확정본에 없음
     assert f.lcoe_check["base_lcoe"] == pytest.approx(f.V("lcoe_target"))             # 사업비 = KEEI LCOE에 맞춘 값
 
@@ -113,3 +116,10 @@ def test_vol04_official_values_reproduce():
     assert float(I["smp_sigma"].value) == pytest.approx(r["smp_sigma"], abs=0.0005)
     assert float(I["smp_phi"].value) == pytest.approx(r["smp_phi"], abs=0.0005)
     assert r["hourly_match_err"] < 1.0                                                  # 시간별 파일 = 육지
+
+
+def test_irr_handles_negative_terminal_flow():
+    """끝 현금흐름이 음수여도(바닥 구간 재탐색) IRR을 찾는다."""
+    f = np.array([-100.0] + [15.0] * 15 + [-5.0])
+    r = pm.pf.irr(f, periods_per_year=1)
+    assert r is not None and pm.npv(f, r) == pytest.approx(0, abs=1e-6)

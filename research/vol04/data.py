@@ -2,6 +2,7 @@
 
 입력: data/manual/vol04_inputs.csv — 항목마다 신뢰 등급(tier)과 출처를 둔다.
   A = 1차 공식 원문(정부·공공기관 발표, 법령, SEC 공시, 공공 연구기관 원문)
+  D = 공식 원자료로 저자가 계산한 값(방법은 출처 칸에)
   B = 공식 발표를 인용한 주요 언론 보도 (원문 대조 대기)
   C = 민간 2차 자료 (보고서 확정 전 반드시 교체 — 잠정 표시)
   J = 저자 판단·설계값 (근거를 쓰고 민감도로 공개)
@@ -21,8 +22,8 @@ import pandas as pd
 from src.analysis import ppa_model as pm
 from src.data_fetch.base import resolve_path
 
-TIER_KR = {"A": "공식 원문", "B": "공식 발표 보도", "C": "민간 2차(잠정)", "J": "저자 판단"}
-TIER_EN = {"A": "Official source", "B": "Press report of official release", "C": "Secondary (provisional)", "J": "Author judgement"}
+TIER_KR = {"A": "공식 원문", "D": "공식 자료 계산", "B": "보도·외부 보고서", "C": "민간 2차(잠정)", "J": "저자 판단"}
+TIER_EN = {"A": "Official source", "D": "Computed from official data", "B": "Press report / secondary report", "C": "Secondary (provisional)", "J": "Author judgement"}
 
 LABELS: dict[str, tuple[str, str]] = {
     "asset_mw": ("발전 용량", "Capacity"), "cod_year": ("상업운전 연도", "COD year"),
@@ -47,7 +48,9 @@ LABELS: dict[str, tuple[str, str]] = {
     "buyer_return": ("매수자 요구수익률", "Buyer's required return"), "dc_it_mw": ("데이터센터 IT 용량", "Data-centre IT capacity"),
     "dc_pue": ("PUE", "PUE"), "dc_it_load": ("IT 부하율", "IT load factor"),
     "talen_notional_usd_bn": ("Talen–AWS PPA 명목 매출", "Talen–AWS PPA notional revenue"), "talen_years": ("Talen–AWS 계약기간", "Talen–AWS term"),
-    "talen_mw": ("Talen–AWS 계약 용량", "Talen–AWS contract capacity"), "levelten_solar_na": ("LevelTen 북미 태양광 PPA", "LevelTen N. America solar PPA"),
+    "talen_mw": ("Talen–AWS 계약 용량", "Talen–AWS contract capacity"),
+    "net_charge_example": ("부대비용 공개 사례(제3자 PPA, 2021)", "Ancillary charges, public example (3rd-party PPA, 2021)"),
+    "kpx_ancillary": ("직접 PPA 부가정산금(2023.7~2024.6)", "Direct-PPA ancillary settlement (Jul 2023–Jun 2024)"), "levelten_solar_na": ("LevelTen 북미 태양광 PPA", "LevelTen N. America solar PPA"),
 }
 
 
@@ -133,6 +136,7 @@ class Facts:
     sens: list[dict]
     provisional: list[str] = field(default_factory=list)
     lcoe_check: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
 
     def V(self, k: str) -> float:
         return float(self.inputs[k].value)
@@ -160,6 +164,7 @@ def capex_actual(I: Mapping[str, Input], per_kw: float | None = None) -> float:
 
 def ppa_for_npv_match(a: pm.Asset, m: pm.Market, d: pm.Debt, hazard: float, hurdle: float, target_npv: float,
                       lo: float, hi: float) -> float | None:
+    """지분 NPV 기대값(PPA 쪽 할인율 hurdle) = target_npv(한전 계약 지분 NPV)가 되는 PPA 가격."""
     def f(p: float) -> float:
         mm = pm.Market(**{**m.__dict__, "ppa_price": p})
         r0 = pm.run("ppa", a, mm, d)
@@ -195,16 +200,32 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
     price_curve = [(p, irr_at(p)) for p in np.arange(130.0, 200.0 + 1e-9, 5.0)]
 
     # 2) 해지 확률별: 지분 NPV(@요구수익률) 기대값이 CfD와 같아지는 PPA 가격 → 데이터센터가 감당할 망이용료 상한
+    #    PPA 쪽 할인율 = 요구수익률 + 위험 스프레드(0, +1, +2%p): 민간 오프테이커의 위험 프리미엄 (한전 계약은 요구수익률 그대로)
     cfd_npv = pm.npv(base["cfd"].equity_flows, hurdle)
-    premium = []
-    for h in v["hazards"]:
-        p = ppa_for_npv_match(a, m, debts["ppa"], float(h), hurdle, cfd_npv, 60.0, 400.0)
-        premium.append({"hazard": float(h), "price": p, "premium": (p - lo_c) if p is not None else None,
-                        "max_fee": (hi_c - p) if p is not None else None})
+    premium_grid = []
+    for sp in v["risk_spreads"]:
+        for h in v["hazards"]:
+            p = ppa_for_npv_match(a, m, debts["ppa"], float(h), hurdle + float(sp), cfd_npv, 60.0, 400.0)
+            premium_grid.append({"hazard": float(h), "spread": float(sp), "price": p, "premium": (p - lo_c) if p is not None else None,
+                                 "max_fee": (hi_c - p) if p is not None else None})
+    premium = [x for x in premium_grid if x["spread"] == 0.0]
+    # PPA 대출 비율 민감도 (연 해지 = 몬테카를로 값, 스프레드 0)
+    hz = float(v["monte_carlo"]["hazard"])
+    gear_chk = {}
+    for g in v["ppa_gearing_check"]:
+        dg = pm.Debt(rate, debts["ppa"].dscr, float(g), debts["ppa"].tenor)
+        p = ppa_for_npv_match(a, m, dg, hz, hurdle, cfd_npv, 60.0, 400.0)
+        gear_chk[float(g)] = (p - lo_c) if p is not None else None
 
     # 3) 해지 시점별 지분 IRR (회랑 중간 가격, 대출 고정)
     r0 = base["ppa"]
     curve = [(y, pm.run("ppa", a, m, debts["ppa"], default_year=y, fixed_debt=(r0.debt, r0.ds)).irr) for y in range(1, int(V("ppa_term")) + 1)]
+
+    # 3-2) 하방: 1년 차 해지 후 SMP 판매 시 최소 DSCR (기준 SMP · SMP 범위 하단), 대출 고정
+    low_smp = I["smp_base"].low or V("smp_base")
+    down = {"base": pm.run("ppa", a, m, debts["ppa"], default_year=1, fixed_debt=(r0.debt, r0.ds)).min_dscr,
+            "low": pm.run("ppa", a, pm.Market(**{**m.__dict__, "smp0": low_smp}), debts["ppa"], default_year=1, fixed_debt=(r0.debt, r0.ds)).min_dscr,
+            "low_smp": low_smp}
 
     # 4) 매각
     ex = {k: base[k].exit_irr(int(V("exit_year")), V("buyer_return")) for k in pm.ROUTES}
@@ -249,14 +270,15 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
           "levelten": V("levelten_solar_na")}
     prov = [k for k, x in I.items() if x.pending_official]
     a_act = build_asset(I, capex=capex_actual(I))
+    extra = {"premium_grid": premium_grid, "gearing_check": gear_chk, "downside": down}
     lc = {"actual_capex": a_act.capex, "actual_lcoe": pm.lcoe(a_act, V("lcoe_discount_rate")), "keei": (I["lcoe_target"].low, I["lcoe_target"].high),
           "base_capex": a.capex, "base_lcoe": pm.lcoe(a, V("lcoe_discount_rate")),
           "actual_irr": {k: pm.run(k, a_act, m, debts[k]).irr for k in pm.ROUTES}}
     return Facts(as_of, I, a, m, debts, rate, ktb, ktb_date, base, mid, (lo_c, hi_c), be, premium, curve, ex, price_curve,
-                 mc, spec, dc, us, sens, prov, lc)
+                 mc, spec, dc, us, sens, prov, lc, extra)
 
 
 def mc_stats(x: np.ndarray, hurdle: float) -> dict:
-    q = np.quantile(x, [0.1, 0.5, 0.9])
-    return {"p10": float(q[0]), "p50": float(q[1]), "p90": float(q[2]), "below": float((x < hurdle).mean()),
+    q = np.quantile(x, [0.05, 0.1, 0.5, 0.9])
+    return {"p5": float(q[0]), "p10": float(q[1]), "p50": float(q[2]), "p90": float(q[3]), "below": float((x < hurdle).mean()),
             "neg": float((x < 0).mean())}

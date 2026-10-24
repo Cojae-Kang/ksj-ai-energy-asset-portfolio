@@ -18,3 +18,7 @@ industrial_rev_mn,50971209.776
 file,2512_전력통계월보(제566호).xlsx
 sheets,18.계약종별 판매전력량 · 18-2.계약종별 판매수입
 row,2025.01~12
+solar_mwh,45452754.279095
+solar_kw_yearend,30760309.648
+solar_cf_check,0.16868070052548145
+solar_months,12
