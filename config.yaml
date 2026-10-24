@@ -877,18 +877,29 @@ research:
         - {key: "no_discount", discount: 0.0}
         - {key: "before", regime: "before"}
     net_charge_basis:                   # 공개 사례 부대비용(net_charge_example)과 구매자 상한의 비교 기준 — 출처 원문은 data/manual/vol04_sources/*.meta.json
-      case_kr: "한전 중개 제3자 PPA, 태양광 중대형 Case 1, 2020년 기준 분석"     # 기후솔루션 2021-12 PDF 11쪽 표 2 · 9쪽 그림 3 (B)
-      case_en: "KEPCO-brokered third-party PPA, mid/large solar Case 1, 2020-basis analysis"
+      case_kr: "한전 중개 제3자 PPA, 태양광 중대형 Case 1"                    # 기후솔루션 2021-12 인쇄 9쪽(PDF 11쪽) 표 2 (B)
+      case_en: "KEPCO-brokered third-party PPA, mid/large solar Case 1"
+      timing_kr: "부대비용 시점 미기재(한전 시뮬레이션, 보고서 2021-12 발간; 발전단가 136원만 2020년 기준)"
+      timing_en: "charge date not stated (KEPCO simulator, report published Dec 2021; only the 136 generation cost is 2020-based)"
       conditions_kr: "발전 비수도권·고압 배전망 접속, 사용자 수도권"   # 같은 표 2 시나리오 조건
       conditions_en: "generator outside the capital region on the HV distribution grid, user in the capital region"
       table_ref_kr: "기후솔루션 인쇄 9쪽(PDF 11쪽) 표 2"
       table_ref_en: "SFOC printed p.9 (PDF p.11), table 2"
-      direct_ppa_items_kr: ["망이용요금", "거래수수료", "부가정산금", "전력산업기반기금"]   # 김·장 2022-09-13 뉴스레터 PDF 2쪽 '4. 전력거래대금' (B) — 고시 원문 TODO
-      direct_ppa_items_en: ["network charges", "trading fee", "settlement charges", "power-industry fund levy"]
-      direct_ppa_source_kr: "김·장 2022-09-13"
-      direct_ppa_source_en: "Kim & Chang, 13 Sep 2022"
-      fund_item: "전력산업기반기금"     # 사례 내역에서 기반기금 항목 이름 (회피 요금에는 없는 항목)
-      fund_rate_key: "power_fund_rate"  # 입력 CSV 키 — 비어 있으면 민감도 TODO(data), 숫자 추정 금지
+      direct_ppa_items_kr: ["송·배전 이용요금", "거래수수료", "부가정산금", "전력산업기반기금 부담금"]   # 직접 PPA 고시 제25조③ 2~5호 (A) — 6호 '기타 고시 비용'은 지정 여부 TODO
+      direct_ppa_items_en: ["T&D use charges", "trading fee", "settlement charges", "power-industry fund levy"]
+      direct_ppa_source_kr: "직접 PPA 고시 제25조③(기후에너지환경부고시 제2025-61호, A)"
+      direct_ppa_source_en: "direct-PPA notice art. 25(3) (MCEE notice 2025-61, A)"
+      direct_ppa_aux_kr: "김·장 2022-09-13(B) 보조"
+      direct_ppa_aux_en: "Kim & Chang 13 Sep 2022 (B) as support"
+      other_item_kr: "6호 '기타 장관 고시 비용' 현재 지정 여부 TODO(data)"
+      other_item_en: "item 6 'other costs designated by the Minister' — designation TODO(data)"
+      proviso_kr: "단서: 송·배전망을 이용하지 않으면 2호(송·배전 이용요금)·4호(부가정산금) 제외 · 계약기간은 1년 단위(제9조④)"
+      proviso_en: "Proviso: items 2 and 4 drop out if the T&D grid is not used · contract term in 1-year units (art. 9(4))"
+      case_only_items: ["복지/특례할인"]  # 40원 사례에는 있으나 직접 PPA 고시 제25조③에는 없는 항목 → '직접 PPA 부대비용은 사례보다 작을 수 있음'(숫자 추정 금지)
+      fund_item: "전력산업기반기금"     # 사례 내역에서 기반기금 항목 이름
+      fund_rate_key: "power_fund_rate"  # 입력 CSV 키(전기요금 대비 비율) — 전기사업법 시행령 제36조 1천분의 27 (A)
+      fund_basis: "room"                # ASSUMPTION(judgment): 기반기금은 한전 요금과 PPA 대금 양쪽에 같은 비율 → PPA 가격 상한(회랑)에서는 상쇄,
+                                        #   기반기금을 포함한 부대비용(40원 사례)과 비교하는 망이용료 여유는 회피 요금 × (1 + 요율) 기준이 같은 기준
     hazards: [0.0, 0.005, 0.01, 0.02, 0.03, 0.05]
     risk_spreads: [0.0, 0.01, 0.02]     # ASSUMPTION(judgment): PPA 지분 할인율 = 요구수익률 + 스프레드 (민간 오프테이커 위험 프리미엄, 공개 근거 없음 → 격자)
     ppa_gearing_check: [0.65, 0.75, 0.80]   # PPA 대출 비율 민감도 (결과를 움직이는 저자 판단 입력)   # PPA 오프테이커 연 해지 확률 격자 (ASSUMPTION(judgment): 공개 부도율 근거 없음 → 손익분기로 제시)

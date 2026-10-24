@@ -96,7 +96,8 @@ def key_conclusions(f: data.Facts, hz: float) -> list[str]:
     p = next(x for x in f.premium if abs(x["hazard"] - hz) < 1e-12)
     out = [f"지분 IRR: 직접 PPA(회랑 중간 {f.ppa_mid:,.1f}원) {_p(irr['ppa'], 2)} · 한전 CfD {_p(irr['cfd'], 2)} · 시장 SMP {_p(irr['merchant'])}",
            f"필요 PPA 가격(연 해지 {hz * 100:.0f}%) {p['price']:,.1f}원/kWh = 한전 계약 +{p['premium']:,.1f}원 → 망이용료 여유 {p['max_fee']:+,.1f}원/kWh "
-           f"(구매자 상한 = 태양광 시간대 회피 요금 {f.corridor[1]:,.1f}원 = 에너지요금 {f.extra['tou']['energy']:,.1f} + 추가 요금 {f.extra['tou']['adder']:,.1f}; 평균 판매단가 {f.extra['avg_tariff']:,.1f}원 기준이면 {p['max_fee_avg']:,.1f}원)"]
+           f"(여유 기준 = 회피 요금 {f.corridor[1]:,.1f}원 × (1 + 기반기금) = {f.extra['tou']['room_cap']:,.1f}원; 회피 요금 = 에너지요금 {f.extra['tou']['energy']:,.1f} + 추가 요금 {f.extra['tou']['adder']:,.1f}; "
+           f"기반기금 제외 여유 {p['max_fee_ex']:+,.1f}원; 평균 판매단가 {f.extra['avg_tariff']:,.1f}원 기준이면 {p['max_fee_avg']:,.1f}원)"]
     if ok(f.mc):
         s, m = mc_stats(f.mc["ppa"], f.V("equity_hurdle")), mc_stats(f.mc["merchant"], f.V("equity_hurdle"))
         out.append(f"몬테카를로: 직접 PPA P10/P50 {_p(s['p10'])}/{_p(s['p50'])}, 시장 판매 손실 확률 {_p(m['neg'], 0)}")
@@ -104,21 +105,25 @@ def key_conclusions(f: data.Facts, hz: float) -> list[str]:
 
 
 def net_basis_lines(f: data.Facts) -> list[str]:
-    """공개 사례 부대비용 비교 기준: 사례 성격·내역(반올림 차이) · 직접 PPA 사용자 부담 항목(B) · 기반기금 비대칭(요율 TODO면 문장만)."""
+    """공개 사례 부대비용 비교 기준: 사례 성격·조건·시점·내역(반올림) · 직접 PPA 고시 제25조③ 부담 항목(A) · 사례에만 있는 항목 · 기반기금(시행령 제36조)."""
     n, t = f.extra["net"], f.extra["tou"]
     nb = n["basis"]
     nm = {"fuel": "연료비조정", "climate": "기후환경요금"}
-    adds = [nm[k] for k, v in t["stages"] if k != "energy" and v is not None]
+    adds = [nm[k] for k, v in t["stages"] if k in nm and v is not None]
     items = " · ".join(f"{k} {v:g}" for k, v in n["items"])
-    L = [f"- 공개 사례 부대비용 {n['total']:.0f}원(B) = {nb['case_kr']}({nb['conditions_kr']}) — {nb['table_ref_kr']}(2021-12): {items}"
+    iv = dict(n["items"])
+    L = [f"- 공개 사례 부대비용 {n['total']:.0f}원(B) = {nb['case_kr']}({nb['conditions_kr']}; {nb['timing_kr']}) — {nb['table_ref_kr']}: {items}"
          + (f" (표 총계 {n['total']:.0f} vs 항목 합 {n['item_sum']:.0f}, 원문 반올림)" if abs(n["item_sum"] - n["total"]) >= 0.5 else ""),
-         f"- 같은 기준 비교: 직접 PPA 사용자 추가 부담 = {'·'.join(nb['direct_ppa_items_kr'])}"
-         + (f", {'·'.join(adds)}은 해당 항목 아님({nb['direct_ppa_source_kr']}, B; 직접 PPA 고시 원문 TODO) → 상한 = 에너지요금 + 추가 요금 {t['adder']:,.1f}원" if adds
-            else f"({nb['direct_ppa_source_kr']}, B; 직접 PPA 고시 원문 TODO)")]
+         f"- 같은 기준 비교: 직접 PPA 사용자 부담 = {'·'.join(nb['direct_ppa_items_kr'])} ({nb['direct_ppa_source_kr']}; {nb['direct_ppa_aux_kr']}; {nb['other_item_kr']})"
+         + (f" — {'·'.join(adds)}은 없음 → 상한 = 에너지요금 + 추가 요금 {t['adder']:,.1f}원" if adds else ""),
+         f"- {nb['proviso_kr']}"]
+    if n.get("case_only"):
+        L.append(f"- 사례에만 있는 항목: {'·'.join(f'{k} {iv[k]:g}원' for k in n['case_only'])} — 직접 PPA 고시 제25조③에 해당 항목 없음 → 직접 PPA 부대비용은 사례보다 작을 수 있음(숫자 추정 안 함)")
     if n["fund"] is not None:
-        L.append(f"- 기반기금 비대칭: 사례 {n['total']:.0f}원에 전력산업기반기금 {n['fund']:g}원 포함, 회피 요금에는 미포함 → "
+        L.append(f"- 기반기금: 사례 {n['total']:.0f}원에 전력산업기반기금 {n['fund']:g}원 포함, 회피 요금에는 미포함 → "
                  + ("기준을 맞추면 여유가 기반기금만큼 커짐 (요율 TODO(data): 입력 power_fund_rate 비어 있음, 추정하지 않음)" if n["fund_add"] is None
-                    else f"요율 {n['fund_rate']:g}% 포함 시 상한 {t['annual'] + n['fund_add']:,.2f}원(여유 +{n['fund_add']:,.2f})"))
+                    else f"전기사업법 시행령 제36조 요율 {n['fund_rate']:g}(A) → 망이용료 여유 기준 = 회피 요금 × {1 + n['fund_rate']:g} = {t['room_cap']:,.2f}원(+{n['fund_add']:,.2f}). "
+                         f"PPA 가격 상한(회랑)은 {t['annual']:,.2f}원 유지 — 기반기금은 PPA 대금에도 같은 비율로 붙어 부대비용 0일 때 상쇄. ASSUMPTION: 전기요금 전체 부과 비율을 kWh당 요금에 곱한 근사"))
     return L
 
 
@@ -137,12 +142,12 @@ def tou_section(f: data.Facts) -> list[str]:
          + (f"{f.inputs['climate_env'].value}원(A, 한전ON {f.inputs['climate_env'].published} 적용)" if isinstance(f.inputs['climate_env'].value, (int, float)) else "(원문 대기 → 미포함, TODO)"),
          *net_basis_lines(f), ""]
     # 3단 상한 × 단계별 망이용료 여유 (스프레드 0, 해지 확률별)
-    nm = {"energy": "① 에너지요금만", "fuel": "② + 연료비조정", "climate": "③ + 기후환경"}
-    L += ["#### 구매자 상한 3단과 망이용료 여유 (위험 스프레드 0)", "",
+    nm = {"energy": "① 에너지요금만", "fuel": "② + 연료비조정", "climate": "③ + 기후환경 (PPA 가격 상한)", "fund": "④ + 기반기금 (망이용료 여유 기준)"}
+    L += [f"#### 구매자 상한 {len(t['stages'])}단과 망이용료 여유 (위험 스프레드 0)", "",
           markdown_table([{"단계": nm[k], "상한(원/kWh)": f"{v:,.2f}" if v is not None else "TODO(data)",
                            **{f"여유 @해지 {p['hazard'] * 100:.1f}%": (f"{p['max_fee_stage'][k]:+,.2f}" if p['max_fee_stage'][k] is not None else "TODO") for p in f.premium}}
                           for k, v in t["stages"]]), "",
-          f"- 보고서 상한 = {t['annual']:,.2f}원 (에너지 {t['energy']:,.2f} + 추가 요금 {t['adder']:,.2f}), 아래 계절·월별 표는 에너지요금만", ""]
+          f"- PPA 가격 상한 = {t['annual']:,.2f}원 (에너지 {t['energy']:,.2f} + 추가 요금 {t['adder']:,.2f}) · 망이용료 여유 기준 = {t['room_cap']:,.2f}원(④), 아래 계절·월별 표는 에너지요금만", ""]
     L += [markdown_table([{"계절": SEASON_KR[k], "회피 요금(원/kWh)": f"{b['season'][k]:,.2f}", "발전량 비중": f"{b['gen_share'][k] * 100:.1f}%",
                            "한전 계약가 대비": f"{b['season'][k] - f.corridor[0]:+,.2f}",
                            **{f"평일 {BAND_KR[x]} 비중": f"{t['band_share'][k][x] * 100:.1f}%" for x in ("off", "mid", "peak")}}
@@ -154,15 +159,11 @@ def tou_section(f: data.Facts) -> list[str]:
            "no_discount": "봄·가을 주말 할인 종료(2031~)", "before": "개편 전 요금(참고)"}
     p1 = f.premium[[q['hazard'] for q in f.premium].index(0.01)]['price']
     ad = t["adder"]
-    L += [f"민감도 (에너지요금 기준값 → 추가 요금 {ad:,.2f}원 포함 상한, 여유 = 상한 − 필요 PPA {p1:,.2f}원):", "",
-          markdown_table([{"민감도": f"형상 p = {p:g}", "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x + ad - p1:+,.2f}"}
-                          for p, x in t["shape"].items()]
-                         + [{"민감도": lab.get(k, k), "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}", "여유(연 해지 1%·스프레드 0)": f"{x + ad - p1:+,.2f}"}
-                            for k, x in t["sens"].items()]
-                         + ([{"민감도": "회피 요금에 기반기금 포함", "에너지요금": f"{t['energy']:,.2f}",
-                              "상한(추가 요금 포함)": f"{t['annual'] + fa:,.2f}" if (fa := f.extra["net"]["fund_add"]) is not None else "TODO(data)",
-                              "여유(연 해지 1%·스프레드 0)": f"{t['annual'] + fa - p1:+,.2f}" if fa is not None else "TODO(data)"}]
-                            if f.extra["net"]["fund"] is not None else [])), ""]
+    g = t["room_cap"] / t["annual"]
+    row = lambda name, x: {"민감도": name, "에너지요금": f"{x:,.2f}", "상한(추가 요금 포함)": f"{x + ad:,.2f}",  # noqa: E731
+                           "여유 ④ 기준(× 기반기금, 연 해지 1%·스프레드 0)": f"{(x + ad) * g - p1:+,.2f}", "참고: 기반기금 제외 여유": f"{x + ad - p1:+,.2f}"}
+    L += [f"민감도 (에너지요금 기준값 → 추가 요금 {ad:,.2f}원 포함 상한, 여유 = 상한 × {g:.3f} − 필요 PPA {p1:,.2f}원):", "",
+          markdown_table([row(f"형상 p = {p:g}", x) for p, x in t["shape"].items()] + [row(lab.get(k, k), x) for k, x in t["sens"].items()]), ""]
     return L
 
 
@@ -184,7 +185,7 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
                            "지분(억원)": f"{x.equity:,.1f}", "지분 IRR": _p(x.irr, 2), "MOIC": f"{x.moic:.2f}",
                            f"{int(f.V('exit_year'))}년 매각 IRR": _p(f.exit[k][0], 2), "매각가(억원)": f"{f.exit[k][1]:,.1f}"} for k, x in f.base.items()]), ""]
     L += ["### 해지 확률별 필요 PPA 가격", "", markdown_table([{"연 해지": _p(p["hazard"]), "필요 가격": f"{p['price']:,.2f}", "프리미엄": f"{p['premium']:,.2f}",
-                                                            "망이용료 여유": f"{p['max_fee']:,.2f}", "여유(평균 판매단가 기준, 참고)": f"{p['max_fee_avg']:,.2f}"} for p in f.premium]), ""]
+                                                            "망이용료 여유(기반기금 포함 기준)": f"{p['max_fee']:,.2f}", "여유(평균 판매단가 기준, 참고)": f"{p['max_fee_avg']:,.2f}"} for p in f.premium]), ""]
     L += [f"- 해지 없음 IRR 손익분기 PPA 가격: {f.be_price:,.2f}원/kWh", ""]
     L += tou_section(f)
     if ok(f.mc):
@@ -193,7 +194,7 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
     L += ["### Vol.2 연결", "", (f"- 데이터센터 SPV 최소 DSCR {v2['min_dscr']:.2f}배 · 지분 IRR {v2['equity_irr'] * 100:.1f}%" if v2 else "- Vol.2 결과 없음"), ""]
     L += ["### 위험 스프레드 격자 (PPA 할인율 = 요구수익률 + 스프레드)", "",
           markdown_table([{"연 해지": _p(p["hazard"]), "스프레드": _p(p["spread"], 0), "필요 가격": f"{p['price']:,.2f}", "프리미엄": f"{p['premium']:,.2f}",
-                           "망이용료 여유": f"{p['max_fee']:,.2f}"} for p in f.extra.get("premium_grid", [])]), "",
+                           "망이용료 여유(기반기금 포함 기준)": f"{p['max_fee']:,.2f}"} for p in f.extra.get("premium_grid", [])]), "",
           f"- PPA 대출 비율별 프리미엄(연 해지 {hz * 100:.0f}%, 스프레드 0): " + ", ".join(f"{g * 100:.0f}% → {v:,.2f}원" for g, v in f.extra.get("gearing_check", {}).items()),
           f"- 하방: 1년 차 해지 후 최소 DSCR {f.extra['downside']['base']:.3f} (SMP 기준) · {f.extra['downside']['low']:.3f} (SMP {f.extra['downside']['low_smp']})", ""]
     L += ["## 한계 · 공식 원문 교체 대기 (공신력 원칙)", ""]

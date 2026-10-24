@@ -82,6 +82,7 @@ class Input:
     url: str
     published: str
     official_todo: str
+    official_todo_en: str = ""
 
     @property
     def pending_official(self) -> bool:
@@ -102,7 +103,7 @@ def load_inputs(path: Path) -> dict[str, Input]:
             v = r["value"]
             val: Any = _num(v) if _num(v) is not None else v
             out[r["key"]] = Input(r["key"], val, _num(r["low"]), _num(r["high"]), r["unit"], r["tier"].strip(), r["source_name"],
-                                  r["url"], r["published"], r.get("official_todo", "") or "")
+                                  r["url"], r["published"], r.get("official_todo", "") or "", r.get("official_todo_en", "") or "")
     return out
 
 
@@ -172,6 +173,10 @@ def capex_actual(I: Mapping[str, Input], per_kw: float | None = None) -> float:
 SAT_RULE = {"평일과 같음": "weekday", "최대→중간": "peak_to_mid"}
 
 
+def _num_or_none(v: Any) -> float | None:
+    return float(v) if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)) else None
+
+
 def tou_ceiling(cfg: Mapping, I: Mapping[str, Input]) -> dict:
     """구매자 상한 = 태양광 시간대 회피 전력량요금(원/kWh, 2025년 월별 발전량 가중) + 민감도. 기본요금은 PPA로 줄지 않아 제외."""
     from . import tou
@@ -202,14 +207,18 @@ def tou_ceiling(cfg: Mapping, I: Mapping[str, Input]) -> dict:
         else:
             stages.append((key, None))
     ceiling = cur                                         # ASSUMPTION(judgment): 상한 = 확보된 단계 중 가장 포괄적인 값 (config tou.ceiling_stage)
+    # 4단: + 전력산업기반기금(전기요금 × 요율). 한전 요금과 PPA 대금 양쪽에 같은 비율로 붙어 PPA 가격 상한에서는 상쇄 → 가격 상한(annual)은 3단 그대로,
+    #       기반기금을 포함한 부대비용(공개 사례)과 비교하는 망이용료 여유의 기준(room_cap)만 × (1 + 요율). 요율이 없으면 None(TODO)
+    nb = cfg["research"]["vol04"]["net_charge_basis"]
+    fr = I.get(nb["fund_rate_key"])
+    rate = _num_or_none(fr.value) if fr is not None else None
+    room_cap = ceiling * (1 + rate) if rate is not None else ceiling   # ASSUMPTION: 전기요금 전체 부과 비율을 kWh당 회피 요금에 곱한 근사
+    stages.append(("fund", room_cap if rate is not None else None))
     return {"base": base, "annual": ceiling, "energy": base["annual"], "adder": ceiling - base["annual"], "stages": stages,
+            "fund_rate": rate, "room_cap": room_cap,
             "shape": {p: run(p)["annual"] for p in shape}, "sens": sens,
             "band_share": tou.band_shares(bands, shape[p0], sol), "month_gen": {int(m): float(v) for m, v in sol.items()},
             "contract": (volt, opt), "rates": rates[(rates.regime == "after") & (rates.voltage == volt) & (rates.option == opt)]}
-
-
-def _num_or_none(v: Any) -> float | None:
-    return float(v) if isinstance(v, (int, float)) and not (isinstance(v, float) and math.isnan(v)) else None
 
 
 def net_breakdown(cfg: Mapping, I: Mapping[str, Input], ceiling: float) -> dict:
@@ -226,8 +235,9 @@ def net_breakdown(cfg: Mapping, I: Mapping[str, Input], ceiling: float) -> dict:
             items.append((mm.group(1), float(mm.group(2))))
     rate_in = I.get(nb["fund_rate_key"])
     rate = _num_or_none(rate_in.value) if rate_in is not None else None
-    fund_add = ceiling * rate / 100 if rate is not None else None   # ASSUMPTION(judgment): 부과 기준 = 회피 전기요금 전체 (입력 power_fund_rate 출처란)
-    return {"items": items, "total": float(x.value), "item_sum": sum(v for _, v in items),
+    fund_add = ceiling * rate if rate is not None else None        # ASSUMPTION: 전기요금 전체 부과 비율을 kWh당 회피 요금에 곱한 근사 (입력 power_fund_rate 출처란)
+    case_only = [k for k, _ in items if k in nb.get("case_only_items", [])]
+    return {"case_only": case_only, "items": items, "total": float(x.value), "item_sum": sum(v for _, v in items),
             "fund": dict(items).get(nb["fund_item"]), "fund_rate": rate, "fund_add": fund_add, "basis": dict(nb)}
 
 
@@ -278,7 +288,9 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
         for h in v["hazards"]:
             p = ppa_for_npv_match(a, m, debts["ppa"], float(h), hurdle + float(sp), cfd_npv, 60.0, 400.0)
             premium_grid.append({"hazard": float(h), "spread": float(sp), "price": p, "premium": (p - lo_c) if p is not None else None,
-                                 "max_fee": (hi_c - p) if p is not None else None, "max_fee_avg": (avg_c - p) if p is not None else None,
+                                 # max_fee = 망이용료 여유(기반기금 포함 기준, 공개 사례와 같은 기준) · max_fee_ex = 기반기금 제외(부대비용 0일 때의 가격 판정·부가정산금 비교)
+                                 "max_fee": (tc["room_cap"] - p) if p is not None else None, "max_fee_ex": (hi_c - p) if p is not None else None,
+                                 "max_fee_avg": (avg_c * tc["room_cap"] / hi_c - p) if p is not None else None,
                                  "max_fee_stage": {k: (v - p) if (v is not None and p is not None) else None for k, v in tc["stages"]}})
     premium = [x for x in premium_grid if x["spread"] == 0.0]
     # PPA 대출 비율 민감도 (연 해지 = 몬테카를로 값, 스프레드 0)

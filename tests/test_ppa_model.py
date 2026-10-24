@@ -91,12 +91,14 @@ def test_vol04_facts_build(tmp_path):
     f = D.load_facts(load_config(), mc_n=0)
     p = {x["hazard"]: x for x in f.premium}
     assert p[0.0]["price"] < p[0.01]["price"] < p[0.05]["price"]                     # 해지 위험 ↑ → 필요 가격 ↑
-    assert p[0.01]["max_fee"] == pytest.approx(f.corridor[1] - p[0.01]["price"])
+    g = f.extra["tou"]["room_cap"] / f.corridor[1]                                     # 1 + 기반기금 요율 (없으면 1)
+    assert p[0.01]["max_fee_ex"] == pytest.approx(f.corridor[1] - p[0.01]["price"])
+    assert p[0.01]["max_fee"] == pytest.approx(f.corridor[1] * g - p[0.01]["price"])   # 망이용료 여유 = 기반기금 포함 기준
     assert f.be_price > f.corridor[0]                                                 # 한전 계약 IRR을 맞추려면 계약가보다 비싸야
     assert f.corridor[1] == pytest.approx(f.extra["tou"]["annual"])                   # 구매자 상한 = 태양광 시간대 회피 요금
     assert f.extra["avg_tariff"] == pytest.approx(f.V("kepco_industrial_price"))      # 평균 판매단가는 참고선·전력비 계산용
     assert f.dc["power_cost"] == pytest.approx(f.dc["consumption_gwh"] * f.V("kepco_industrial_price") / 100)
-    assert p[0.01]["max_fee_avg"] - p[0.01]["max_fee"] == pytest.approx(f.V("kepco_industrial_price") - f.corridor[1])
+    assert p[0.01]["max_fee_avg"] - p[0.01]["max_fee"] == pytest.approx((f.V("kepco_industrial_price") - f.corridor[1]) * g)
     assert all(f.inputs[k].tier in "ABCDJ" for k in f.inputs)
     assert all(f.inputs[k].official_todo for k in f.provisional)                      # 교체 대기 = 원문 할 일이 적힌 항목
     g = {(x["hazard"], x["spread"]): x["price"] for x in f.extra["premium_grid"]}
@@ -214,14 +216,15 @@ def test_avoided_rate_logic():
     assert sum(base["gen_share"].values()) == pytest.approx(1.0)
 
 
-def test_vol04_ceiling_three_stages():
-    """구매자 상한 3단: 에너지요금 → +연료비조정(입력값) → +기후환경(값 없으면 None·TODO). 상한 = 가장 포괄적인 확보 단계, 여유 = 단계 − 필요 가격."""
+def test_vol04_ceiling_stages():
+    """구매자 상한: 에너지요금 → +연료비조정 → +기후환경(= PPA 가격 상한, 회랑) → +기반기금(× (1 + 요율) = 망이용료 여유 기준).
+    값이 없는 단계는 None(TODO). 여유 = 단계 − 필요 가격."""
     from src.data_fetch.base import load_config
     from research.vol04 import data as D
     f = D.load_facts(load_config(), mc_n=0)
     t = f.extra["tou"]
     st = dict(t["stages"])
-    assert list(st) == ["energy", "fuel", "climate"]
+    assert list(st) == ["energy", "fuel", "climate", "fund"]
     assert st["energy"] == pytest.approx(t["base"]["annual"])
     fa, ce = f.inputs["fuel_adj"].value, f.inputs["climate_env"].value
     assert st["fuel"] == pytest.approx(st["energy"] + float(fa))
@@ -229,12 +232,19 @@ def test_vol04_ceiling_three_stages():
         assert st["climate"] == pytest.approx(st["fuel"] + float(ce))
     else:
         assert st["climate"] is None and f.inputs["climate_env"].pending_official      # 추정값 넣지 않음, TODO만
-    last = [v for v in st.values() if v is not None][-1]
-    assert f.corridor[1] == pytest.approx(last) and t["adder"] == pytest.approx(last - st["energy"])
+    price_cap = [v for k, v in st.items() if v is not None and k != "fund"][-1]
+    assert f.corridor[1] == pytest.approx(price_cap) and t["adder"] == pytest.approx(price_cap - st["energy"])
+    r = f.inputs["power_fund_rate"].value
+    if isinstance(r, (int, float)):
+        assert r == pytest.approx(0.027) and f.inputs["power_fund_rate"].tier == "A"    # 전기사업법 시행령 제36조 1천분의 27
+        assert st["fund"] == pytest.approx(price_cap * (1 + r)) and t["room_cap"] == pytest.approx(st["fund"])
+    else:
+        assert st["fund"] is None and t["room_cap"] == pytest.approx(price_cap)
     for p in f.extra["premium_grid"]:
         for k, v in st.items():
             m = p["max_fee_stage"][k]
             assert (m is None) if v is None else m == pytest.approx(v - p["price"])
+        assert p["max_fee"] == pytest.approx(t["room_cap"] - p["price"])
 
 
 def test_vol04_net_charge_breakdown():
@@ -252,17 +262,19 @@ def test_vol04_net_charge_breakdown():
     assert n["fund"] == pytest.approx(dict(n["items"])["전력산업기반기금"])
     rate = I["power_fund_rate"].value
     if isinstance(rate, (int, float)):
-        assert n["fund_add"] == pytest.approx(165.0 * rate / 100)
+        assert n["fund_add"] == pytest.approx(165.0 * rate)
     else:
         assert n["fund_rate"] is None and n["fund_add"] is None and I["power_fund_rate"].pending_official
     # 요율이 주어지면 회피 요금 × 요율 (입력 사본으로만 검증)
     import dataclasses
-    I2 = {**I, "power_fund_rate": dataclasses.replace(I["power_fund_rate"], value=2.0)}
+    I2 = {**I, "power_fund_rate": dataclasses.replace(I["power_fund_rate"], value=0.02)}
     assert D.net_breakdown(cfg, I2, 150.0)["fund_add"] == pytest.approx(3.0)
+    assert n["case_only"] == ["복지/특례할인"]
 
 
 def test_vol04_net_basis_note_like_for_like():
-    """비교 기준 각주: 사례 성격·조건·표 위치, 직접 PPA 부담 항목(B), 상한에 추가 요금을 더한 것이 같은 기준, 기반기금 문장(요율 TODO)."""
+    """비교 기준 각주: 사례 성격·조건·시점·표 위치, 직접 PPA 고시 제25조③ 부담 항목(A), 상한에 추가 요금을 더한 것이 같은 기준,
+    사례에만 있는 복지/특례할인 → '사례보다 작을 수 있음'(숫자 없음), 단서·계약기간, 기반기금 기준."""
     from src.data_fetch.base import load_config
     from research.vol04 import data as D
     from research.vol04.story import Story
@@ -272,8 +284,14 @@ def test_vol04_net_basis_note_like_for_like():
     full, short = s.net_basis_note(), s.net_basis_note(items_shown=False)
     nb = cfg["research"]["vol04"]["net_charge_basis"]
     for t in (full, short):
-        assert nb["case_kr"] in t and nb["conditions_kr"] in t and "인쇄 9쪽(PDF 11쪽)" in t
-        assert "망이용요금·거래수수료·부가정산금·전력산업기반기금" in t and "같은 기준 비교" in t
+        assert nb["case_kr"] in t and nb["timing_kr"] in t and "인쇄 9쪽(PDF 11쪽)" in t
+        assert "2020년 기준 분석" not in t
+        assert "제2025-61호" in t and "같은 기준 비교" in t
         assert f"{f.extra['tou']['adder']:,.1f}원을 더한" in t
-    assert "항목 합 41" in full and "기준을 맞추면 여유가 기반기금만큼 커짐" in full
+    assert nb["conditions_kr"] in full and "직접 PPA 부대비용은 사례보다 작을 수 있음" in full and "김·장" in full and "항목 합 41" in full and "제9조④" in full and "2호(송·배전 이용요금)" in full and "6호" in full
+    assert "1 + 2.7%" in full and f"{f.extra['tou']['room_cap']:,.1f}원" in full
     assert "송배전 기본" not in short
+    en = Story(cfg, f, "en")
+    assert all(ord(ch) < 0x1100 or ch in "·→−–—×" for ch in en.net_basis_note())            # 영문 각주에 한글 없음
+    todo_en = [x.official_todo_en for x in f.inputs.values() if x.pending_official]
+    assert todo_en and all(t.strip() and not any("\uac00" <= ch <= "\ud7a3" for ch in t) for t in todo_en)
