@@ -268,8 +268,12 @@ class Story:
         f = self.f
         if ok(f.band_dp) and ok(f.mc_dp):
             bd, g = f.band_dp, self.v["discount_grid"]
-            tail = (self.T("할인율만으로는 이중 고점을 못 덮는다", f"a {g[0] * 100:.0f}–{g[-1] * 100:.0f}% discount alone cannot cover the double peak")
-                    if not self.dp_covered() else self.T(f"이중 고점까지 덮으려면 할인율 {self.bd_text(bd)}", f"covering the double peak takes {self.bd_text(bd)}"))
+            if self.f.dp_floor_alt:
+                tail = self.T(f"이중 고점 위험은 이익률 하한 가정이 좌우(필요 할인율 중앙값 {self.floor_text(True)})",
+                              f"the margin floor drives the double-peak risk ({self.floor_text(True)} median discount)")
+            else:
+                tail = (self.T("할인율만으로는 이중 고점을 못 덮는다", f"a {g[0] * 100:.0f}–{g[-1] * 100:.0f}% discount alone cannot cover the double peak")
+                        if not self.dp_covered() else self.T(f"이중 고점까지 덮으려면 할인율 {self.bd_text(bd)}", f"covering the double peak takes {self.bd_text(bd)}"))
             return self.T(f"희망공모가 {self.band_text()} vs 이익률 정점 반영 {self.won_rng(bd.low, bd.high)} — {tail}",
                           f"Indicative range {self.band_text()} (current basis) vs {self.won_rng(bd.low, bd.high)} (with peak margins) — {tail}")
         return self.T(f"희망공모가 {self.band_text()} — 현재 PER {self.x(self.per())} 기준 평가가액에서 {self.disc_text()} 할인해야 사이클 고점 위험을 덮는다",
@@ -301,8 +305,8 @@ class Story:
             add(self.T(f"해외 핵심 비교군 PER ({'·'.join(cn) or '시총 수집 후'})", f"U.S. core peers' P/E ({', '.join(cn) or 'after market data'})"),
                 self.x(core.aggregate) if core.n else self.T("시총 수집 후", "after market data"), "4")
             evn = mu.groups["domestic"]["ev"].n
-            add(self.T(f"EV/{self.f.peers.ev_basis} (보조, 국내 {evn}사 합산)", f"EV/{self.f.peers.ev_basis} (secondary, {evn} Korean names)"),
-                self.x(mu.groups["domestic"]["ev"].aggregate), "4")
+            add(self.T(f"EV/{self.f.peers.ev_basis} 참고: 국내 {evn}사 합산 · 적용", f"EV/{self.f.peers.ev_basis} ref.: {evn} Korean names · applied"),
+                f"{self.x(mu.groups['domestic']['ev'].aggregate)} · {self.x(mu.ev_applied)}", "4")
         if ok(f.val):
             v = f.val
             add(self.T("Target Co. 지배순이익 FY2025A (가정)", "Target Co. NI to parent FY2025A (assumed)"), self.eok(v.ni), "2")
@@ -372,8 +376,8 @@ class Story:
               self.T(f"할인율 10~40% 시나리오: {self.won(v.grid['price'].iloc[-1])}~{self.won(v.grid['price'].iloc[0])}",
                      f"10–40% discount scenarios: {self.won(v.grid['price'].iloc[-1])}–{self.won(v.grid['price'].iloc[0])}")]
         if v.ev_per_share:
-            bl.append(self.T(f"EV/{f.peers.ev_basis} 교차 확인: 주당 {self.won(v.ev_per_share)}(PER 기준 대비 {self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)})",
-                             f"EV/{f.peers.ev_basis} cross-check: {self.won(v.ev_per_share)} per share ({self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)} vs P/E)"))
+            bl.append(self.T(f"EV/{f.peers.ev_basis} 참고: 주당 {self.won(v.ev_per_share)}(PER 기준 대비 {self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)}) — 국내 부분은 PER과 같은 구성, 차이는 해외 피어",
+                             f"EV/{f.peers.ev_basis} reference: {self.won(v.ev_per_share)} per share ({self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)} vs P/E) — the Korean part mirrors P/E; the gap is U.S. peers"))
         return BigBox(self.won(v.per_share["current"]),
                       self.T("주당 평가가액 (현재 배수, 공모 후 주식수)", "Value per share (current multiple, post-IPO shares)"),
                       self.T(f"평가가액 {self.won(v.per_share['current'])} → 희망공모가 {self.band_text()} ({self.band_basis()})",
@@ -405,7 +409,10 @@ class Story:
                              f"{self.pct(top, 0)} of H2 2025 IPOs priced at the top (FSS release via Money Today) — the discount is set when the range is designed"))
         return BigBox(f"{dp.required[0.5] * 100:.0f}~{dp.required[0.25] * 100:.0f}%" if self.kr else f"{dp.required[0.5] * 100:.0f}–{dp.required[0.25] * 100:.0f}%",
                       self.T("이중 고점 반영 필요 할인율 (1년 후 가치 P50 · P25)", "Required discount with a double peak (1-yr value P50 · P25)"),
-                      (self.T(f"이중 고점의 값: 할인율 {dp.required[0.5] * 100:.0f}% 이상 — 10~40% 시나리오 밖, 할인율만으로는 덮이지 않는다",
+                      (self.T(f"이중 고점의 값: {self.floor_text()} — 이중 고점 위험은 이 가정이 좌우",
+                              f"The price of a double peak: {self.floor_text()} — the double-peak risk hinges on this assumption")
+                       if self.f.dp_floor_alt else
+                       self.T(f"이중 고점의 값: 할인율 {dp.required[0.5] * 100:.0f}% 이상 — 10~40% 시나리오 밖, 할인율만으로는 덮이지 않는다",
                               f"The price of a double peak: {dp.required[0.5] * 100:.0f}%+ — outside the 10–40% grid; a discount alone does not cover it")
                        if not self.dp_covered() else
                        self.T(f"이중 고점의 값: 할인율 {dp.required[0.5] * 100:.0f}~{dp.required[0.25] * 100:.0f}% — 배수만 본 할인율보다 {(dp.required[0.5] - mc.required[0.5]) * 100:.0f}%p 더",
@@ -842,9 +849,9 @@ class Story:
         basis = f.peers.ev_basis
         v = f.val if ok(f.val) else None
         diff = (v.ev_per_share / v.per_share["current"] - 1) if v is not None and v.ev_per_share else None
-        c4 = Cell(title=(self.T(f"EV/{basis} {self.x(mu.ev_applied)}(보조) — 같은 Target에 적용하면 평가가액이 PER 기준보다 {self.pct(diff, 0, True)}",
-                                f"EV/{basis} {self.x(mu.ev_applied)} (secondary) — applied to Target, value is {self.pct(diff, 0, True)} vs P/E")
-                         if diff is not None else self.T(f"EV/{basis} {self.x(mu.ev_applied)} (보조)", f"EV/{basis} {self.x(mu.ev_applied)} (secondary)")),
+        c4 = Cell(title=(self.T(f"EV/{basis} {self.x(mu.ev_applied)}(참고) — Target에 적용하면 PER 기준보다 {self.pct(diff, 0, True)}, 단 독립 근거는 아니다",
+                                f"EV/{basis} {self.x(mu.ev_applied)} (reference) — applied to Target, {self.pct(diff, 0, True)} vs P/E, but not an independent check")
+                         if diff is not None else self.T(f"EV/{basis} {self.x(mu.ev_applied)} (참고)", f"EV/{basis} {self.x(mu.ev_applied)} (reference)")),
                   src=["dart", "krx", "sec"],
                   table=TableSpec([self.T("회사", "Company"), "EV", basis, self.T("배수", "Multiple"), self.T("처리", "Treatment")], erows,
                                   [0.26, 0.22, 0.2, 0.13, 0.19], ["L", "R", "R", "R", "L"], font_size=8.0),
@@ -1095,6 +1102,49 @@ class Story:
                                 f"Outliers (high > {self.v['ipo_discounts']['outlier_high'] * 100:.0f}% or low < {self.v['ipo_discounts']['outlier_low'] * 100:.0f}%, to check) {s_.n_outlier} — excluding them, medians {mle * 100:.1f}% / {mhe * 100:.1f}%{used}.{short}"))
 
     # --- p7 몬테카를로 -------------------------------------------------------
+    def ev_ref_reason(self) -> str:
+        """EV 교차 확인이 독립 근거가 아닌 이유 (국내 = PER과 같은 구성, 차이 = 해외 EV 피어)."""
+        t = self.f.peers.table
+        cn = [r["company"] if self.kr else r["company_en"] for _, r in t[(t["group"] == "core") & (t["status"] == "applied") & t["evm1"].notna()].iterrows()]
+        basis = self.f.peers.ev_basis
+        return self.T(f"참고(독립 근거 아님): 국내 부분은 Target 이익률·순차입금을 같은 3사 합산에서 가져와 PER 평가와 같은 구성, 차이는 해외 {len(cn)}개사({'·'.join(cn)})의 EV/{basis}에서 나온다",
+                      f"Reference, not independent: the Korean part uses the same 3-name margins and net debt as the P/E value, so the gap comes from {len(cn)} U.S. name(s) ({', '.join(cn)})")
+
+    def margin_sens(self, ticker: str = "010120") -> dict | None:
+        """Target 순이익률을 비교기업 한 곳(기본 LS ELECTRIC, 제품이 가장 가까운 회사)의 FY2025A 순이익률로 바꿨을 때 평가가액·밴드."""
+        from src.analysis import ipo_model as im
+        f = self.f
+        if not (ok(f.val) and ok(f.band) and f.der is not None):
+            return None
+        d = f.der.detail
+        hit = d[d["ticker"] == ticker]
+        a = f.assumptions
+        if hit.empty or a["npm"].value is None or a["band_discount_low"].value is None:
+            return None
+        r = hit.iloc[0]
+        ratio = float(r["npm"]) / float(a["npm"].value)          # 순이익 ∝ 순이익률 (매출·배수·주식수 고정)
+        v1 = f.val.per_share["current"] * ratio
+        tick = float(self.v.get("price_tick") or 0)
+        hi, lo = im.round_price(v1 * (1 - a["band_discount_low"].value), tick), im.round_price(v1 * (1 - a["band_discount_high"].value), tick)
+        chg = (lo + hi) / (f.band.low + f.band.high) - 1
+        top = d.sort_values("npm", ascending=False).iloc[0]
+        en = {str(p["ticker"]).zfill(6): p.get("name_en", p["name"]) for p in self.cfg["peers"]["domestic"]}
+        nm = lambda x: x["company"] if self.kr else en.get(str(x["ticker"]).zfill(6), x["company"])  # noqa: E731
+        return {"company": nm(r), "npm": float(r["npm"]), "value": v1, "low": lo, "high": hi, "chg": chg,
+                "top": nm(top), "top_npm": float(top["npm"])}
+
+    def floor_text(self, short: bool = False) -> str:
+        """이중 고점 순이익률 하한 가정 병기: 'FY2022A면 필요 할인율 중앙값 43.4%, FY2023A(5.2%)면 37.9%'."""
+        dp, alt = self.f.mc_dp, self.f.dp_floor_alt
+        if not ok(dp) or not alt:
+            return ""
+        y0 = alt["fy"] - 1                     # 기준 하한 = 비교 구간 첫해(사이클 바닥)
+        r0, r1 = dp.required[0.5], alt["mc"].required[0.5]
+        if short:
+            return self.T(f"하한 FY{y0}A면 {self.pct(r0)}, FY{alt['fy']}A면 {self.pct(r1)}", f"FY{y0 % 100}A {self.pct(r0)} vs FY{alt['fy'] % 100}A {self.pct(r1)}")
+        return self.T(f"순이익률 하한 FY{y0}A({self.pct(dp.npm_tri[0])})면 필요 할인율 중앙값 {self.pct(r0)}, FY{alt['fy']}A({self.pct(alt['npm_low'])})면 {self.pct(r1)}",
+                      f"with a net-margin floor at FY{y0}A ({self.pct(dp.npm_tri[0])}) the median required discount is {self.pct(r0)}; at FY{alt['fy']}A ({self.pct(alt['npm_low'])}) it is {self.pct(r1)}")
+
     def dp_covered(self) -> bool:
         """이중 고점에서 중앙값 손익분기 할인율이 할인율 시나리오 상단 안에 들어오는지."""
         return ok(self.f.mc_dp) and self.f.mc_dp.required[0.5] <= self.v["discount_grid"][-1]
@@ -1189,6 +1239,11 @@ class Story:
                           self.T("가우스 코퓰라. 추정 데이터 부재 → 기준 독립(중립), 함께 꺾이는 경우는 민감도", "Gaussian copula; no data to estimate → independent base (neutral); joint downturn as sensitivity")])
         else:
             irows.append([self.T("이익률", "Margins"), self.T(f"순이익률 {self.pct(a['npm'].value)} 고정", f"Net margin {self.pct(a['npm'].value)} fixed"), self.T("이중 고점 입력 없음", "No double-peak inputs")])
+        if f.dp_floor_alt:
+            al = f.dp_floor_alt
+            irows.append([self.T("순이익률 하한 민감도", "Net-margin floor sensitivity"),
+                          self.T(f"하한 FY{al['fy']}A {self.pct(al['npm_low'])} → 필요 할인율 중앙값 {self.pct(al['mc'].required[0.5])}", f"Floor FY{al['fy']}A {self.pct(al['npm_low'])} → median {self.pct(al['mc'].required[0.5])}"),
+                          self.T(f"기준 하한 FY{al['fy'] - 1}A {self.pct(dp.npm_tri[0])}(사이클 바닥, 보수적) → {self.pct(dp.required[0.5])}", f"Base floor FY{al['fy'] - 1}A {self.pct(dp.npm_tri[0])} (trough, conservative) → {self.pct(dp.required[0.5])}")])
         irows += [[self.T("시뮬레이션 · seed", "Runs · seed"), f"{mc.n:,} · {mc.seed}", self.T("재현 가능", "Reproducible")],
                   [self.T("밴드 기준", "Range basis"), f"P{a['band_q_low'].value * 100:.0f} · P{a['band_q_high'].value * 100:.0f}", self.T("하단 손실 확률 25% · 상단 50% (저자 판단)", "Low 25% · top 50% loss probability (judgment)")]]
         c4 = Cell(title=self.T("입력: 성장률·배수에 순이익률을 더해 '정점 이익 × 정점 배수'를 함께 흔든다", "Inputs: growth and multiple, plus net margin, so peak earnings and peak multiples move together"),
@@ -1271,6 +1326,9 @@ class Story:
             mc, dp, b, bd = f.mc, f.mc_dp, f.band, f.band_dp
             bl = [self.T(f"현재 기준 밴드 {self.band_text()}(할인율 {self.disc_text()}) vs 이중 고점 반영 {self.won_rng(bd.low, bd.high)}(할인율 {self.bd_text(bd)})",
                          f"Current-basis range {self.band_text()} ({self.disc_text()} discount) vs double-peak {self.won_rng(bd.low, bd.high)} ({self.bd_text(bd)})")]
+            if self.f.dp_floor_alt:
+                bl.append(self.T(f"이익률 하한 가정: {self.floor_text()} — 하한을 바닥(FY2022A)으로 두면 시나리오 상단 {grid[-1] * 100:.0f}%를 넘고, 한 해 뒤로 옮기면 그 안에 들어온다",
+                                 f"Margin-floor assumption: {self.floor_text()} — the cycle trough (FY2022A) puts it above the {grid[-1] * 100:.0f}% grid top; one year later puts it inside"))
             if not self.dp_covered():
                 bl.append(self.T(f"이중 고점의 중앙값 손익분기 할인율 {self.pct(dp.required[0.5], 0)} > 시나리오 상단 {grid[-1] * 100:.0f}% — 할인율 {grid[-1] * 100:.0f}%에서도 1년 후 손실 확률 {self.pct(dp.loss_grid[grid[-1]], 0)}: 할인율만으로는 덮이지 않는다",
                                  f"The double-peak median break-even discount of {self.pct(dp.required[0.5], 0)} exceeds the {grid[-1] * 100:.0f}% grid top — even at {grid[-1] * 100:.0f}% the 1-yr loss probability is {self.pct(dp.loss_grid[grid[-1]], 0)}: a discount alone does not cover it"))
@@ -1284,7 +1342,10 @@ class Story:
                              "Risk the discount cannot carry goes into structure: evidence of margin durability (backlog, long-term contracts), less secondary sale, lock-ups"))
             c4 = Cell(title=self.T("결론: 할인율이 덮는 것은 배수 고점, 이익률 고점은 구조와 공시로", "Conclusion: the discount covers the peak multiple; the peak margin needs structure and disclosure"),
                       bullets=bl, src=["fss", "ksj"], note=self.T("몬테카를로(p7) 계산값 · 공모가 결정 위치는 금융감독원 발표(머니투데이 보도)", "From the Monte Carlo (p7) · pricing positions from an FSS release (via Money Today)"))
-            title = (self.T(f"시사점: 이중 고점은 할인율 {grid[0] * 100:.0f}~{grid[-1] * 100:.0f}%로 덮이지 않는다 — 이익 지속성과 공모 구조가 함께 가야 한다",
+            title = (self.T(f"시사점: 이중 고점 위험은 이익률 하한 가정이 좌우한다({self.floor_text(True)}) — 할인율과 함께 이익 지속성 공시·공모 구조가 가야 한다",
+                            f"Implication: the double-peak risk hinges on the margin floor ({self.floor_text(True)}) — earnings-durability disclosure and deal structure must back the discount")
+                     if self.f.dp_floor_alt else
+                     self.T(f"시사점: 이중 고점은 할인율 {grid[0] * 100:.0f}~{grid[-1] * 100:.0f}%로 덮이지 않는다 — 이익 지속성과 공모 구조가 함께 가야 한다",
                             f"Implication: a double peak (peak earnings × peak multiple) is not covered by a {grid[0] * 100:.0f}–{grid[-1] * 100:.0f}% discount alone — earnings durability and deal structure must do the rest")
                      if not self.dp_covered() else
                      self.T(f"시사점: 이중 고점까지 덮으려면 할인율 {self.pct(dp.required[0.5], 0)} 이상 — 배수만 보는 할인율({self.pct(mc.required[0.5], 0)})은 부족하다",
@@ -1327,10 +1388,17 @@ class Story:
                            self.T(f"PER {self.x(r['per1'], 0)}(FY2025A 지배순이익 {self.eok(r['ni1'])})로 분모 왜곡(R2)이고, 원전·가스터빈 중심이라 배전·UPS와 사업 유사성도 낮다",
                                   f"P/E {self.x(r['per1'], 0)} (NI {self.eok(r['ni1'])}) is a denominator distortion (R2), and its nuclear/gas-turbine mix fits poorly"), "3"])
             qa.append([self.T("왜 PER이 주 지표이고 EV/EBITDA는 보조인가?", "Why P/E first and EV/EBITDA second?"),
-                       self.T(f"공모가는 주주 가치(지배순이익)로 정하고, 순차입금·D&A 데이터가 일부 비어 있다. EV/{f.peers.ev_basis} 교차 확인은 PER 기준 대비 {self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)}"
+                       self.T(f"공모가는 주주 가치(지배순이익)로 정하고, 순차입금·D&A 데이터가 일부 비어 있다. EV/{f.peers.ev_basis}는 PER 기준 대비 {self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)}지만 {self.ev_ref_reason()}"
                               if v.ev_per_share else "공모가는 주주 가치(지배순이익)로 정하고, 순차입금·D&A 데이터가 일부 비어 있다",
-                              f"IPO prices are set on equity value (NI to parent), and net-debt/D&A data are incomplete. The EV/{f.peers.ev_basis} cross-check is {self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)} vs P/E"
+                              f"IPO prices are set on equity value (NI to parent), and net-debt/D&A data are incomplete. EV/{f.peers.ev_basis} is {self.pct(v.ev_per_share / v.per_share['current'] - 1, 0, True)} vs P/E — {self.ev_ref_reason()}"
                               if v.ev_per_share else "IPO prices are set on equity value, and net-debt/D&A data are incomplete"), "4"])
+            ms = self.margin_sens()
+            if ms is not None:
+                qa.append([self.T("Target 이익률을 3사 합산으로 둔 게 맞나?", "Is the 3-name margin right for Target?"),
+                           self.T(f"가장 공격받을 가정이다. 3사 합산 순이익률 {self.pct(self.f.assumptions['npm'].value)}는 {ms['top']}(순이익률 {self.pct(ms['top_npm'])})이 끌어올린 값이다. 제품이 가장 가까운 {ms['company']}의 FY2025A 순이익률 {self.pct(ms['npm'])}를 쓰면 "
+                                  f"주당 평가가액 {self.won(ms['value'])}, 밴드 {self.won_rng(ms['low'], ms['high'])}({self.pct(ms['chg'], 0, True)}) — 배수·할인율·주식수는 그대로",
+                                  f"It is the most contestable input. The 3-name net margin {self.pct(self.f.assumptions['npm'].value)} is lifted by {ms['top']} ({self.pct(ms['top_npm'])}). With the closest product peer's ({ms['company']}) FY2025A margin {self.pct(ms['npm'])}, "
+                                  f"value per share is {self.won(ms['value'])} and the range {self.won_rng(ms['low'], ms['high'])} ({self.pct(ms['chg'], 0, True)}) — multiple, discount and shares unchanged"), "2, 6"])
             held = t[t["status"] == "held"]
             if not held.empty:
                 r = held.iloc[0]
@@ -1366,10 +1434,10 @@ class Story:
                               f"{self.pct(sh.old / sh.offered, 0)} of the offer is secondary ({self.pct(sh.old / sh.post, 1)} of post-IPO). Existing holders' {self.pct(sh.overhang / sh.post, 0)} is overhang once lock-ups end" + self.lockup_fact().replace(". Ref.: ", " — ")), "6"])
         while len(qa) < 8:
             qa.append([self.T("데이터 확인 후 생성", "Generated once data are in"), "—", "—"])
-        qa = qa[:8]
-        cell = Cell(title=self.T("ECM 실무에서 나올 질문 8개와 답", "Eight questions an ECM desk would ask"), src=["dart", "krx", "sec", "fss", "ksj"],
+        qa = qa[:10]
+        cell = Cell(title=self.T(f"ECM 실무에서 나올 질문 {len(qa)}개와 답", f"{len(qa)} questions an ECM desk would ask"), src=["dart", "krx", "sec", "fss", "ksj"],
                     table=TableSpec([self.T("질문", "Question"), self.T("답 (본문 계산값)", "Answer (from the body)"), self.T("쪽", "p.")], qa,
-                                    [0.28, 0.64, 0.08], ["L", "L", "C"], font_size=7.8),
+                                    [0.28, 0.64, 0.08], ["L", "L", "C"], font_size=7.4),
                     note=self.T("답의 숫자는 모두 본문과 같은 계산에서 생성", "All figures in the answers come from the same calculations as the body"))
         return Page("full", "A1", self.T("예상 질의응답: 배수·할인율·구조에 대한 질문", "Q&A: questions on the multiple, the discount and the structure"),
                     self.T("공모 주관 실무(밸류에이션·투자설명서·IR)에서 나올 질문과 근거 쪽수", "Questions likely in deal work (valuation, prospectus, investor meetings), with page references"),

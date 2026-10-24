@@ -978,6 +978,7 @@ class Facts:
     mc_stress: MCFacts | Unavailable = None      # 이중 고점 + 동조 상관 (민감도)
     band_dp: Band | Unavailable = None
     ipo: IPOEvidence | Unavailable = None
+    dp_floor_alt: dict | None = None             # 이중 고점 순이익률 하한 대안 (FY2022A 대신 다음 해) {fy, npm_low, mc, band}
 
 
 def load_facts(cfg: Mapping, as_of: str | None = None) -> Facts:
@@ -995,8 +996,30 @@ def load_facts(cfg: Mapping, as_of: str | None = None) -> Facts:
     band = band_from(cfg, a, val, mc) if ok(val) else Unavailable(val.reason, val.reason_en, val.missing)
     band_dp = band_mc(cfg, a, val, mc_dp) if ok(val) and ok(mc_dp) else Unavailable("이중 고점 몬테카를로 없음", "No double-peak run")
     fx, fd = fx_on(cfg, as_of)
+    alt = dp_floor_alternative(cfg, a, val, mu, der) if ok(mc_dp) else None
     return Facts(as_of, a, dom, ovs, pe, der, mu, val, mc, band, links(cfg, as_of), fx, fd, source_status(cfg, ovs, ev), entity_rows(ovs),
-                 mc_dp, mc_st, band_dp, ev)
+                 mc_dp, mc_st, band_dp, ev, alt)
+
+
+def dp_floor_alternative(cfg: Mapping, a: Mapping[str, Assumption], val, mu, der) -> dict | None:
+    """이중 고점 순이익률 하한 민감도: 기준 = FY2022A(사이클 바닥, 보수적), 대안 = 그다음 해(FY2023A) 3사 합산 순이익률.
+    같은 seed·같은 입력으로 하한만 바꿔 다시 실행 — 결론이 이 가정에 달려 있음을 공개하기 위한 값."""
+    import copy
+    if der is None or not der.hist:
+        return None
+    fy_alt = min(der.hist) + 1
+    if fy_alt not in der.hist:
+        return None
+    lo = float(der.hist[fy_alt]["npm"])
+    if a["npm_mode"].value is None or lo > float(a["npm_mode"].value):
+        return None
+    a2 = dict(a)
+    a2["npm_low"] = copy.copy(a["npm_low"])
+    a2["npm_low"].value = lo
+    m = run_mc(cfg, a2, val, mu, "dp")
+    if not ok(m):
+        return None
+    return {"fy": fy_alt, "npm_low": lo, "mc": m, "band": band_mc(cfg, a2, val, m)}
 
 
 def table_keys(a: Mapping[str, Assumption]) -> list[str]:

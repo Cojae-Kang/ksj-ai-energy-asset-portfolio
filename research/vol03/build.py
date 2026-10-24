@@ -313,6 +313,37 @@ def todo_items(f: data.Facts, cfg: Mapping) -> list[str]:
     return out
 
 
+def tri_median(lo: float, mode: float, hi: float) -> float:
+    """삼각분포 중앙값 (손계산 검산용)."""
+    if hi <= lo:
+        return lo
+    if (mode - lo) / (hi - lo) >= 0.5:
+        return lo + math.sqrt(0.5 * (hi - lo) * (mode - lo))
+    return hi - math.sqrt(0.5 * (hi - lo) * (hi - mode))
+
+
+def floor_section(f) -> list[str]:
+    """이중 고점 순이익률 하한 가정 두 값(코드 재현) + 손계산 근사 검산."""
+    dp, alt = f.mc_dp, f.dp_floor_alt
+    if not data.ok(dp) or not alt:
+        return []
+    v0, ni, sh = f.val.per_share["current"], f.val.ni, f.val.shares.post
+    g_med = math.exp(dp.mu)                                   # 1년 후 성장 배수 중앙값 = e^μ (로그정규)
+    per_med = tri_median(*dp.per_tri)
+    npm_base = f.val.ni / f.val.rev
+    rows = []
+    for lab, m in ((f"FY{alt['fy'] - 1}A (기준·사이클 바닥)", dp), (f"FY{alt['fy']}A (대안)", alt["mc"])):
+        lo, mo, hi = m.npm_tri
+        nm = tri_median(lo, mo, hi)
+        approx = ni * g_med * (nm / npm_base) * per_med * 1e8 / sh
+        rows.append({"순이익률 하한": lab, "삼각분포(최소·최빈·최대)": f"{lo * 100:.2f}% · {mo * 100:.2f}% · {hi * 100:.2f}%",
+                     "필요 할인율 P50 (모델)": f"{m.required[0.5] * 100:.1f}%", "P25 (모델)": f"{m.required[0.25] * 100:.1f}%",
+                     "손계산 근사 P50 가치": f"{approx:,.0f}원", "손계산 필요 할인율": f"{(1 - approx / v0) * 100:.1f}%"})
+    return ["", "### 이중 고점: 순이익률 하한 가정이 결론을 좌우 (같은 seed·같은 입력, 하한만 변경)", "", markdown_table(rows), "",
+            f"- 손계산 근사 = 지배순이익 {ni:,.2f}억원 × 성장 중앙값 e^μ {g_med:.3f} × (순이익률 삼각분포 중앙값 ÷ 현재 {npm_base * 100:.2f}%) × PER 삼각분포 중앙값 {per_med:.2f}배 ÷ 공모 후 {sh:,.0f}주 "
+            f"— 중앙값끼리 곱한 근사라 모델(결합분포의 중앙값)과 1%p 안팎 차이. 주당 평가가액 {v0:,.0f}원"]
+
+
 def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
     f: data.Facts = r["facts"]
     L = ["# Vol.3 빌드 요약\n", f"- 기준일: {as_of} · 빌드(UTC): {utc_now_iso()}", f"- 폰트: {r['fonts']}",
@@ -408,6 +439,7 @@ def write_summary(path: Path, r: dict, as_of: str, cfg: Mapping) -> None:
     else:
         L += [f"- 미수집 — {ev_cmd(f)}"]
     L += ["", "### 검산 (배수·단위·환율·공모 구조·재현)", "", markdown_table(checks(f, cfg)) if checks(f, cfg) else "- 계산 보류"]
+    L += floor_section(f)
     L += ["", "## 산출물", ""] + [f"- `{p.name}` — {r['pages'][lang]}쪽 (960×720pt, 4:3)" for lang, p in r["pdfs"].items()]
     L += [f"- `figures/{p.name}`" for p in r.get("figures", [])]
     rw = [f"{lang}: {w}" for lang, ws in r.get("render_warnings", {}).items() for w in ws]

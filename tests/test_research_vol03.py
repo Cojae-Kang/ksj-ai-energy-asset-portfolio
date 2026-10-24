@@ -800,3 +800,23 @@ def test_ipo_evidence_uses_definitional_discount(real_cfg):
     t.to_csv(real_cfg["research"]["vol03"]["inputs"]["ipo_discounts"], index=False)
     ev = D.ipo_evidence(real_cfg)
     assert ev.full.n == 12 and ev.full.n_outlier == 0                   # 정의값이면 범위(10~50%) 안
+
+
+def test_vol03_margin_floor_alternative_and_target_margin_sensitivity():
+    """이중 고점 순이익률 하한: 기준 FY2022A vs 대안 FY2023A를 같은 seed로 재현(하한만 다름), 하한↑ → 필요 할인율↓.
+    Target 순이익률을 LS ELECTRIC FY2025A로 바꾸면 평가가액은 순이익률 비율만큼 비례 축소."""
+    from src.data_fetch.base import load_config
+    from research.vol03 import data as D
+    from research.vol03.story import Story
+    cfg = load_config()
+    f = D.load_facts(cfg)
+    dp, alt = f.mc_dp, f.dp_floor_alt
+    assert alt is not None and alt["fy"] == min(f.der.hist) + 1
+    assert alt["npm_low"] == pytest.approx(f.der.hist[alt["fy"]]["npm"])
+    assert alt["mc"].npm_tri[1:] == dp.npm_tri[1:] and alt["mc"].seed == dp.seed and alt["npm_low"] > dp.npm_tri[0]
+    assert alt["mc"].required[0.5] < dp.required[0.5]
+    assert dp.required[0.5] == pytest.approx(0.434, abs=0.003) and alt["mc"].required[0.5] == pytest.approx(0.379, abs=0.003)
+    ms = Story(cfg, f, "kr").margin_sens()
+    assert ms is not None and ms["company"] == "LS ELECTRIC"
+    assert ms["value"] == pytest.approx(f.val.per_share["current"] * ms["npm"] / f.assumptions["npm"].value)
+    assert ms["chg"] == pytest.approx(-0.44, abs=0.01)                                  # 밴드 −44%
