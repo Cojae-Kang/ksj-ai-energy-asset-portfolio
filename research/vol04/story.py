@@ -197,6 +197,28 @@ class Story:
         nm = {"energy": self.T("에너지요금", "energy rate"), "fuel": self.T("연료비조정", "fuel adjustment"), "climate": self.T("기후환경요금", "climate charge")}
         return " + ".join(nm[k] for k, v in self.tc["stages"] if v is not None)
 
+    def climate_text(self) -> str:
+        """기후환경요금 반영 상태 (값이 있으면 단가·출처, 없으면 원문 대기)."""
+        v = self.stage_val("climate")
+        if v is None:
+            return self.T("기후환경요금은 원문 대기로 미포함", "climate charge pending and excluded")
+        x = self.f.inputs["climate_env"]
+        return self.T(f"기후환경요금 {float(x.value):,.1f}원(한전ON, {x.published} 적용, 공식 원문)", f"climate charge {float(x.value):,.1f} (KEPCO ON, effective {x.published}, official)")
+
+    def net_basis_note(self) -> str:
+        """공개 사례 부대비용과 구매자 상한이 같은 기준인지 — 내역에 기후환경요금이 따로 있는지, 확인 못한 부분은 TODO."""
+        import re
+        src = self.f.inputs["net_charge_example"].source
+        m = re.search(r"\(([^()]*송배전[^()]*)\)", src)
+        items = m.group(1) if m else ""
+        cv = self.stage_val("climate")
+        ad = float(self.tc["adder"])
+        kr = (f" 공개 사례 {self.net_ex():.0f}원 내역({items})에 기후환경요금 항목은 따로 없다 — '기타'의 구성과 직접 PPA 구매자가 PPA 전력량에 kWh당 추가 요금을 내는지는 원문 대조 전(TODO)."
+              + (f" 낸다면 상한에서 {ad:,.1f}원을 빼야 같은 기준" if ad > 0 else ""))
+        en = (f" The ~{self.net_ex():.0f} public example ({items}) lists no separate climate charge — what 'other' covers and whether a direct-PPA buyer still pays per-kWh add-ons on PPA volume are unchecked (TODO)."
+              + (f" If so, {ad:,.1f} comes off the ceiling for a like-for-like comparison" if ad > 0 else ""))
+        return self.T(kr, en) if (cv is not None or ad > 0) else ""
+
     def verdict(self) -> str:
         """'none' = 망이용료 0원이어도 손해(스프레드 0에서도 여유 음수) · 'charges' = 여유는 있으나 공개 사례 망이용료보다 작음 · 'ok'."""
         best = self.prem_rng()[0]["max_fee"]
@@ -235,8 +257,8 @@ class Story:
         return self.prem_rng()[0]["max_fee"] < 0
 
     def wtp_need(self, p: dict, charge: float) -> float:
-        """PPA 성립에 필요한 구매자 추가 지불(RE100 가치 등) = 필요 가격 + 부대비용 − 회피 요금 (원/kWh)."""
-        return p["price"] + charge - self.f.corridor[1]
+        """PPA 성립에 필요한 구매자 추가 지불(RE100 가치 등) = 필요 가격 + 부대비용 − 회피 요금 (원/kWh). 음수면 0(추가 지불 불필요)."""
+        return max(0.0, p["price"] + charge - self.f.corridor[1])
 
     def headline(self) -> str:
         lo, hi = self.prem_rng()
@@ -464,9 +486,9 @@ class Story:
                   chart_key="corridor",
                   chart=charts.corridor(pts, [("LCOE", lc.low, lc.high, c["warm_grey_light"], 0.45)], c, lambda v: f"{v:,.1f}", (80, 200),
                                         gap=None),
-                  note=self.T(f"한전 계약가 = 2026년 1차 입찰 상한(2027년 계약시장 가격 대리값). 구매자 상한 3단 = {self.stage_text()} — 에너지요금은 산업용(을) {self.contract()} 개편 후 전력량요금을 태양광 발전 시간에 맞춰 2025년 월별 발전량으로 가중(기본요금 제외, 하루 발전 형상은 저자 판단), 연료비조정은 2026년 4분기 단가(보도, B). 평균 판매단가는 참고선. 공개 사례 = 2021년 제3자 PPA 시뮬레이션. LCOE = 2024년 국내 범위"
+                  note=self.T(f"한전 계약가 = 2026년 1차 입찰 상한(2027년 계약시장 가격 대리값). 구매자 상한 3단 = {self.stage_text()} — 에너지요금은 산업용(을) {self.contract()} 개편 후 전력량요금을 태양광 발전 시간에 맞춰 2025년 월별 발전량으로 가중(기본요금 제외, 하루 발전 형상은 저자 판단), 연료비조정은 2026년 4분기 단가(보도, B), {self.climate_text()}. 평균 판매단가는 참고선. 공개 사례 = 2021년 제3자 PPA 시뮬레이션. LCOE = 2024년 국내 범위." + self.net_basis_note()
                               + self.prov_note(["solar_shape_p", "tou_saturday", "fuel_adj", "climate_env"]),
-                              f"KEPCO price = 2026 round-1 cap (proxy for 2027). Buyer ceiling, 3 stages = {self.stage_text()} — energy = post-reform industrial (B) {self.contract()} rates in solar hours, weighted by 2025 monthly output (no demand charge; daily shape is a judgement); fuel adjustment = Q4 2026 rate (press report, B). Average tariff = reference only. Public example = 2021 third-party PPA simulation. LCOE = 2024 Korean range"
+                              f"KEPCO price = 2026 round-1 cap (proxy for 2027). Buyer ceiling, 3 stages = {self.stage_text()} — energy = post-reform industrial (B) {self.contract()} rates in solar hours, weighted by 2025 monthly output (no demand charge; daily shape is a judgement); fuel adjustment = Q4 2026 rate (press report, B); {self.climate_text()}. Average tariff = reference only. Public example = 2021 third-party PPA simulation. LCOE = 2024 Korean range." + self.net_basis_note()
                               + self.prov_note(["solar_shape_p", "tou_saturday", "fuel_adj", "climate_env"])))
         G = TIER_KR if self.kr else TIER_EN
         I = f.inputs
@@ -499,7 +521,7 @@ class Story:
                   src=["mcee", "tou", "kepco", "keei", "smp", "kpx", "sfoc"],
                   table=TableSpec([self.T("항목 (원/kWh)", "Item (KRW/kWh)"), self.T("값 (범위)", "Value (range)"), self.T("신뢰 등급", "Grade"), self.T("발표", "Published")],
                                   rows, [0.44, 0.20, 0.20, 0.16], ["L", "R", "C", "C"], gold_cells=gold_, brick_cells=brick_, font_size=8.0),
-                  note=self.T("회피 요금 = 공식 요금표(2026-03-13)·2025년 월별 발전량(공식)에 저자 판단 하루 형상 적용(괄호 = 형상 민감도) + 연료비조정요금(보도) · 기후환경요금은 원문 대기 · 평균 판매단가 = 2025년 산업용 판매수입 ÷ 판매전력량(참고) · SMP = 2025-09~2026-08 월별 육지 가중평균의 평균(시간별 10~16시 평균으로 교차 확인)",
+                  note=self.T(f"회피 요금 = 공식 요금표(2026-03-13)·2025년 월별 발전량(공식)에 저자 판단 하루 형상 적용(괄호 = 형상 민감도) + 연료비조정요금(보도) + " + self.climate_text() + " · 평균 판매단가 = 2025년 산업용 판매수입 ÷ 판매전력량(참고) · SMP = 2025-09~2026-08 월별 육지 가중평균의 평균(시간별 10~16시 평균으로 교차 확인)",
                               "Saving = official tariff (13 Mar 2026) and 2025 monthly output (official) with a judgement daily shape (range = shape sensitivity) · Average tariff = 2025 industrial revenue ÷ volume (reference) · SMP = mean of monthly mainland SMP, Sep 2025–Aug 2026 (cross-checked with 10:00–16:00 hourly)"))
         fx = self.fx()
         us = f.us
@@ -544,8 +566,8 @@ class Story:
         ey = int(f.V("exit_year"))
         top_h = max(R, key=lambda k: irr[k] or -9)
         top_s = max(R, key=lambda k: f.exit[k][0] if f.exit[k][0] is not None else -9)
-        lead = (self.T(f"{self.route(top_h, True)}이 두 방식 모두 가장 높다", f"{self.route(top_h, True)} leads either way") if top_h == top_s else
-                self.T(f"보유는 {self.route(top_h, True)}, 매각은 {self.route(top_s, True)}이 가장 높다", f"{self.route(top_h, True)} leads on hold, {self.route(top_s, True)} on sale"))
+        lead = (self.T(f"{self.route(top_h, True)}가 두 방식 모두 가장 높다", f"{self.route(top_h, True)} leads either way") if top_h == top_s else
+                self.T(f"보유는 {self.route(top_h, True)}, 매각은 {self.route(top_s, True)}가 가장 높다", f"{self.route(top_h, True)} leads on hold, {self.route(top_s, True)} on sale"))
         c1 = Cell(title=self.T(f"지분 IRR: 보유(25년) vs {ey}년 차 매각 — ", f"Equity IRR: hold (25 yrs) vs sale in year {ey} — ") + lead,
                   src=["ksj"], unit="%", legend=[(c["gold"], self.T("보유", "Hold")), (c["brown_mid"], self.T(f"{ey}년 차 매각", f"Sale in yr {ey}"))],
                   chart_key="irr",
@@ -671,8 +693,11 @@ class Story:
         vd = self.verdict()
         c4 = Cell(title={"none": self.T("협상의 결론: 태양광 시간대 요금으로는 PPA 가격부터 맞지 않는다 — 성패는 구매자가 RE100 가치를 얼마나 쳐주느냐",
                                         "The negotiation: on solar-hour rates the price itself does not close — it turns on what the buyer pays for RE100 value"),
-                         "charges": self.T("협상의 결론: 가격은 위험 스프레드가 작을 때만 간신히 맞고, 망이용료를 내면 성립하지 않는다 — 성패는 구매자의 RE100 지불의사",
-                                           "The negotiation: the price only just works at a low risk spread and fails once network charges are paid — it turns on the buyer's RE100 willingness to pay"),
+                         "charges": (self.T(f"협상의 결론: 가격은 맞출 수 있지만(여유 {self.room_rng(hi_p['max_fee'], lo_p['max_fee'], 0)}) 망이용료(공개 사례 {net:.0f}원, B)를 내면 성립하지 않는다 — 성패는 구매자의 RE100 지불의사",
+                                            f"The negotiation: the price can be agreed (room {self.room_rng(hi_p['max_fee'], lo_p['max_fee'], 0)}) but fails once network charges (~{net:.0f} public example, B) are paid — it turns on the buyer's RE100 willingness to pay")
+                                     if hi_p["max_fee"] >= 0 else
+                                     self.T("협상의 결론: 가격은 위험 스프레드가 작을 때만 간신히 맞고, 망이용료를 내면 성립하지 않는다 — 성패는 구매자의 RE100 지불의사",
+                                            "The negotiation: the price only just works at a low risk spread and fails once network charges are paid — it turns on the buyer's RE100 willingness to pay")),
                          "ok": self.T("협상의 결론: 가격은 맞출 수 있다 — 거래의 성패는 부대비용과 구매자 상한의 정확한 계산",
                                       "The negotiation: price can be agreed — the deal turns on the charges and the buyer's true ceiling")}[vd],
                   src=["survey", "tou", "ksj"], panel_lead=self.T("IC가 물을 질문", "What the IC will ask"),
@@ -688,8 +713,8 @@ class Story:
             t5 = self.T(f"PPA 협상: 발전사는 한전 계약 +{lo_p['premium']:.0f}~{hi_p['premium']:.0f}원이 필요한데 데이터센터가 아끼는 요금은 +{hi - lo:,.1f}원뿐 — 망이용료 전 여유가 {self.room_rng(hi_p['max_fee'], lo_p['max_fee'])}",
                         f"PPA negotiation: the seller needs +{lo_p['premium']:.0f}–{hi_p['premium']:.0f} over KEPCO, the buyer saves only +{hi - lo:,.1f} — room before charges is {self.room_rng(hi_p['max_fee'], lo_p['max_fee'])}")
         else:
-            t5 = self.T(f"PPA 협상: 발전사는 +{lo_p['premium']:.0f}~{hi_p['premium']:.0f}원이면 되지만, 데이터센터 여유 {self.room_rng(hi_p['max_fee'], lo_p['max_fee'], 0)}은 공개 사례 부대비용 {net:.0f}원보다 작다",
-                        f"PPA negotiation: the seller needs +{lo_p['premium']:.0f}–{hi_p['premium']:.0f}, but the buyer's {self.room_rng(hi_p['max_fee'], lo_p['max_fee'], 0)} room is below the {net:.0f} public example")
+            t5 = self.T(f"PPA 협상: 발전사는 +{lo_p['premium']:.0f}~{hi_p['premium']:.0f}원이면 되지만, 데이터센터 여유 {self.room_rng(hi_p['max_fee'], lo_p['max_fee'], 0)}은 공개 사례 부대비용 {net:.0f}원(B)보다 작다",
+                        f"PPA negotiation: the seller needs +{lo_p['premium']:.0f}–{hi_p['premium']:.0f}, but the buyer's {self.room_rng(hi_p['max_fee'], lo_p['max_fee'], 0)} room is below the {net:.0f} public example (B)")
         return Page("body", "5", t5,
                     self.T("PPA 가격별 IRR → 해지 확률 × 위험 스프레드별 필요 가격(NPV) → 계절별 구매자 회피 요금 → 성립 조건", "IRR by price → required price by termination × spread (NPV) → buyer's seasonal saving → what it takes to close"),
                     [c1, c2, c3, c4])
@@ -849,8 +874,8 @@ class Story:
         c3 = Cell(title=self.T("이 노트의 한계", "Limits of this note"), src=["ksj"], panel_lead="", bullets=[
             self.T(f"사업비: 2022년 실제 설치비(kW당 {f.V('capex_per_kw'):,.0f}천원)로 계산한 LCOE {f.lcoe_check['actual_lcoe']:.0f}원이 에너지경제연구원 LCOE {f.lcoe_check['keei'][0]:.0f}~{f.lcoe_check['keei'][1]:.0f}원보다 낮다 — 보수적으로 LCOE 쪽에 맞춤",
                    f"CAPEX: 2022 actual installed cost (KRW {f.V('capex_per_kw'):,.0f}k/kW) implies an LCOE of {f.lcoe_check['actual_lcoe']:.0f}, below KEEI's {f.lcoe_check['keei'][0]:.0f}–{f.lcoe_check['keei'][1]:.0f} — matched to the LCOE to stay conservative"),
-            self.T(f"구매자 상한 = 태양광 시간대 에너지요금({self.contract()}) + 연료비조정(2026년 4분기 단가, 보도 B, 분기마다 변동): 하루 발전 형상·토요일·공휴일 규칙은 저자 판단, 기후환경요금은 원문 대기로 미포함, 봄·가을 주말 할인은 2030년 말까지(끝나면 +{self.tc['sens']['no_discount'] - self.stage_val('energy'):,.1f}원) · RE100 가치·요금 인상 미반영",
-                   f"Buyer ceiling = solar-hour energy rate ({self.contract()}) + fuel adjustment (Q4 2026, press report B, changes quarterly): daily shape and Saturday/holiday rules are judgements, climate charge pending and excluded, weekend discount ends 2030 (+{self.tc['sens']['no_discount'] - self.stage_val('energy'):,.1f} after) · no RE100 value or tariff rises"),
+            self.T(f"구매자 상한 = 태양광 시간대 에너지요금({self.contract()}) + 연료비조정(2026년 4분기 단가, 보도 B, 분기마다 변동): 하루 발전 형상·토요일·공휴일 규칙은 저자 판단, {self.climate_text()}, 봄·가을 주말 할인은 2030년 말까지(끝나면 +{self.tc['sens']['no_discount'] - self.stage_val('energy'):,.1f}원) · RE100 가치·요금 인상 미반영",
+                   f"Buyer ceiling = solar-hour energy rate ({self.contract()}) + fuel adjustment (Q4 2026, press report B, changes quarterly): daily shape and Saturday/holiday rules are judgements, {self.climate_text()}, weekend discount ends 2030 (+{self.tc['sens']['no_discount'] - self.stage_val('energy'):,.1f} after) · no RE100 value or tariff rises"),
             self.T(f"발전량 전부를 데이터센터가 쓰도록 용량을 {f.asset.mw:,.0f}MW로 맞춤 — 24시간 공급(형상) 위험·ESS·출력제한은 제외", f"Plant sized at {f.asset.mw:,.0f} MW so all output is used — 24/7 shape risk, storage and curtailment left out"),
             self.T("대출 조건(DSCR·대출 비율·만기)·해지 확률·위험 스프레드는 공개 근거가 없는 저자 판단 — 격자와 민감도로 공개", "Debt terms, termination rate and risk spread are unsourced judgements — shown as grids and sensitivities")])
         c4 = Cell(title=self.T("Vol.5 예고 (완결): AI 에너지 자산 투자 지도", "Next, Vol.5 (finale): an AI energy asset investment map"), src=["ksj"],
@@ -983,7 +1008,8 @@ class Story:
         ad = float(t["adder"])
         rp = lambda x: self.sg(x - p1["price"], 1, True) if x is not None else "TODO"  # noqa: E731
         stage_lab = {"energy": self.T("① 에너지요금만", "① Energy rate only"), "fuel": self.T("② + 연료비조정(보도 B)", "② + fuel adjustment (press B)"),
-                     "climate": self.T("③ + 기후환경요금(원문 대기)", "③ + climate charge (pending)")}
+                     "climate": self.T("③ + 기후환경요금" + ("(한전ON, 공식 원문)" if self.stage_val("climate") is not None else "(원문 대기)"),
+                                       "③ + climate charge" + (" (KEPCO ON, official)" if self.stage_val("climate") is not None else " (pending)"))}
         srows = [[stage_lab[k], f"{v:,.1f}" if v is not None else "TODO", rp(v)] for k, v in t["stages"]]
         nst = len(srows)
         srows += [[self.T(f"하루 발전 형상 p = {p:g}", f"Daily shape p = {p:g}"), f"{x + ad:,.1f}", rp(x + ad)]
@@ -998,9 +1024,9 @@ class Story:
                                    self.T(f"망이용료 여유 (필요 PPA {p1['price']:,.1f} 대비)", f"Room (vs required {p1['price']:,.1f})")],
                                   srows, [0.56, 0.22, 0.22], ["L", "R", "R"], shade_rows=set(range(nst)), gold_cells={(base_row, 1)}, font_size=7.4),
                   note=self.T(f"①~③ = 기준 가정(고압A 선택Ⅱ · 형상 p = {f.V('solar_shape_p'):g} · 토요일 평일 시간대)에서 kWh당 추가 요금을 차례로 더한 값, 골드 = 보고서 상한. 아래 민감도는 확보된 추가 요금({ad:,.1f}원)을 포함하고 한 번에 한 가정만 바꿈. "
-                              f"필요 PPA = 연 해지 {self.pct(self.mc_h, 0)}·스프레드 0",
+                              f"필요 PPA = 연 해지 {self.pct(self.mc_h, 0)}·스프레드 0." + self.net_basis_note(),
                               f"①–③ = base assumptions (HV-A option II · shape p = {f.V('solar_shape_p'):g} · Saturday as weekday) adding per-kWh charges in turn; gold = the ceiling used. Sensitivities below include the add-ons in hand ({ad:,.1f}) and change one assumption at a time. "
-                              f"Required PPA at {self.pct(self.mc_h, 0)} termination, no spread"))
+                              f"Required PPA at {self.pct(self.mc_h, 0)} termination, no spread." + self.net_basis_note()))
         return Page("full", "A4", self.T("데이터 노트: 공신력 원칙 — 공식 원문 우선, 나머지는 교체 대기로 표시", "Data notes: official sources first; everything else flagged for replacement"),
                     self.T(f"기준일 {f.as_of} · 국고채 3년 {self.pct(f.ktb, 2)}({f.ktb_date}) · 모델: 연 단위 명목, 금액 억원, 가격 원/kWh",
                            f"As of {f.as_of} · KTB 3-yr {self.pct(f.ktb, 2)} ({f.ktb_date}) · annual nominal model, KRW 100mn, KRW/kWh"), [c1, c2], grid="2x1")

@@ -114,7 +114,9 @@ def tou_section(f: data.Facts) -> list[str]:
          "- 월 가중치: 한전 전력통계월보 제566호 시트 '16-1.태양광 발전량 추계정보' 2025년 월별(시장+한전PPA+자가용)",
          "- 요일: 2025년 달력. 평일 = 시간대 구분표, 일요일 = 전 시간 경부하, 토요일 = 평일 시간대(J), 봄·가을 토·일 11~14시 50% 할인. 평일 공휴일 미반영(TODO)",
          "- 하루 형상: max(cos 천정각, 0)^p (Spencer 1971, 북위 36°·동경 127°) — 저자 판단(J)",
-         "- kWh당 추가 요금: 연료비조정 = 입력 fuel_adj(B, 보도) · 기후환경 = 입력 climate_env(원문 대기 → 미포함, TODO)", ""]
+         f"- kWh당 추가 요금: 연료비조정 = 입력 fuel_adj {f.inputs['fuel_adj'].value}원(B, 보도) · 기후환경 = 입력 climate_env "
+         + (f"{f.inputs['climate_env'].value}원(A, 한전ON {f.inputs['climate_env'].published} 적용)" if isinstance(f.inputs['climate_env'].value, (int, float)) else "(원문 대기 → 미포함, TODO)"),
+         "- 공개 사례 망이용료 40원(B) 비교 기준: 입력 파일의 내역에 기후환경요금 항목 없음 — '기타' 구성·직접 PPA 구매자의 kWh당 추가 요금 부과 여부는 원문 대조 전(TODO)", ""]
     # 3단 상한 × 단계별 망이용료 여유 (스프레드 0, 해지 확률별)
     nm = {"energy": "① 에너지요금만", "fuel": "② + 연료비조정", "climate": "③ + 기후환경"}
     L += ["#### 구매자 상한 3단과 망이용료 여유 (위험 스프레드 0)", "",
