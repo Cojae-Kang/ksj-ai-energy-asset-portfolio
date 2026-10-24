@@ -59,7 +59,7 @@ class PFInputs:
     base_rate_term: float
     margin: float
     target_dscr: float
-    max_gearing: float                 # 대출 ÷ 총사업비(CAPEX + IDC + 초기 DSRA)
+    max_gearing: float                 # 대출 상한 비율 — 분모는 gearing_basis (기본: 총사업비 CAPEX + IDC + 초기 DSRA + 유보계좌)
     tenor_years: int                   # COD부터 만기까지 (거치 포함)
     grace_years: int                   # COD 이후 원금 거치(이자만)
     dsra_months: float
@@ -79,6 +79,7 @@ class PFInputs:
     lease_term_years: int | None = None   # 사전 임대 계약 기간 (None = 운영기간 전체)
     tax_brackets: tuple | None = None  # 누진세율 ((상한, 세율), …) 금액 단위 기준, 마지막 상한 = inf
     tax_surcharge: float = 0.0         # 국세 대비 부가세율 (한국 지방소득세 = 0.10)
+    gearing_basis: str = "total"       # 최대 대출 비율의 분모: total(총사업비) | ex_financing(금융비용 IDC·이자유보계좌 제외 = CAPEX + 초기 DSRA)
 
     def __post_init__(self):
         if self.construction_quarters < 1 or self.operating_years < 1 or self.tenor_years < 1:
@@ -93,6 +94,8 @@ class PFInputs:
             raise ValueError("grace_interest = paid | capitalized | reserve")
         if self.sizing_basis not in ("total", "contracted"):
             raise ValueError("sizing_basis = total | contracted")
+        if self.gearing_basis not in ("total", "ex_financing"):
+            raise ValueError("gearing_basis = total | ex_financing")
 
     @property
     def kw(self) -> float:
@@ -404,7 +407,14 @@ class PFResult:
 
     @property
     def gearing(self) -> float:
+        """대출 ÷ 총사업비(CAPEX + IDC + DSRA + 유보계좌)."""
         return self.debt / self.cons.uses if self.cons.uses else float("nan")
+
+    @property
+    def gearing_cap_basis(self) -> float:
+        """대출 ÷ 최대 대출 비율의 분모(inp.gearing_basis) — 상한이 구속하면 max_gearing과 같다."""
+        base = self.cons.uses if self.inp.gearing_basis == "total" else self.cons.capex + self.cons.dsra_initial
+        return self.debt / base if base else float("nan")
 
     @property
     def debt_per_mw(self) -> float:
@@ -515,8 +525,10 @@ def run(inp: PFInputs, st: Stress = BASE, fixed: PFResult | None = None, max_ite
             cf = _cfads(inp, ops, dep, interest, size_col)
             sculpt_debt, ds_s = sculpt(cf, rate, inp.target_dscr, tenor, grace, inp.grace_interest)
             # 최대 대출 비율 한도: 조달 비율 = max_gearing일 때의 대출 총액 (초기 DSRA·유보계좌는 직전 반복값)
-            cons_g = construction(inp, st, inp.max_gearing, dsra0, res0)
-            gearing_debt = cons_g.debt
+            if inp.gearing_basis == "total":
+                gearing_debt = construction(inp, st, inp.max_gearing, dsra0, res0).debt
+            else:   # 금융비용(IDC·이자유보계좌) 제외 사업비 = CAPEX + 초기 DSRA
+                gearing_debt = inp.max_gearing * (construction(inp, st, 0.0, dsra0, res0).capex + dsra0)
             new_debt = min(sculpt_debt, gearing_debt)
             ds = ds_s * (new_debt / sculpt_debt) if sculpt_debt > 0 else np.zeros(tenor)
             dsra_new = inp.dsra_months / 12 * (ds[0] if tenor else 0.0)

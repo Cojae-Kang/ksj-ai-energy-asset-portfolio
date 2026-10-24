@@ -374,3 +374,23 @@ def test_irr_ex_terminal_value():
     r0 = pf.run(BASE_INP)                                                  # 잔존가치 없음 → 같은 값
     assert r0.terminal_value == 0 and r0.equity_irr_ex_tv == r0.equity_irr
     assert r0.project_irr_ex_tv == pytest.approx(pf.run(replace(VARIANTS["exit_value"], exit_cap_rate=None)).project_irr)
+
+
+def test_gearing_basis_ex_financing_vol02():
+    """최대 대출 비율 분모 = 금융비용(IDC·이자유보계좌) 제외 사업비: 상한이 구속하면 대출 = 비율 × (CAPEX + 초기 DSRA),
+    유보계좌가 커지는 하방 시나리오에서도 대출이 늘지 않는다. 기존 방식(총사업비)은 민감도로 함께 계산."""
+    from src.data_fetch.base import load_config
+    from research.vol02 import data as D
+    cfg = load_config()
+    f = D.load_facts(cfg)
+    a = f.cases["A"]
+    b = a.base
+    assert a.inp.gearing_basis == cfg["research"]["vol02"]["gearing_basis"] == "ex_financing"
+    if b.binding == "gearing":
+        assert b.debt == pytest.approx(a.inp.max_gearing * (b.cons.capex + b.cons.dsra_initial), rel=1e-6)
+        assert b.gearing_cap_basis == pytest.approx(a.inp.max_gearing, rel=1e-6)
+    alt = a.gearing_alt
+    assert alt["basis"] == "total" and alt["base"].gearing == pytest.approx(a.inp.max_gearing, rel=1e-6)   # 기존: 총사업비의 65%
+    assert alt["base"].debt >= b.debt                                                                       # 금융비용을 분모에서 빼면 대출이 줄어든다
+    assert max(x.debt for x in a.scenarios.values()) <= b.debt + 1e-6                                       # 하방에서 대출이 늘지 않음
+    assert alt["scenarios"]["downside"].debt > alt["base"].debt                                              # 기존 방식의 왜곡(기록용)

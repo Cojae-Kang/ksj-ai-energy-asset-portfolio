@@ -564,7 +564,8 @@ def pf_inputs(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | U
             ramp_years=float(v["ramp_years"]) if opt("ramp_years") is not None else None,
             lease_term_years=int(v["lease_term_years"]) if opt("lease_term_years") else None,
             tax_brackets=parse_brackets(opt("tax_brackets")),
-            tax_surcharge=float(v["tax_rate_local"]) if opt("tax_brackets") and opt("tax_rate_local") is not None else 0.0)
+            tax_surcharge=float(v["tax_rate_local"]) if opt("tax_brackets") and opt("tax_rate_local") is not None else 0.0,
+            gearing_basis=str(cfg["research"]["vol02"].get("gearing_basis", "total")))
     except ValueError as e:
         return Unavailable(f"입력값 오류: {e}", f"Invalid inputs: {e}", [])
 
@@ -598,6 +599,7 @@ class CaseResult:
     alts: dict = field(default_factory=dict)    # 대안 sizing: gross(전력 포함 임대) · passthrough(별도 청구) · power_cut(단가 인하 제안) · contracted(계약 매출)
     power_curve: dict = field(default_factory=dict)   # 전력비 포함 비율(SPC 부담, 0~1) → 다시 sizing한 결과
     cost_counterfactual: pf.PFResult | None = None   # 공사비 1년 상승 전(÷(1+상승률))·임대료 1년 전(÷(1+인상률)) 재계산
+    gearing_alt: dict = field(default_factory=dict)   # 최대 대출 비율 분모를 바꾼 sizing {basis, base, scenarios}
 
     @property
     def yoc(self) -> float:
@@ -628,6 +630,10 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
         return inp
     base = pf.run(inp)
     scen = {s: (base if s == "base" else pf.run(scenario_inputs(inp, d, s))) for s in SCENARIOS}
+    # 최대 대출 비율 분모 민감도: 다른 기준(총사업비 ↔ 금융비용 제외)으로 다시 sizing — 기준 + 수요 시나리오
+    alt_basis = "total" if inp.gearing_basis != "total" else "ex_financing"
+    gearing_alt = {"basis": alt_basis, "base": pf.run(replace(inp, gearing_basis=alt_basis)),
+                   "scenarios": {s: pf.run(replace(scenario_inputs(inp, d, s), gearing_basis=alt_basis)) for s in SCENARIOS}}
     sc = cfg["research"]["vol02"]["sensitivity"]
     rp, op_, bp = float(sc["rent_pct"]), float(sc["occupancy_pct"]), float(sc["rate_bp"]) / 10000
     xp = float(sc.get("opex_pct", 0.2))
@@ -746,7 +752,8 @@ def run_case(cfg: Mapping, case: str, a: Mapping[str, Assumption], r: Rates | Un
                              rent_per_kw_month=inp.rent_per_kw_month / (1 + inp.rent_escalation)))
     return CaseResult(case, inp, base, scen, stresses, torn, be, hm, cm, power, pf.identity_checks(base), tax_timing, hm_tt,
                       margin_bp=margin_bp, interest_cover_debt=pf.interest_cover_cap(base),
-                      negative_amort=pf.negative_amortization_years(base), alts=alts, cost_counterfactual=cf_, power_curve=curve)
+                      negative_amort=pf.negative_amortization_years(base), alts=alts, cost_counterfactual=cf_, power_curve=curve,
+                      gearing_alt=gearing_alt)
 
 
 def power_cost_grid(va: "Virginia", rent: float | None, pues: list[float], load: float = 1.0) -> pd.DataFrame | None:

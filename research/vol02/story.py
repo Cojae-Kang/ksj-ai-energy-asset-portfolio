@@ -207,7 +207,12 @@ class Story:
 
     def binding_label(self, r) -> str:
         return {"dscr": self.T(f"목표 DSCR {r.inp.target_dscr:.2f}배", f"target DSCR {r.inp.target_dscr:.2f}x"),
-                "gearing": self.T(f"최대 대출 비율 {self.pct(r.inp.max_gearing, 0)}", f"max gearing {self.pct(r.inp.max_gearing, 0)}")}.get(r.binding, r.binding)
+                "gearing": self.T(f"최대 대출 비율 {self.pct(r.inp.max_gearing, 0)}" + self.gbasis(r), f"max gearing {self.pct(r.inp.max_gearing, 0)}" + self.gbasis(r))}.get(r.binding, r.binding)
+
+    def gbasis(self, r) -> str:
+        """최대 대출 비율의 분모 표기."""
+        return (self.T("(금융비용 제외 사업비 기준)", " (cost ex-financing)") if r.inp.gearing_basis == "ex_financing"
+                else self.T("(총사업비 기준)", " (total cost)"))
 
     def lease_up_years(self, s: str = "base") -> float | None:
         d, p = self.f.demand, self.A("prelease").value
@@ -218,7 +223,7 @@ class Story:
 
     def binding_text(self, r) -> str:
         return {"dscr": self.T("목표 DSCR이 한도를 정했다", "the target DSCR sets the limit"),
-                "gearing": self.T("최대 대출 비율이 한도를 정했다", "maximum gearing sets the limit")}.get(r.binding, "")
+                "gearing": self.T(f"최대 대출 비율{self.gbasis(r)}이 한도를 정했다", f"maximum gearing{self.gbasis(r)} sets the limit")}.get(r.binding, "")
 
     def a_gross(self) -> bool:
         """케이스 A 임대료를 전력 포함(gross)으로 보고 SPC가 전력비를 부담하는지."""
@@ -245,8 +250,8 @@ class Story:
         if pc is None:
             return None
         pt_r, gr_r, _ = pc
-        return self.T(f"전력비 부담 조항 하나로 Equity IRR이 {self.pct(pt_r.equity_irr)}(별도 청구) vs {self.pct(gr_r.equity_irr)}(전력 포함 임대)로 갈린다",
-                      f"One power-cost clause splits equity IRR: {self.pct(pt_r.equity_irr)} (passed through) vs {self.pct(gr_r.equity_irr)} (gross rent)")
+        return self.T(f"임대료 정의(전력비 포함 여부)에 따라 Equity IRR {self.pct(pt_r.equity_irr)}(전력비 별도) / {self.pct(gr_r.equity_irr)}(전력비 포함) — 원문 확인 전이라 두 값을 병기",
+                      f"Depending on the rent definition (power included or not), equity IRR is {self.pct(pt_r.equity_irr)} (power billed separately) / {self.pct(gr_r.equity_irr)} (power included) — both shown until the source is checked")
 
     def rent20(self):
         b = self.case("B")
@@ -326,9 +331,12 @@ class Story:
     # --- Executive Summary --------------------------------------------------
     def headline(self) -> str:
         a, b = self.case("A"), self.case("B")
-        if ok(a) and ok(b) and self.clause_sentence():
-            return self.T(f"대출 한도는 총사업비의 한국 {self.pct(a.base.gearing, 0)}, 미국 {self.pct(b.base.gearing, 0)} — 한국은 {self.clause_sentence()}",
-                          f"Debt capacity: {self.pct(a.base.gearing, 0)} of cost in Korea, {self.pct(b.base.gearing, 0)} in the U.S. — in Korea, {self.clause_sentence()[0].lower() + self.clause_sentence()[1:]}")
+        if ok(a) and ok(b) and self.power_clause():
+            pt_r, gr_r, _ = self.power_clause()
+            return self.T(f"임대료 정의(전력비 포함 여부) 확인이 첫 실사 항목 — 한국 케이스 Equity IRR {self.pct(pt_r.equity_irr)}(전력비 별도) / {self.pct(gr_r.equity_irr)}(전력비 포함), "
+                          f"대출 한도 한국 {self.money('A', a.base.debt)} · 미국 {self.money('B', b.base.debt)}",
+                          f"Confirming the rent definition (power included or not) is the first diligence item — Korea equity IRR {self.pct(pt_r.equity_irr)} (power billed separately) / {self.pct(gr_r.equity_irr)} (power included); "
+                          f"debt capacity Korea {self.money('A', a.base.debt)}, U.S. {self.money('B', b.base.debt)}")
         if ok(a) and ok(b):
             ka, kb = a.base.gearing, b.base.gearing
             vk, ve = self.VAR_KR, self.VAR_EN
@@ -780,7 +788,7 @@ class Story:
                             + ("; DSCR line = principal repayment years" if res else "")))
         cons = b.cons
         rows = [[self.T("Sculpting 한도 (목표 DSCR)", "Sculpting limit (target DSCR)"), self.money(case, b.sculpt_debt)],
-                [self.T(f"최대 대출 비율 한도 ({self.pct(inp.max_gearing, 0)})", f"Gearing limit ({self.pct(inp.max_gearing, 0)})"), self.money(case, b.gearing_debt)],
+                [self.T(f"최대 대출 비율 한도 ({self.pct(inp.max_gearing, 0)}{self.gbasis(b)})", f"Gearing limit ({self.pct(inp.max_gearing, 0)}{self.gbasis(b)})"), self.money(case, b.gearing_debt)],
                 [self.T("채택 대출 한도 (작은 값)", "Debt adopted (lower)"), self.money(case, b.debt)],
                 [self.T("구속 조건 · 유효 DSCR", "Binding constraint · effective DSCR"), f"{self.binding_text(b)} · {self.x(b.effective_dscr)}"],
                 ([self.T("총사업비 = CAPEX + 건설이자 + DSRA + 이자유보계좌", "Cost = CAPEX + IDC + DSRA + interest reserve"),
@@ -859,6 +867,16 @@ class Story:
                      if r_.inp.ramp_years is not None else f"{self.scen(s)} ({self.pct(r_.inp.ramp_growth)})")
             srows.append([lab_s, self.money(case, r_.debt), self.x(r_.min_dscr), self.x(r_.llcr),
                           self.pct(r_.project_irr), self.pct(r_.equity_irr), self.x(r_.min_dscr_contracted)])
+        ga = a.gearing_alt
+        alt_note_kr = alt_note_en = ""
+        if ga:
+            g0 = ga["base"]
+            srows.append([self.T(f"민감도: 상한 분모 {'총사업비' if ga['basis'] == 'total' else '금융비용 제외'}(기준 시나리오)", f"Sensitivity: cap on {'total cost' if ga['basis'] == 'total' else 'cost ex-financing'} (base)"),
+                          self.money(case, g0.debt), self.x(g0.min_dscr), self.x(g0.llcr), self.pct(g0.project_irr), self.pct(g0.equity_irr), self.x(g0.min_dscr_contracted)])
+            ad = sorted(x.debt for x in ga["scenarios"].values())
+            if self.money(case, ad[0]) != self.money(case, ad[-1]):
+                alt_note_kr = f" 총사업비 기준이면 시나리오별 대출 {self.money(case, ad[0])}~{self.money(case, ad[-1])}(하단 시나리오가 가장 큼 — 유보계좌·IDC가 분모에 들어가 위험이 클수록 대출이 늘어남)."
+                alt_note_en = f" On total cost, debt runs {self.money(case, ad[0])}–{self.money(case, ad[-1])} by scenario (largest in the downside, as reserves and IDC enter the base)."
         dd = sorted(x.debt for x in a.scenarios.values())
         same_b = all(x.binding == "gearing" for x in a.scenarios.values())
         dtxt = self.money(case, dd[-1]) if self.money(case, dd[0]) == self.money(case, dd[-1]) else (
@@ -871,13 +889,13 @@ class Story:
                   src=["iea", "ksj"],
                   table=TableSpec([self.T("시나리오(성장률)", "Scenario (growth)"), self.T("대출 한도", "Debt"), self.T("최소 DSCR", "Min DSCR"), "LLCR",
                                    "Project IRR", "Equity IRR", self.T("계약분 DSCR", "Contr. DSCR")], srows,
-                                  [0.2, 0.17, 0.12, 0.1, 0.13, 0.13, 0.15], ["L", "R", "R", "R", "R", "R", "R"], shade_rows={1}, font_size=8.2),
+                                  [0.2, 0.17, 0.12, 0.1, 0.13, 0.13, 0.15], ["L", "R", "R", "R", "R", "R", "R"], shade_rows={1}, font_size=8.0),
                   note=self.T("시나리오마다 대출을 다시 산정(sizing). 램프업 = 기준 기간 × IEA 기준 성장률 ÷ 시나리오 성장률. "
                               f"계약분 DSCR = 사전 임대율 {self.pct(inp.prelease)}의 계약 임대료만으로 본 원금 상환 기간 최소 DSCR"
-                              + (f"({c_year}년차)" if c_year else "") + " — 앵커 임차인 부재 위험을 보여주는 지표",
+                              + (f"({c_year}년차)" if c_year else "") + " — 앵커 임차인 부재 위험을 보여주는 지표." + alt_note_kr,
                               "Debt re-sized per scenario. Ramp-up = base period × IEA base growth ÷ scenario growth. "
                               f"Contracted DSCR = min DSCR over principal repayment years on {self.pct(inp.prelease)} pre-leased rent only"
-                              + (f" (year {c_year})" if c_year else "") + " — a gauge of the risk of having no anchor tenant"))
+                              + (f" (year {c_year})" if c_year else "") + " — a gauge of the risk of having no anchor tenant." + alt_note_en))
         title = self.T(f"{self.name(case)} 대출 한도 {self.money(case, b.debt)}(총사업비의 {self.pct(b.gearing, 0)}) — {self.binding_text(b)}",
                        f"{self.name(case)} debt capacity {self.money(case, b.debt)} ({self.pct(b.gearing, 0)} of cost) — {self.binding_text(b)}")
         if b.min_dscr_contracted < 0:
