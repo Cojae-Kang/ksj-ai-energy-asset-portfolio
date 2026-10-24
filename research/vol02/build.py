@@ -317,22 +317,30 @@ def write_summary(path: Path, r: dict, as_of: str) -> None:
               "**수렴 (대표 셀)**", "", markdown_table(rr.convergence.round(4).to_dict("records"))]
     else:
         L += [f"- 계산 보류: {op.reason} — {data.fmt_missing(op.missing)}"]
-    # 최대 대출 비율 분모 변경 전후 (같은 엔진으로 재sizing)
-    L += ["", "## 최대 대출 비율 분모: 금융비용 제외 사업비(기준) vs 총사업비(기존 방식)", ""]
+    # 최대 대출 비율 분모: 기준 vs 민감도(같은 엔진으로 재sizing)
+    from src.analysis import pf_model as pf
+    gname = {"capex": "CAPEX(금융비용 IDC·유보계좌·DSRA 제외)", "ex_financing": "CAPEX + 초기 DSRA", "total": "총사업비(+IDC·DSRA·유보계좌)"}
+    L += ["", "## 최대 대출 비율 분모: 기준 vs 민감도 (기준은 config gearing_basis)", ""]
     gr = []
     for c, cr in f.cases.items():
         if not data.ok(cr) or not cr.gearing_alt:
             continue
-        for lab, x in ((cr.inp.gearing_basis, cr.base), (cr.gearing_alt["basis"], cr.gearing_alt["base"])):
-            gr.append({"케이스": c, "분모": {"ex_financing": "금융비용 제외(CAPEX + 초기 DSRA)", "total": "총사업비(+IDC·유보계좌)"}[lab],
-                       "대출": f"{x.debt:,.1f}", "구속 조건": x.binding, "대출 ÷ 총사업비": f"{x.gearing * 100:.1f}%", "최소 DSCR": f"{x.min_dscr:.3f}",
+        runs = [(cr.inp.gearing_basis, cr.base, cr.scenarios, "기준")] + [(g, x["base"], x["scenarios"], "민감도") for g, x in cr.gearing_alt.items()]
+        for g, x, sc, tag in runs:
+            gr.append({"케이스": c, "분모": f"{gname[g]} · {tag}", "대출": f"{x.debt:,.1f}", "구속 조건": x.binding,
+                       "대출 ÷ 총사업비": f"{x.gearing * 100:.1f}%", "최소 DSCR": f"{x.min_dscr:.3f}",
                        "Equity IRR": f"{x.equity_irr * 100:.2f}%", "Project IRR": f"{x.project_irr * 100:.2f}%",
-                       "시나리오별 대출(하단·기준·상단)": " · ".join(f"{y.debt:,.1f}" for y in
-                                                        (cr.scenarios if lab == cr.inp.gearing_basis else cr.gearing_alt["scenarios"]).values())})
-    L += [markdown_table(gr) if gr else "- 없음", "",
-          *[f"- 검산({c}): 대출 {cr.base.debt:,.1f} = {cr.inp.max_gearing * 100:.0f}% × (CAPEX {cr.base.cons.capex:,.1f} + 초기 DSRA {cr.base.cons.dsra_initial:,.1f}) = "
-            f"{cr.inp.max_gearing * (cr.base.cons.capex + cr.base.cons.dsra_initial):,.1f}"
-            for c, cr in f.cases.items() if data.ok(cr) and cr.base.binding == "gearing" and cr.inp.gearing_basis == "ex_financing"]]
+                       "시나리오별 대출(하단·기준·상단)": " · ".join(f"{y.debt:,.1f}" for y in sc.values())})
+    L += [markdown_table(gr) if gr else "- 없음", ""]
+    for c, cr in f.cases.items():
+        if data.ok(cr) and cr.base.binding == "gearing":
+            b = cr.base
+            den = pf.gearing_base(cr.inp.gearing_basis, b.cons.uses, b.cons.capex, b.cons.dsra_initial)
+            L.append(f"- 검산({c}): 대출 {b.debt:,.1f} = {cr.inp.max_gearing * 100:.0f}% × 분모 {den:,.1f}({gname[cr.inp.gearing_basis]}) = {cr.inp.max_gearing * den:,.1f}")
+        if data.ok(cr) and cr.power_pair():
+            pt, gr_ = cr.power_pair()
+            L.append(f"- 전력비 조항({c}): 별도 청구 대출 {pt.debt:,.1f} · 최소 DSCR {pt.min_dscr:.3f} · Equity IRR {pt.equity_irr * 100:.2f}% / "
+                     f"전력 포함 대출 {gr_.debt:,.1f} · 최소 DSCR {gr_.min_dscr:.3f} · Equity IRR {gr_.equity_irr * 100:.2f}% (구속 {gr_.binding})")
     # 범위 점검 + 점검 필요 수치
     L += ["", "## 범위 점검 (원가 대비 수익률 8~14% · Equity IRR 10~25% · 최소 DSCR ≥ 목표 · 마이너스 상환 없음)", "",
           markdown_table(check_rows(f))]

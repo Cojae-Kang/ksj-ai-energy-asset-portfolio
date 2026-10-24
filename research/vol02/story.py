@@ -211,8 +211,10 @@ class Story:
 
     def gbasis(self, r) -> str:
         """최대 대출 비율의 분모 표기."""
-        return (self.T("(금융비용 제외 사업비 기준)", " (cost ex-financing)") if r.inp.gearing_basis == "ex_financing"
-                else self.T("(총사업비 기준)", " (total cost)"))
+        return self.T(f"({self.GB_KR[r.inp.gearing_basis]} 기준)", f" (on {self.GB_EN[r.inp.gearing_basis]})")
+
+    GB_KR = {"total": "총사업비", "ex_financing": "CAPEX+DSRA", "capex": "CAPEX"}
+    GB_EN = {"total": "total cost", "ex_financing": "CAPEX + DSRA", "capex": "CAPEX"}
 
     def lease_up_years(self, s: str = "base") -> float | None:
         d, p = self.f.demand, self.A("prelease").value
@@ -869,12 +871,12 @@ class Story:
                           self.pct(r_.project_irr), self.pct(r_.equity_irr), self.x(r_.min_dscr_contracted)])
         ga = a.gearing_alt
         alt_note_kr = alt_note_en = ""
-        if ga:
-            g0 = ga["base"]
-            srows.append([self.T(f"민감도: 상한 분모 {'총사업비' if ga['basis'] == 'total' else '금융비용 제외'}(기준 시나리오)", f"Sensitivity: cap on {'total cost' if ga['basis'] == 'total' else 'cost ex-financing'} (base)"),
+        for gb, gx in ga.items():
+            g0 = gx["base"]
+            srows.append([self.T(f"민감도: 상한 분모 {self.GB_KR[gb]}(기준 시나리오)", f"Sensitivity: cap on {self.GB_EN[gb]} (base)"),
                           self.money(case, g0.debt), self.x(g0.min_dscr), self.x(g0.llcr), self.pct(g0.project_irr), self.pct(g0.equity_irr), self.x(g0.min_dscr_contracted)])
-            ad = sorted(x.debt for x in ga["scenarios"].values())
-            if self.money(case, ad[0]) != self.money(case, ad[-1]):
+            ad = sorted(x.debt for x in gx["scenarios"].values())
+            if gb == "total" and self.money(case, ad[0]) != self.money(case, ad[-1]):
                 alt_note_kr = f" 총사업비 기준이면 시나리오별 대출 {self.money(case, ad[0])}~{self.money(case, ad[-1])}(하단 시나리오가 가장 큼 — 유보계좌·IDC가 분모에 들어가 위험이 클수록 대출이 늘어남)."
                 alt_note_en = f" On total cost, debt runs {self.money(case, ad[0])}–{self.money(case, ad[-1])} by scenario (largest in the downside, as reserves and IDC enter the base)."
         dd = sorted(x.debt for x in a.scenarios.values())
