@@ -475,6 +475,7 @@ research:
   # -------------------------------------------------------------------
   vol02:
     output_dir: "research/vol02"
+    yoc_check_band: [0.08, 0.14]        # ASSUMPTION(judgment): 원가 대비 수익률 점검 범위(저자 설정, 공개 출처 없음) — p7 차트 음영, ±1%p 허용
     build_dir: "research/vol02/_build"
     page_pt: [960, 720]
     title_kr: "AI 데이터센터, 대출은 얼마까지 가능한가"

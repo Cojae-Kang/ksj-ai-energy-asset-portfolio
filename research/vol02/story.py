@@ -200,6 +200,15 @@ class Story:
         a, b = self.base_value("A"), self.base_value("B")
         return None if a is None or b is None else b - a
 
+    def tenor_spread(self) -> float | None:
+        """같은 만기(10년물) 금리 차이(%p): 미 국채 10년 − 국고채 10년."""
+        r = self.f.rates
+        return (r.dgs10 - r.ktb_10y) if ok(r) and r.dgs10 is not None and r.ktb_10y is not None else None
+
+    def binding_label(self, r) -> str:
+        return {"dscr": self.T(f"목표 DSCR {r.inp.target_dscr:.2f}배", f"target DSCR {r.inp.target_dscr:.2f}x"),
+                "gearing": self.T(f"최대 대출 비율 {self.pct(r.inp.max_gearing, 0)}", f"max gearing {self.pct(r.inp.max_gearing, 0)}")}.get(r.binding, r.binding)
+
     def lease_up_years(self, s: str = "base") -> float | None:
         d, p = self.f.demand, self.A("prelease").value
         if not ok(d) or p is None:
@@ -585,8 +594,8 @@ class Story:
              self.T("100MW 단일 단계", "100 MW, single phase")],
             [self.T("조달 통화 · 기준금리", "Currency · base rate"), f"KRW · {base_a}", f"USD · {base_b}"],
             [self.T("설정 근거", "Rationale"),
-             self.T(f"계통 승인률 {self.grid_short()} · 전력계통영향평가 {thr:.0f}MW 이상 적용 · 국내 운영 사례 40MW급" if g.ratio is not None else "계통 제약",
-                    f"Grid approval {self.grid_short()}; grid impact assessment from {thr:.0f} MW; domestic operating scale ~40 MW" if g.ratio is not None else "Grid constraint"),
+             self.T(f"계통 승인률 {self.grid_short()} · 전력계통영향평가 {thr:.0f}MW 이상 적용 · 40MW = 저자 설계 규모" if g.ratio is not None else "계통 제약",
+                    f"Grid approval {self.grid_short()}; grid impact assessment from {thr:.0f} MW; 40 MW = author's design scale" if g.ratio is not None else "Grid constraint"),
              self.T("하이퍼스케일 규모 · 버지니아 상업용 판매 성장(EIA)", "Hyperscale scale; Virginia commercial sales growth (EIA)")],
         ]
         c3 = Cell(title=self.T("한국은 20MW씩 나눠 짓고, 미국은 100MW를 한 번에 — 같은 엔진, 다른 파라미터",
@@ -658,8 +667,8 @@ class Story:
             m = r.monthly
             sp = self.rate_spread()
             cells.append(Cell(
-                title=self.T(f"기준금리({r.ktb_date}): 국고채 3년 {r.ktb_3y:.2f}%·10년 {r.ktb_10y:.2f}%, 미 국채 10년 {r.dgs10:.2f}% — 모델 기준금리 차이 {sp:.2f}%p",
-                             f"Base rates ({r.ktb_date}): KTB 3y {r.ktb_3y:.2f}%, 10y {r.ktb_10y:.2f}%; UST 10y {r.dgs10:.2f}% — model base-rate gap {sp:.2f}pp"),
+                title=self.T(f"기준금리(국고채 {r.ktb_date}, 미 국채 {r.dgs10_date}): 국고채 3년 {r.ktb_3y:.2f}%·10년 {r.ktb_10y:.2f}%, 미 국채 10년 {r.dgs10:.2f}% — 모델 기준금리 차이 {sp:.2f}%p(같은 10년물 {self.tenor_spread():.2f}%p)",
+                             f"Base rates (KTB {r.ktb_date}, UST {r.dgs10_date}): KTB 3y {r.ktb_3y:.2f}%, 10y {r.ktb_10y:.2f}%; UST 10y {r.dgs10:.2f}% — model base-rate gap {sp:.2f}pp (same 10y tenor {self.tenor_spread():.2f}pp)"),
                 src=["ecos", "fred"], legend=[(c["brown_mid"], self.T("국고채 3년", "KTB 3y")), (c["brown_dark"], self.T("국고채 10년", "KTB 10y")),
                                               (c["gold"], self.T("미 국채 10년", "UST 10y"))], unit=self.T("% (월평균)", "% (monthly avg.)"),
                 chart_key="rates",
@@ -755,7 +764,7 @@ class Story:
             dscr_show = [float("nan") if i < g else v for i, v in enumerate(dscr_show)]
         grace_kr = (f"COD 후 램프업 {g}년 이자만 납부(부족분은 이자유보계좌), 이후 원금 sculpting {inp.tenor_years - g}년" if res
                     else f"COD 후 상환 {inp.tenor_years}년, COD 후 추가 거치 {g}년")
-        grace_en = (f"after COD, {g} ramp-up years interest-only (gap from the interest reserve), then {inp.tenor_years - g} yrs sculpted principal" if res
+        grace_en = (f"{g} ramp-up years interest-only after COD (gap from the interest reserve), then {inp.tenor_years - g} yrs sculpted principal" if res
                     else f"{inp.tenor_years} yrs repayment after COD; extra grace after COD {g} yrs")
         c1 = Cell(title=self.T(f"CFADS ÷ 목표 DSCR {inp.target_dscr:.2f}배로 원리금을 깎으면 대출 한도 {self.money(case, b.sculpt_debt)}",
                                f"Sculpting debt service at CFADS ÷ {inp.target_dscr:.2f}x gives {self.money(case, b.sculpt_debt)}"),
@@ -852,7 +861,8 @@ class Story:
                           self.pct(r_.project_irr), self.pct(r_.equity_irr), self.x(r_.min_dscr_contracted)])
         dd = sorted(x.debt for x in a.scenarios.values())
         same_b = all(x.binding == "gearing" for x in a.scenarios.values())
-        dtxt = self.money(case, dd[-1]) if same_b else f"{self.money(case, dd[0])}~{self.money(case, dd[-1])}"
+        dtxt = self.money(case, dd[-1]) if self.money(case, dd[0]) == self.money(case, dd[-1]) else (
+            f"{self.money(case, dd[0])}~{self.money(case, dd[-1])}" if self.kr else f"{self.money(case, dd[0])}–{self.money(case, dd[-1])}")
         c4 = Cell(title=(self.T(f"수요 시나리오가 달라도 대출 한도는 {dtxt}{'(최대 대출 비율 상한)' if same_b else ''} — 최소 DSCR {self.x(min(x.min_dscr for x in a.scenarios.values()))}~{self.x(max(x.min_dscr for x in a.scenarios.values()))}",
                                 f"Debt barely moves across demand scenarios ({dtxt}{', gearing cap' if same_b else ''}); min DSCR {self.x(min(x.min_dscr for x in a.scenarios.values()))}–{self.x(max(x.min_dscr for x in a.scenarios.values()))}")
                          if dd[-1] - dd[0] < 0.02 * dd[-1] else
@@ -871,8 +881,9 @@ class Story:
         title = self.T(f"{self.name(case)} 대출 한도 {self.money(case, b.debt)}(총사업비의 {self.pct(b.gearing, 0)}) — {self.binding_text(b)}",
                        f"{self.name(case)} debt capacity {self.money(case, b.debt)} ({self.pct(b.gearing, 0)} of cost) — {self.binding_text(b)}")
         if b.min_dscr_contracted < 0:
-            ctxt = self.T(f"계약 임대료(사전 임대 {self.pct(inp.prelease)})만으로는 OPEX·전력비도 못 덮는다(최소 DSCR {self.x(b.min_dscr_contracted)})",
-                          f"contracted rent ({self.pct(inp.prelease)} pre-let) does not even cover OPEX and power (min DSCR {self.x(b.min_dscr_contracted)})")
+            pw = case == "A" and self.a_gross()
+            ctxt = self.T(f"계약 임대료(사전 임대 {self.pct(inp.prelease)})만으로는 OPEX{'·전력비' if pw else ''}도 못 덮는다(최소 DSCR {self.x(b.min_dscr_contracted)})",
+                          f"contracted rent ({self.pct(inp.prelease)} pre-let) does not even cover OPEX{' and power' if pw else ''} (min DSCR {self.x(b.min_dscr_contracted)})")
         else:
             ctxt = self.T(f"계약 임대료만으로는 최소 DSCR {self.x(b.min_dscr_contracted)}", f"on contracted rent only, min DSCR {self.x(b.min_dscr_contracted)}")
         rs_ = (self.T(f" · 이자유보계좌 {self.money(case, b.cons.reserve_initial)}", f" · interest reserve {self.money(case, b.cons.reserve_initial)}") if res else "")
@@ -916,8 +927,8 @@ class Story:
             rows = [(vn[r_["variable"]], r_["low"], r_["high"]) for _, r_ in t.iterrows()]
             top = t.iloc[0]
             tt = a.tax_timing
-            tt_note = self.T(f" 유리한 쪽이 기준보다 낮은 {', '.join(vn[v] for v in tt)}: 이익 증가로 이월결손금이 일찍 소진돼 특정 연도 법인세가 늘어난 효과(세율 0으로 재계산 시 사라짐 확인)" if tt else "",
-                             f" Where the favourable side is below base ({', '.join(vn[v] for v in tt)}): higher profit uses up loss carryforwards sooner, raising tax in a sculpted year (disappears when re-run at a 0% tax rate)" if tt else "")
+            tt_note = self.T(f" 유리한 쪽이 기준보다 낮은 {', '.join(vn[v] for v in tt)}: 이익 증가로 이월결손금이 일찍 소진돼 특정 연도 법인세가 늘어난 효과(세율 0으로 재계산 시 사라짐 확인)." if tt else "",
+                             f" Where the favourable side is below base ({', '.join(vn[v] for v in tt)}): higher profit uses up loss carryforwards sooner, raising tax in a sculpted year (disappears when re-run at a 0% tax rate)." if tt else "")
             res_note = ""
             if a.inp.grace_interest == "reserve" and a.inp.grace_years > 0:
                 pl = a.stresses.get("prelease_low")
@@ -936,9 +947,9 @@ class Story:
                       src=["ksj", "dart"], legend=[(c["brick"], self.T("불리", "Adverse")), (c["brown_mid"], self.T("유리", "Favourable"))],
                       unit=self.T(f"최소 DSCR (기준 {self.x(a.base.min_dscr)})", f"Min DSCR (base {self.x(a.base.min_dscr)})"), chart_key="tornado_A",
                       chart=charts.tornado(rows, a.base.min_dscr, c, lambda v: f"{v:.2f}", ref=1.0, ref_label="1.0x"),
-                      note=self.T(f"대출 스케줄은 기준 케이스로 고정. 건설 지연 = +{max(sc['delay_quarters'])}분기, 사전 임대율 = {self.prelease_range()}, "
+                      note=self.T(f"대출 스케줄은 기준 케이스로 고정(단 CAPEX 변화 시 대출 금액은 총사업비에 비례해 함께 변함 — CAPEX 감소에 따른 DSCR 개선은 대부분 대출 축소 효과). 건설 지연 = +{max(sc['delay_quarters'])}분기, 사전 임대율 = {self.prelease_range()}, "
                                   f"CAPEX = {self.capex_range_text()}, OPEX ±20%(출처 없는 저자 판단)" + (", 전력단가 ±10%" if "power" in set(t["variable"]) else "") + ".",
-                                  f"Debt schedule fixed at base. Delay = +{max(sc['delay_quarters'])} quarters; pre-lease {self.prelease_range()}; "
+                                  f"Debt schedule fixed at base (except CAPEX, where debt scales with total cost — most of the DSCR gain from lower CAPEX is smaller debt). Delay = +{max(sc['delay_quarters'])} quarters; pre-lease {self.prelease_range()}; "
                                   f"CAPEX = {self.capex_range_text()}; OPEX ±20% (unsourced judgment)" + ("; power price ±10%" if "power" in set(t["variable"]) else "") + ".") + res_note + tt_note + pg_note)
             bn = self.BE_KR if self.kr else self.BE_EN
             be = a.breakeven
@@ -1151,8 +1162,8 @@ class Story:
              rng(b, lambda x: x.base.debt, lambda v: self.money("B", v))],
             [self.T("대출 한도 (원화 환산)", "Debt (KRW)"), val(a, lambda x: self.krw(x.base.debt)), val(b, lambda x: self.krw(self.to_krw(x.base.debt)))],
             [self.T("MW당 대출 (원화)", "Debt per MW (KRW)"), val(a, lambda x: self.krw(x.base.debt_per_mw)), val(b, lambda x: self.krw(self.to_krw(x.base.debt_per_mw)))],
-            [self.T("대출 비율 · 구속 조건", "Gearing · binding"), val(a, lambda x: f"{self.pct(x.base.gearing, 0)} · {x.base.binding.upper()}"),
-             val(b, lambda x: f"{self.pct(x.base.gearing, 0)} · {x.base.binding.upper()}")],
+            [self.T("대출 비율 · 구속 조건", "Gearing · binding"), val(a, lambda x: f"{self.pct(x.base.gearing, 0)} · {self.binding_label(x.base)}"),
+             val(b, lambda x: f"{self.pct(x.base.gearing, 0)} · {self.binding_label(x.base)}")],
             [self.T("최소 · 평균 DSCR", "Min · avg DSCR"), val(a, lambda x: f"{self.x(x.base.min_dscr)} · {self.x(x.base.avg_dscr)}"),
              val(b, lambda x: f"{self.x(x.base.min_dscr)} · {self.x(x.base.avg_dscr)}")],
             ["LLCR", val(a, lambda x: self.x(x.base.llcr)), val(b, lambda x: self.x(x.base.llcr))],
@@ -1162,10 +1173,10 @@ class Story:
              rng(b, lambda x: x.base.project_irr_ex_tv, self.pct)],
             [self.T("Equity IRR (잔존가치 제외)", "Equity IRR (ex-TV)"), val(a, lambda x: self.pct(x.base.equity_irr_ex_tv)),
              rng(b, lambda x: x.base.equity_irr_ex_tv, self.pct)],
-            [self.T("핵심 병목", "Key bottleneck"),
+            [self.T("정성 위험", "Qualitative risk"),
              self.T(f"계통(승인률 {self.grid_short()}) · 사전 임대율({self.prelease_range()})", f"Grid (approval {self.grid_short()}) · pre-leasing ({self.prelease_range()})"),
-             self.T(f"규모(100MW, 한국 1단계의 5배) · 금리(+{sp:.2f}%p)" if sp is not None else "규모 · 금리",
-                    f"Scale (100 MW, 5x Korea phase 1) · rates (+{sp:.2f}pp)" if sp is not None else "Scale · rates")],
+             self.T(f"규모(100MW, 한국 1단계의 5배) · 금리(+{sp:.2f}%p, 같은 10년물 +{self.tenor_spread():.2f}%p)" if sp is not None else "규모 · 금리",
+                    f"Scale (100 MW, 5x Korea phase 1) · rates (+{sp:.2f}pp; same 10y tenor +{self.tenor_spread():.2f}pp)" if sp is not None else "Scale · rates")],
         ]
         n = len(rows)
         c1 = Cell(title=self.T("대출 한도·DSCR·Equity IRR을 나란히 — 같은 엔진, 다른 병목", "Debt, DSCR and equity IRR side by side — same engine, different bottlenecks"),
@@ -1194,8 +1205,11 @@ class Story:
                       note=self.T(f"ECOS {r.ktb_date}, FRED {r.dgs10_date}", f"ECOS {r.ktb_date}, FRED {r.dgs10_date}"))
         else:
             c2 = self.pending(self.T("기준금리 비교", "Base-rate comparison"), ["ecos", "fred"], r)
-        title = self.T("한·미 비교: 대출 한도를 정하는 병목이 다르다 — 한국은 계통·사전 임대율, 미국은 규모·금리",
-                       "Korea vs U.S.: different bottlenecks set debt capacity — grid and pre-leasing in Korea, scale and rates in the U.S.")
+        if ok(a) and ok(b):
+            title = self.T(f"한·미 비교: 대출 한도를 정한 조건이 다르다 — 한국은 {self.binding_label(a.base)}, 미국은 {self.binding_label(b.base)} · 정성 위험은 한국 계통·사전 임대율, 미국 규모·금리",
+                           f"Korea vs U.S.: different constraints set debt capacity — {self.binding_label(a.base)} in Korea, {self.binding_label(b.base)} in the U.S.; qualitative risks: grid and pre-leasing vs scale and rates")
+        else:
+            title = self.T("한·미 비교: 대출 한도와 정성 위험", "Korea vs U.S.: debt capacity and qualitative risks")
         sub = self.T((f"기준금리 차이 {sp:+.2f}%p({self.base_label('B')} − {self.base_label('A')}) · 계통 승인률 {self.grid_short()} · 사전 임대율 {self.prelease_range()}" if sp is not None else "")
                      + (" · 환율 " + f"{fx:,.1f}원" if fx else ""),
                      (f"Base-rate gap {sp:+.2f}pp ({self.base_label('B')} − {self.base_label('A')}) · grid approval {self.grid_short()} · pre-leasing {self.prelease_range()}" if sp is not None else "")
@@ -1274,19 +1288,20 @@ class Story:
         bars_.append((self.T("B 기준", "B base"), b.yoc, b.inp.term_rate, c["gold"]))
         if cf_ is not None:
             bars_.append((self.T("B 공사비 상승 전", "B pre-cost rise"), yoc(cf_), b.inp.term_rate, c["warm_grey"]))
-        band = (0.08, 0.14)
+        band = tuple(float(x) for x in self.cfg["research"]["vol02"]["yoc_check_band"])     # 저자 설정 점검 범위
+        bl_, bh_ = band[0] * 100, band[1] * 100
         out_ = [lab for lab, v, _, _ in bars_ if not band[0] - 0.01 <= v <= band[1] + 0.01]
-        c2 = Cell(title=self.T(f"원가 대비 수익률 " + " · ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — 8~14%(±1%p) 밖: {', '.join(out_)}" if out_ else ""),
-                               "Yield on cost: " + "; ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — outside 8–14% (±1pp): {', '.join(out_)}" if out_ else "")),
-                  src=["cost", "ecos", "fred", "ksj"], legend=[(c["warm_grey_light"], self.T("점검 범위 8~14%", "Check range 8–14%")), (c["brick"], self.T("대출금리(기준금리 + 가산)", "Loan rate (base + margin)"))],
+        c2 = Cell(title=self.T(f"원가 대비 수익률 " + " · ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — 점검 범위 {bl_:.0f}~{bh_:.0f}%(±1%p) 밖: {', '.join(out_)}" if out_ else ""),
+                               "Yield on cost: " + "; ".join(f"{lab} {self.pct(v)}" for lab, v, _, _ in bars_) + (f" — outside the {bl_:.0f}–{bh_:.0f}% check range (±1pp): {', '.join(out_)}" if out_ else "")),
+                  src=["cost", "ecos", "fred", "ksj"], legend=[(c["warm_grey_light"], self.T(f"점검 범위 {bl_:.0f}~{bh_:.0f}%(저자 설정)", f"Check range {bl_:.0f}–{bh_:.0f}% (author's setting)")), (c["brick"], self.T("대출금리(기준금리 + 가산)", "Loan rate (base + margin)"))],
                   unit="%", chart_key="yoc",
                   chart=charts.yield_bars([lab for lab, *_ in bars_], [v * 100 for _, v, _, _ in bars_], [col for *_, col in bars_], c,
-                                          lambda v: f"{v:.1f}%", band=(8, 14), band_label=self.T("점검 범위", "check range"),
+                                          lambda v: f"{v:.1f}%", band=(bl_, bh_), band_label=self.T("점검 범위", "check range"),
                                           marks=[m * 100 for _, _, m, _ in bars_], mark_label=self.T("대출금리", "loan rate")),
                   note=self.T(f"원가 대비 수익률 = 안정화 첫해 EBITDA ÷ 총사업비(CAPEX + IDC + DSRA + 유보계좌). 대출금리 = {self.base_label('A')} {self.base_value('A'):.2f}% + {self.val_assump('A', 'margin_bp')}, "
-                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp(시나리오). 8~14%(±1%p 허용)는 점검 범위",
+                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp(시나리오). {bl_:.0f}~{bh_:.0f}%(±1%p 허용)는 저자가 정한 점검 범위(공개 출처 없음)",
                               f"Yield on cost = first stabilised-year EBITDA ÷ total cost (CAPEX + IDC + DSRA + reserve). Loan rate = {self.base_label('A')} {self.base_value('A'):.2f}% + {self.val_assump('A', 'margin_bp')}; "
-                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp (scenario). 8–14% (±1pp) is the check range"))
+                              f"{self.base_label('B')} {self.base_value('B'):.2f}% + {mb:.0f}bp (scenario). {bl_:.0f}–{bh_:.0f}% (±1pp) is the author's check range (no public source)"))
         # 케이스 B: 전체 매출 vs 계약 매출 sizing
         ct = b.alts.get("contracted")
         bb = b.base
@@ -1352,8 +1367,8 @@ class Story:
                      (self.T(f"별도 청구 vs 전력 포함: Equity IRR {self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}, 대출 {self.money('A', pc[0].debt)} vs {self.money('A', pc[1].debt)}",
                              f"Pass-through vs gross: equity IRR {self.pct(pc[0].equity_irr)} vs {self.pct(pc[1].equity_irr)}; debt {self.money('A', pc[0].debt)} vs {self.money('A', pc[1].debt)}")
                       if pc is not None else self.T("패스스루 조항 · 예외(공용부) 확인", "Pass-through clause; carve-outs"))
-                     + self.T(" — 확인: 별도 청구 시 take-or-pay 최소 요금 유무(배정 전력의 60~85%로 늘어나는 추세)",
-                              " — check: take-or-pay minimum on billed power (trending to 60–85% of allocated power)"),
+                     + self.T(" — 확인: 별도 청구 시 take-or-pay 최소 요금 유무와 수준",
+                              " — check: whether billed power carries a take-or-pay minimum, and its level"),
                      self.T("패스스루 · take-or-pay 최소 요금 조항 · 버지니아 요금 상승 시 임차인 부담 (오른쪽 아래 표)",
                             "Pass-through and take-or-pay clauses; tenant burden as Virginia prices rise (table below right)"), "7, 8, A1"]
         rows = [
@@ -1466,10 +1481,15 @@ class Story:
             if pbe is None and a.inp.grace_interest == "reserve" and a.inp.grace_years > 0:
                 pl = a.stresses.get("prelease_low")
                 lo_ = self.A("prelease").low
-                ans = self.T(f"계약 임대료(사전 임대율 {self.pct(a.inp.prelease)})만으로는 OPEX·전력비도 못 덮는다(최소 DSCR {self.x(a.base.min_dscr_contracted)}). 그래서 램프업 {a.inp.grace_years}년 이자를 이자유보계좌로 미리 쌓고, "
+                mdc = a.base.min_dscr_contracted
+                cov_kr = (f"계약 임대료(사전 임대율 {self.pct(a.inp.prelease)})만으로는 OPEX{'·전력비' if self.a_gross() else ''}도 못 덮는다(최소 DSCR {self.x(mdc)})" if mdc < 0 else
+                          f"계약 임대료(사전 임대율 {self.pct(a.inp.prelease)})만으로는 원리금의 {self.pct(mdc, 0)}만 상환 가능하다(최소 DSCR {self.x(mdc)})")
+                cov_en = (f"Contracted rent ({self.pct(a.inp.prelease)} pre-let) does not even cover OPEX{' and power' if self.a_gross() else ''} (min DSCR {self.x(mdc)})" if mdc < 0 else
+                          f"Contracted rent ({self.pct(a.inp.prelease)} pre-let) covers only {self.pct(mdc, 0)} of debt service (min DSCR {self.x(mdc)})")
+                ans = self.T(cov_kr + f". 그래서 램프업 {a.inp.grace_years}년 이자를 이자유보계좌로 미리 쌓고, "
                              f"대출은 안정화 이후 CFADS로 sculpting했다. 사전 임대율이 {self.pct(lo_)}면 유보계좌 {self.money('A', a.base.cons.reserve_initial)}이 모두 소진되고 DSRA가 나머지를 메운다"
                              + (f"(부족 {self.money('A', pl.grace_shortfall)})" if pl is not None and pl.grace_shortfall > 0.05 else "") + ". 앵커 임차인 없이는 지분이 램프업 위험을 진다",
-                             f"Contracted rent ({self.pct(a.inp.prelease)} pre-let) does not even cover OPEX and power (min DSCR {self.x(a.base.min_dscr_contracted)}). Ramp-up interest is pre-funded in a reserve "
+                             cov_en + ". Ramp-up interest is pre-funded in a reserve "
                              f"and debt is sculpted on stabilised CFADS. At {self.pct(lo_)} pre-lease the {self.money('A', a.base.cons.reserve_initial)} reserve is used up and the DSRA covers the rest"
                              + (f" (gap {self.money('A', pl.grace_shortfall)})" if pl is not None and pl.grace_shortfall > 0.05 else "") + ". Without an anchor tenant, equity carries the ramp-up risk")
             else:
@@ -1488,16 +1508,16 @@ class Story:
         qa.append([self.T("앵커 임차인 없이 대출 가능한가?", "Can it borrow without an anchor tenant?"), ans, "2, 3, 4"])
         # 2 왜 40MW
         qa.append([self.T("한국은 왜 40MW인가?", "Why 40 MW in Korea?"),
-                   self.T(f"{self.grid_sentence() or '계통 제약'}. 10MW 이상은 전력계통영향평가 대상이고 국내 운영 사례도 40MW급이다. 그래서 20MW를 확정 개발하고 20MW는 추가 승인·임차 수요 확인 후 짓는 옵션으로 나눴다",
-                          f"{self.grid_sentence() or 'Grid constraints'}. Projects of 10 MW or more need a grid impact assessment, and domestic operating sites are around 40 MW. Hence 20 MW firm plus a 20 MW option built after approval and demand are confirmed"),
+                   self.T(f"{self.grid_sentence() or '계통 제약'}. 10MW 이상은 전력계통영향평가 대상이다(조문 확인 중). 40MW는 계통 제약을 감안한 저자 설계 규모로, 20MW를 확정 개발하고 20MW는 추가 승인·임차 수요 확인 후 짓는 옵션으로 나눴다",
+                          f"{self.grid_sentence() or 'Grid constraints'}. Projects of 10 MW or more need a grid impact assessment (provision being checked). 40 MW is the author's design scale given grid limits; 20 MW firm plus a 20 MW option built after approval and demand are confirmed"),
                    "1, 5"])
         key.add(len(qa) - 1)
         # 3 왜 미국 100MW
         qa.append([self.T("미국은 왜 100MW이고, 무엇이 다른가?", "Why 100 MW in the U.S., and what differs?"),
                    self.T((f"버지니아 상업용 전력 판매가 연 {self.pct(va.va_cagr)}로 미국({self.pct(va.us_cagr)})보다 빠르다. " if ok(va) else "")
-                          + (f"대신 기준금리({self.base_label('B')})가 {self.base_label('A')}보다 {self.rate_spread():.2f}%p 높아 같은 DSCR에서도 원리금 부담이 크다" if self.rate_spread() is not None else ""),
+                          + (f"대신 기준금리({self.base_label('B')})가 {self.base_label('A')}보다 {self.rate_spread():.2f}%p 높아(같은 10년물끼리는 {self.tenor_spread():.2f}%p) 같은 DSCR에서 대출 한도가 작아진다" if self.rate_spread() is not None else ""),
                           (f"Virginia commercial sales grow {self.pct(va.va_cagr)}/yr vs U.S. {self.pct(va.us_cagr)}. " if ok(va) else "")
-                          + (f"But its base rate ({self.base_label('B')}) is {self.rate_spread():.2f}pp above {self.base_label('A')}, so debt service is heavier at the same DSCR" if self.rate_spread() is not None else "")), "2, 6"])
+                          + (f"But its base rate ({self.base_label('B')}) is {self.rate_spread():.2f}pp above {self.base_label('A')} ({self.tenor_spread():.2f}pp on the same 10y tenor), so the same DSCR supports less debt" if self.rate_spread() is not None else "")), "2, 6"])
         # 4 금리 +100bp
         if ok(a):
             ru = a.stresses["rate_up"]
@@ -1550,7 +1570,7 @@ class Story:
             mid_ = a.power_curve.get(0.5)
             qa.append([self.T("전력비를 임차인이 내면 SPC의 전력 위험은 사라지나?", "If the tenant pays for power, is the SPC's power risk gone?"),
                        self.T("아니다. take-or-pay 최소 요금과 미사용 전력 처리 조항에 달려 있다. 임차인이 배정 전력보다 덜 쓰면 계약 전력 기준 요금이 SPC에 남을 수 있어, "
-                              "별도 청구 계약에도 최소 요금(배정 전력의 60~85%로 늘어나는 추세, Data Center Scouts)이 있는지 확인해야 한다. 조항이 있으면 위험은 임차인 신용 위험으로 바뀐다. "
+                              "별도 청구 계약에도 최소 요금 조항이 있는지와 그 수준을 확인해야 한다. 조항이 있으면 위험은 임차인 신용 위험으로 바뀐다. "
                               + (f"이 노트의 Base는 전액 전가를 가정했고, 절반만 전가되면 Equity IRR {self.pct(pc[0].equity_irr)} → {self.pct(mid_.equity_irr)}(p7 곡선)" if mid_ is not None else ""),
                               "No. It depends on take-or-pay minimums and how unused power is treated. If the tenant draws less than its allocation, charges based on contracted capacity can stay with the SPC, "
                               "so check whether the lease sets a minimum (trending to 60–85% of allocated power, Data Center Scouts). With one, the risk becomes tenant credit risk. "
