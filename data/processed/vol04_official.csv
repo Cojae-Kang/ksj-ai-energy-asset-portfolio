@@ -1,0 +1,20 @@
+﻿key,value
+smp_base,113.19500000000001
+smp_min_month,90.43
+smp_max_month,148.39
+smp_window,2025-09~2026-08
+smp_phi,0.7182160147315202
+smp_sigma,0.22875849164257897
+smp_years,2002~2025
+smp_n_years,24
+hourly_file,HOME_전력거래_계통한계가격_시간별SMP.xlsx
+hourly_match_err,0.6005281444283854
+smp_allhours,111.08521461187215
+smp_daylight,115.31526418786693
+monthly_file,HOME_전력거래_계통한계가격_가중평균SMP.xlsx
+kepco_industrial_price,181.89621971926496
+industrial_mwh,280221380.382
+industrial_rev_mn,50971209.776
+file,2512_전력통계월보(제566호).xlsx
+sheets,18.계약종별 판매전력량 · 18-2.계약종별 판매수입
+row,2025.01~12

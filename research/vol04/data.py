@@ -27,7 +27,7 @@ TIER_EN = {"A": "Official source", "B": "Press report of official release", "C":
 LABELS: dict[str, tuple[str, str]] = {
     "asset_mw": ("발전 용량", "Capacity"), "cod_year": ("상업운전 연도", "COD year"),
     "capacity_factor": ("이용률", "Capacity factor"), "degradation": ("연 열화율", "Annual degradation"),
-    "lcoe_target": ("태양광 LCOE", "Solar LCOE"), "lcoe_discount_rate": ("LCOE 역산 할인율", "LCOE discount rate"),
+    "lcoe_target": ("태양광 LCOE", "Solar LCOE"), "lcoe_discount_rate": ("WACC (LCOE 교차 확인)", "WACC (LCOE cross-check)"), "capex_per_kw": ("설치 단위비용(2022 실제)", "Installed cost per kW (2022 actual)"), "capex": ("사업비 (천원/kW)", "CAPEX (KRW k/kW)"),
     "opex_pct": ("OPEX (CAPEX 대비)", "OPEX (% of CAPEX)"), "opex_escalation": ("OPEX 인상률", "OPEX escalation"),
     "operating_years": ("운영기간", "Operating life"), "dep_years": ("감가상각 기간", "Depreciation life"),
     "tax_brackets": ("법인세 누진세율", "Corporate tax brackets"), "tax_rate_local": ("지방소득세", "Local income tax"),
@@ -132,6 +132,7 @@ class Facts:
     us: dict
     sens: list[dict]
     provisional: list[str] = field(default_factory=list)
+    lcoe_check: dict = field(default_factory=dict)
 
     def V(self, k: str) -> float:
         return float(self.inputs[k].value)
@@ -140,11 +141,21 @@ class Facts:
 def build_asset(I: Mapping[str, Input], cf: float | None = None, capex: float | None = None) -> pm.Asset:
     V = lambda k: float(I[k].value)  # noqa: E731
     cf = V("capacity_factor") if cf is None else cf
-    if capex is None:
-        capex = pm.capex_from_lcoe(V("asset_mw"), cf, V("degradation"), int(V("operating_years")), V("lcoe_target"),
-                                   V("lcoe_discount_rate"), V("opex_pct"), V("opex_escalation"))
+    if capex is None:   # 기준: KEEI LCOE 중간값·WACC·이용률에 맞춘 사업비 (2022년 실제 설치비는 하단 민감도)
+        capex = capex_lcoe(I, V("lcoe_target"), cf)
     return pm.Asset(V("asset_mw"), cf, V("degradation"), capex, V("opex_pct"), V("opex_escalation"), int(V("operating_years")),
                     int(V("dep_years")), pm.parse_brackets(I["tax_brackets"].value), V("tax_rate_local"))
+
+
+def capex_lcoe(I: Mapping[str, Input], lcoe: float, cf: float | None = None) -> float:
+    V = lambda k: float(I[k].value)  # noqa: E731
+    return pm.capex_from_lcoe(V("asset_mw"), V("capacity_factor") if cf is None else cf, V("degradation"), int(V("operating_years")),
+                              lcoe, V("lcoe_discount_rate"), V("opex_pct"), V("opex_escalation"))
+
+
+def capex_actual(I: Mapping[str, Input], per_kw: float | None = None) -> float:
+    """실제 설치 단위비용(천원/kW) × kW → 억원."""
+    return float(I["asset_mw"].value) * 1000 * (float(I["capex_per_kw"].value) if per_kw is None else per_kw) * 1000 / 1e8
 
 
 def ppa_for_npv_match(a: pm.Asset, m: pm.Market, d: pm.Debt, hazard: float, hurdle: float, target_npv: float,
@@ -200,20 +211,22 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
 
     # 5) 민감도: 핵심 입력 범위별 경로 IRR
     sens = []
-    for key in ("capacity_factor", "lcoe_target", "smp_base", "opex_pct"):
-        inp = I[key]
-        if inp.low is None or inp.high is None:
-            continue
-        row = {"key": key, "lo_v": inp.low, "hi_v": inp.high}
-        for side, val in (("low", inp.low), ("high", inp.high)):
+    for key in ("capex", "capacity_factor", "smp_base", "opex_pct"):
+        if key == "capex":     # 하단 = 2022년 실제 설치비, 상단 = KEEI LCOE 상단에 맞춘 사업비 (kW당 천원)
+            cx_lo, cx_hi = capex_actual(I), capex_lcoe(I, I["lcoe_target"].high)
+            row = {"key": key, "lo_v": cx_lo * 100 / a.mw, "hi_v": cx_hi * 100 / a.mw}
+        else:
+            inp = I[key]
+            if inp.low is None or inp.high is None:
+                continue
+            row = {"key": key, "lo_v": inp.low, "hi_v": inp.high}
+        for side, val in (("low", row["lo_v"]), ("high", row["hi_v"])):
             if key == "smp_base":
                 mm, aa = pm.Market(**{**m.__dict__, "smp0": val}), a
             elif key == "capacity_factor":
                 mm, aa = m, build_asset(I, cf=val, capex=a.capex)
-            elif key == "lcoe_target":
-                mm = m
-                aa = build_asset(I, capex=pm.capex_from_lcoe(a.mw, a.capacity_factor, a.degradation, a.years, val,
-                                                             V("lcoe_discount_rate"), a.opex_pct, a.opex_escalation))
+            elif key == "capex":
+                mm, aa = m, build_asset(I, capex=a.mw * val / 100.0)
             else:
                 mm = m
                 aa = pm.Asset(**{**a.__dict__, "opex_pct": val})
@@ -235,8 +248,12 @@ def load_facts(cfg: Mapping, as_of: str | None = None, mc_n: int | None = None) 
     us = {"talen_floor": V("talen_notional_usd_bn") * 1e9 / (V("talen_mw") * pm.HOURS * V("talen_years")),
           "levelten": V("levelten_solar_na")}
     prov = [k for k, x in I.items() if x.pending_official]
+    a_act = build_asset(I, capex=capex_actual(I))
+    lc = {"actual_capex": a_act.capex, "actual_lcoe": pm.lcoe(a_act, V("lcoe_discount_rate")), "keei": (I["lcoe_target"].low, I["lcoe_target"].high),
+          "base_capex": a.capex, "base_lcoe": pm.lcoe(a, V("lcoe_discount_rate")),
+          "actual_irr": {k: pm.run(k, a_act, m, debts[k]).irr for k in pm.ROUTES}}
     return Facts(as_of, I, a, m, debts, rate, ktb, ktb_date, base, mid, (lo_c, hi_c), be, premium, curve, ex, price_curve,
-                 mc, spec, dc, us, sens, prov)
+                 mc, spec, dc, us, sens, prov, lc)
 
 
 def mc_stats(x: np.ndarray, hurdle: float) -> dict:

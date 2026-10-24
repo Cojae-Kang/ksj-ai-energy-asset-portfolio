@@ -111,7 +111,10 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
     if r.get("exec_lines"):
         L += ["## Executive Summary 결론 문장 (국문 PDF와 같은 문장)", "", f"- 헤드라인: {r['exec_lines'][0]}"] \
              + [f"{i}. {t}" for i, t in enumerate(r["exec_lines"][1:], 1)] + [""]
-    L += ["## 근거", "", f"- 사업비 {f.asset.capex:,.1f}억원 (LCOE {f.V('lcoe_target')}원 역산, kW당 {f.asset.capex * 1e8 / (f.asset.mw * 1000) / 1e4:,.1f}만원)",
+    lc = f.lcoe_check
+    L += ["## 근거", "", f"- 사업비 {f.asset.capex:,.1f}억원 (KEEI LCOE {f.V('lcoe_target')}원·WACC {f.V('lcoe_discount_rate') * 100:.0f}%·이용률 {f.asset.capacity_factor * 100:.0f}%에 맞춤, kW당 {f.asset.capex * 100 / f.asset.mw:,.0f}천원)",
+          f"- 교차 확인: 2022년 실제 설치비 {f.V('capex_per_kw'):,.0f}천원/kW → 사업비 {lc['actual_capex']:,.0f}억원 · LCOE {lc['actual_lcoe']:.1f}원 (KEEI 범위 {lc['keei'][0]:.0f}~{lc['keei'][1]:.0f}원) · "
+          f"이 경우 지분 IRR CfD {_p(lc['actual_irr']['cfd'])} · PPA {_p(lc['actual_irr']['ppa'])} · 시장 {_p(lc['actual_irr']['merchant'])}",
           f"- 금리 {f.rate * 100:.2f}% = 국고채 3년 {f.ktb * 100:.2f}% ({f.ktb_date}) + {f.V('margin_bp'):.0f}bp", ""]
     L += [markdown_table([{"경로": k, "대출(억원)": f"{x.debt:,.1f}", "대출 비율": _p(x.gearing), "최소 DSCR": f"{x.min_dscr:.3f}",
                            "지분(억원)": f"{x.equity:,.1f}", "지분 IRR": _p(x.irr, 2), "MOIC": f"{x.moic:.2f}",

@@ -84,6 +84,13 @@ class Story:
         names = ", ".join(self.lab(k) for k in p)
         return self.T(f" · 잠정: {names}는 공식 원문 확인 전 값(A3)", f" · Provisional: {names} pending official source (A3)")
 
+    def clear_text(self) -> str:
+        ok_ = [k for k in ("cfd", "ppa", "merchant") if (self.irr[k] or -1) >= self.hurdle]
+        no = [k for k in ("cfd", "ppa", "merchant") if k not in ok_]
+        a = "·".join(self.route(k, True) for k in ok_) or self.T("없음", "none")
+        b = "·".join(self.route(k, True) for k in no) or self.T("없음", "none")
+        return self.T(f"{a} 통과, {b} 미달", f"{a} clear, {b} miss")
+
     @property
     def irr(self) -> dict[str, float | None]:
         return {k: r.irr for k, r in self.f.base.items()}
@@ -95,9 +102,9 @@ class Story:
                            "Ministry of Climate, Energy and Environment release (16 Jul 2026, round-1 solar auction)"),
             "reform": self.T("파이낸셜뉴스(2026-09-15, 기후에너지환경부 발표 인용): 재생에너지법 개정·계약시장 전환",
                              "Financial News (15 Sep 2026, citing the ministry): Renewable Energy Act reform"),
-            "kepco": self.T("뉴데일리(2026-02-26, 한전 통계 인용): 2025년 산업용 판매단가", "NewDaily (26 Feb 2026, citing KEPCO): 2025 industrial tariff"),
-            "keei": self.T("세계일보(2026-08-16, 에너지경제연구원 보고서 인용): 태양광 LCOE", "Segye Ilbo (16 Aug 2026, citing KEEI): solar LCOE"),
-            "smp": self.T("해줌(민간, 전력거래소 SMP 정리) — 잠정", "Haezoom (private summary of KPX SMP) — provisional"),
+            "kepco": self.T("한전 전력통계월보 제566호(2025.12) 표 18·18-2(계약종별 판매전력량·판매수입)", "KEPCO Monthly Statistics no.566 (Dec 2025), tables 18 and 18-2"),
+            "keei": self.T("에너지경제연구원 기본연구 25-04(2025): 태양광 설치비용 영향요인 실증 연구 — LCOE·이용률·WACC·설치비", "KEEI Basic Research 25-04 (2025): solar installation costs — LCOE, capacity factor, WACC, unit cost"),
+            "smp": self.T("전력거래소 EPSIS 계통한계가격(월별 가중평균·시간별, 육지)", "KPX EPSIS system marginal price (monthly weighted and hourly, mainland)"),
             "ecos": self.T("한국은행 ECOS 국고채 3년·원/달러", "Bank of Korea ECOS KTB 3-yr, USD/KRW"),
             "nrel": self.T("NREL Jordan & Kurtz(2012), PV 열화율 리뷰", "NREL Jordan & Kurtz (2012), PV degradation review"),
             "sec": self.T("Talen Energy 8-K(2025-06-11, SEC EDGAR)", "Talen Energy Form 8-K (11 Jun 2025, SEC EDGAR)"),
@@ -164,10 +171,10 @@ class Story:
                            f"Same plant, different buyer: equity IRR {self.pct(irr['merchant'])} → {self.pct(irr['cfd'])} → {self.pct(irr['ppa'])}"),
                     [self.T(f"한전 계약: 입찰 상한 {self.kwh(f.market.cfd_price)} 20년 고정 → 대출 {self.pct(f.base['cfd'].gearing, 0)}, 지분 IRR {self.pct(irr['cfd'])}",
                             f"KEPCO contract: auction cap {self.kwh(f.market.cfd_price)} for 20 years → gearing {self.pct(f.base['cfd'].gearing, 0)}, equity IRR {self.pct(irr['cfd'])}"),
-                     self.T(f"시장 판매: SMP {self.kwh(f.market.smp0, 0)}(잠정), 2027년 이후 신규 사업자는 REC 없음 → {self.pct(irr['merchant'])}",
-                            f"Merchant: SMP {self.kwh(f.market.smp0, 0)} (provisional), no RECs for post-2027 entrants → {self.pct(irr['merchant'])}"),
-                     self.T(f"사업비는 LCOE 역산(잠정) — 한전 계약가가 LCOE에 붙어 있어 계약 IRR이 요구수익률 {self.pct(self.hurdle, 0)}보다 낮다",
-                            f"CAPEX backed out of LCOE (provisional) — the KEPCO price sits near LCOE, so contract IRR is below the {self.pct(self.hurdle, 0)} hurdle")])
+                     self.T(f"시장 판매: SMP {self.kwh(f.market.smp0, 1)}(최근 12개월 육지 평균), 2027년 이후 신규 사업자는 REC 없음 → {self.pct(irr['merchant'])}",
+                            f"Merchant: SMP {self.kwh(f.market.smp0, 1)} (12-month mainland average), no RECs for post-2027 entrants → {self.pct(irr['merchant'])}"),
+                     self.T(f"사업비는 에너지경제연구원 LCOE {f.V('lcoe_target'):.1f}원에 맞춘 값 — 2022년 실제 설치비 기준이면 한전 계약 IRR {self.pct(f.lcoe_check['actual_irr']['cfd'])}",
+                            f"CAPEX matched to KEEI's {f.V('lcoe_target'):.1f} LCOE — at 2022 actual installed cost the KEPCO IRR would be {self.pct(f.lcoe_check['actual_irr']['cfd'])}")])
         b2 = BigBox(f"+{p1['premium']:.0f}" + self.T("원", ""), self.T(f"필요 PPA 프리미엄 (연 해지 확률 {self.pct(self.mc_h, 0)}, kWh당)", f"Required PPA premium (annual termination {self.pct(self.mc_h, 0)}, per kWh)"),
                     self.T(f"한전 계약 대신 PPA를 받아들일 가격: {self.kwh(p1['price'])} (해지 없으면 {self.kwh(self.prem(0.0)['price'])})",
                            f"Price to accept a PPA instead of KEPCO: {self.kwh(p1['price'])} ({self.kwh(self.prem(0.0)['price'])} with no termination)"),
@@ -198,7 +205,7 @@ class Story:
                 gold.add((len(rows), 1))
             rows.append([label, value, page])
         p1 = self.prem(self.mc_h)
-        add(self.T("가상 태양광 · 사업비 (LCOE 역산, 잠정)", "Hypothetical solar · CAPEX (from LCOE, provisional)"),
+        add(self.T("가상 태양광 · 사업비 (에너지경제연구원 LCOE 기준)", "Hypothetical solar · CAPEX (KEEI LCOE basis)"),
             f"{f.asset.mw:,.0f}MW · {self.eok(f.asset.capex)}", "1")
         add(self.T("1년차 발전량 · 데이터센터 사용량 대비", "Yr-1 output · share of data-centre use"), f"{self.gwh(f.dc['solar_gwh'])} · {self.pct(f.dc['share'], 0)}", "1")
         add(self.T("가격 회랑: 한전 계약가 ~ 한전 산업용", "Price corridor: KEPCO contract ~ industrial tariff"),
@@ -321,7 +328,7 @@ class Story:
         p1 = self.prem(self.mc_h)
         lo, hi = f.corridor
         lc = f.inputs["lcoe_target"]
-        pts = [(self.T("시장 SMP (잠정)", "Merchant SMP (prov.)"), f.market.smp0, c["warm_grey"]),
+        pts = [(self.T("시장 SMP (최근 12개월)", "Merchant SMP (12 months)"), f.market.smp0, c["warm_grey"]),
                (self.T("한전 계약가 (입찰 상한)", "KEPCO contract (cap)"), lo, c["brown_dark"]),
                (self.T(f"필요 PPA (연 해지 {self.pct(self.mc_h, 0)})", f"Required PPA ({self.pct(self.mc_h, 0)} term.)"), p1["price"], c["gold"]),
                (self.T("PPA 회랑 중간", "Corridor mid"), f.ppa_mid, c["brown_mid"]),
@@ -342,12 +349,13 @@ class Story:
             x = I[k]
             val = f"{float(x.value):,.1f}" + (f" ({x.low:,.0f}~{x.high:,.0f})" if x.low is not None and x.high is not None else "")
             rows.append([self.lab(k), val, G[x.tier], x.published or "—"])
-        c2 = Cell(title=self.T("가격 근거와 신뢰 등급: 공식 원문은 한전 계약가 하나 — 나머지는 원문 대조 대기", "Price evidence and grades: only the KEPCO price is from an official original so far"),
+        na = sum(I[k].tier == "A" for k in ("cfd_price", "kepco_industrial_price", "lcoe_target", "smp_base"))
+        c2 = Cell(title=self.T(f"가격 근거와 신뢰 등급: 4개 중 {na}개가 공식 원문 — 정부 보도자료·한전 통계·전력거래소·에너지경제연구원", f"Price evidence: {na} of 4 from official originals — ministry, KEPCO, KPX, KEEI"),
                   src=["mcee", "kepco", "keei", "smp"],
                   table=TableSpec([self.T("항목 (원/kWh)", "Item (KRW/kWh)"), self.T("값 (범위)", "Value (range)"), self.T("신뢰 등급", "Grade"), self.T("발표", "Published")],
                                   rows, [0.42, 0.22, 0.20, 0.16], ["L", "R", "C", "C"], gold_cells={(0, 2)}, brick_cells={(3, 2)}, font_size=8.4),
-                  note=self.T("교체 대상: 한전 전력통계월보(판매단가) · 에너지경제연구원 LCOE 보고서 원문 · 전력거래소 EPSIS SMP(A4)",
-                              "To be replaced: KEPCO monthly statistics (tariff) · KEEI LCOE report · KPX EPSIS SMP (A4)"))
+                  note=self.T("한전 판매단가 = 2025년 산업용 판매수입 ÷ 판매전력량 · SMP = 2025-09~2026-08 월별 육지 가중평균의 평균(시간별 10~16시 평균으로 교차 확인) · LCOE = 2024년 국내 범위",
+                              "Tariff = 2025 industrial revenue ÷ volume · SMP = mean of monthly mainland SMP, Sep 2025–Aug 2026 (cross-checked with 10:00–16:00 hourly) · LCOE = 2024 Korean range"))
         fx = self.fx()
         us = f.us
         rows_us = [[self.T("Talen–AWS 원전 PPA (17년, 1,920MW)", "Talen–AWS nuclear PPA (17 yrs, 1,920 MW)"), f"≥ {us['talen_floor']:,.0f}", G["A"]],
@@ -366,7 +374,7 @@ class Story:
                   src=["ksj"], panel_lead=self.T("PPA 가격은 두 대안 사이에서 정해진다", "A PPA price lives between two outside options"),
                   bullets=[self.T(f"발전사: 한전 계약({lo:,.1f}원)보다 위험이 큰 만큼 더 받아야 한다 → 하한 + 위험 프리미엄", f"Seller: needs more than KEPCO ({lo:,.1f}) for extra risk → floor + risk premium"),
                            self.T(f"구매자: PPA 가격 + 망이용료가 한전 요금({hi:,.1f}원)보다 싸야 산다 → 상한 − 망이용료", f"Buyer: PPA + network charges must beat the tariff ({hi:,.1f}) → ceiling − network charges"),
-                           self.T(f"시장 SMP({f.market.smp0:,.0f}원, 잠정)는 한전 계약가보다 낮다 — 2027년 이후 신규 사업자에게 REC가 없어서", f"Merchant SMP ({f.market.smp0:,.0f}, provisional) sits below the KEPCO price — no RECs for post-2027 entrants"),
+                           self.T(f"시장 SMP({f.market.smp0:,.1f}원)는 한전 계약가보다 낮다 — 2027년 이후 신규 사업자에게 REC가 없어서", f"Merchant SMP ({f.market.smp0:,.1f}) sits below the KEPCO price — no RECs for post-2027 entrants"),
                            self.T("미국은 원전 24시간 전력이 $63+/MWh — 한국 PPA는 '싼 재생에너지'가 아니라 'RE100용 프리미엄 상품'", "U.S. 24/7 nuclear at $63+/MWh — a Korean PPA is an RE100 premium product, not cheap power")])
         return Page("body", "3", self.T(f"가격 회랑: 한전 계약 {lo:,.1f}원 ~ 한전 산업용 {hi:,.1f}원 — 그 사이 {hi - lo:,.1f}원이 PPA 협상 여지",
                                         f"Price corridor: KEPCO contract {lo:,.1f} to industrial tariff {hi:,.1f} — {hi - lo:,.1f} of room to negotiate a PPA"),
@@ -407,28 +415,28 @@ class Story:
                   table=TableSpec([self.T("경로", "Route"), self.T("대출", "Debt"), self.T("대출 비율", "Gearing"), self.T("최소 DSCR", "Min DSCR"), self.T("지분", "Equity"),
                                    self.T("지분 IRR", "Eq. IRR"), "MOIC"], rows, [0.19, 0.15, 0.12, 0.13, 0.14, 0.14, 0.13], ["L", "R", "R", "R", "R", "R", "R"],
                                   gold_cells={(1, 5)}, brick_cells={(2, 5)}, shade_rows={1}, font_size=8.4),
-                  note=self.T(f"사업비 {self.eok(f.asset.capex)}(LCOE 역산) · 법인세 누진세율 + 지방세 10% · 정액 감가 {int(f.V('dep_years'))}년 · 대출은 목표 DSCR sculpting과 최대 대출 비율 중 작은 값",
-                              f"CAPEX {self.eok(f.asset.capex)} (from LCOE) · progressive corporate tax + 10% local · straight-line {int(f.V('dep_years'))} yrs · debt = min(DSCR sculpting, max gearing)"))
+                  note=self.T(f"사업비 {self.eok(f.asset.capex)}(kW당 {f.asset.capex * 100 / f.asset.mw:,.0f}천원, 에너지경제연구원 LCOE·WACC·이용률 기준) · 법인세 누진세율 + 지방세 10% · 정액 감가 {int(f.V('dep_years'))}년 · 대출은 목표 DSCR sculpting과 최대 대출 비율 중 작은 값",
+                              f"CAPEX {self.eok(f.asset.capex)} (KRW {f.asset.capex * 100 / f.asset.mw:,.0f}k/kW, KEEI LCOE/WACC/CF basis) · progressive corporate tax + 10% local · straight-line {int(f.V('dep_years'))} yrs · debt = min(DSCR sculpting, max gearing)"))
         srows, brick = [], set()
         for i, s in enumerate(f.sens):
             k = s["key"]
             fmt = (lambda v: f"{v * 100:.0f}%") if k in ("capacity_factor", "opex_pct") else (lambda v: f"{v:,.0f}")
             srows.append([f"{self.lab(k)} {fmt(s['lo_v'])}~{fmt(s['hi_v'])}" if self.kr else f"{self.lab(k)} {fmt(s['lo_v'])}–{fmt(s['hi_v'])}"]
                          + [f"{self.pct(s['low'][r], 1)} ~ {self.pct(s['high'][r], 1)}" for r in R])
-        c3 = Cell(title=self.T("민감도: 사업비(LCOE)와 이용률이 SMP보다 IRR을 더 흔든다 — 계약 경로는 원가가 위험", "Sensitivity: CAPEX (LCOE) and capacity factor move IRR more than SMP — contracted routes carry cost risk"),
+        c3 = Cell(title=self.T("민감도: 사업비와 이용률이 SMP보다 IRR을 더 흔든다 — 계약 경로의 위험은 원가", "Sensitivity: CAPEX and capacity factor move IRR more than SMP — contracted routes carry cost risk"),
                   src=["keei", "smp", "ksj"],
                   table=TableSpec([self.T("입력 (하단~상단)", "Input (low–high)"), self.route("cfd", True), self.route("ppa", True), self.route("merchant", True)], srows,
                                   [0.34, 0.22, 0.22, 0.22], ["L", "C", "C", "C"], font_size=8.2),
-                  note=self.T("한 번에 한 입력만 범위 끝으로 (대출 재sizing). LCOE가 높으면 사업비가 커져 IRR이 낮아진다" + self.prov_note(["capacity_factor", "lcoe_target", "smp_base", "opex_pct"]),
-                              "One input at a time at its range ends (debt re-sized). Higher LCOE means higher CAPEX and lower IRR" + self.prov_note(["capacity_factor", "lcoe_target", "smp_base", "opex_pct"])))
+                  note=self.T("한 번에 한 입력만 범위 끝으로 (대출 재sizing). 사업비 하단 = 2022년 실제 설치비, 상단 = LCOE 상단 136원에 맞춘 값 · 이용률 범위는 저자 민감도" + self.prov_note(["capacity_factor", "smp_base", "opex_pct"]),
+                              "One input at a time at its range ends (debt re-sized). CAPEX low = 2022 actual cost, high = matched to the 136 LCOE · CF range is an author sensitivity" + self.prov_note(["capacity_factor", "smp_base", "opex_pct"])))
         c4 = Cell(title=self.T("읽는 법: 한전 계약은 대출로 IRR을 만들고, PPA는 가격으로 만든다", "How to read it: the KEPCO route earns through leverage, the PPA through price"),
                   src=["ksj"], panel_lead=self.T("같은 발전소, 다른 자본구조", "Same plant, different capital structures"),
-                  bullets=[self.T(f"한전 계약: 대출 {self.pct(f.base['cfd'].gearing, 0)}로 지분이 작지만 가격이 LCOE 근처라 IRR {self.pct(irr['cfd'])}", f"KEPCO: {self.pct(f.base['cfd'].gearing, 0)} debt, but a price near LCOE gives {self.pct(irr['cfd'])}"),
+                  bullets=[self.T(f"한전 계약: 가격 {f.market.cfd_price:,.1f}원 vs LCOE {f.V('lcoe_target'):.1f}원, 대출 {self.pct(f.base['cfd'].gearing, 0)}로 지분 IRR {self.pct(irr['cfd'])}", f"KEPCO: price {f.market.cfd_price:,.1f} vs LCOE {f.V('lcoe_target'):.1f}, {self.pct(f.base['cfd'].gearing, 0)} debt → {self.pct(irr['cfd'])}"),
                            self.T(f"직접 PPA: 회랑 중간 가격이면 IRR {self.pct(irr['ppa'])} — 단 해지 위험이 없을 때(p5·p6)", f"PPA: {self.pct(irr['ppa'])} at the corridor mid — if nobody terminates (p5–p6)"),
                            self.T(f"시장 판매: 대주가 대출을 {self.pct(f.base['merchant'].gearing, 0)}만 해 주고 SMP도 낮아 IRR {self.pct(irr['merchant'])}", f"Merchant: lenders give only {self.pct(f.base['merchant'].gearing, 0)} and SMP is low → {self.pct(irr['merchant'])}"),
-                           self.T(f"지분 요구수익률 {self.pct(self.hurdle, 0)}을 넘는 건 직접 PPA뿐 — 그래서 협상 가격과 해지 위험이 핵심", f"Only the PPA clears the {self.pct(self.hurdle, 0)} hurdle — so its price and termination risk are the crux")])
-        return Page("body", "4", self.T(f"지분 IRR: 직접 PPA {self.pct(irr['ppa'])} · 한전 계약 {self.pct(irr['cfd'])} · 시장 {self.pct(irr['merchant'])} — 요구수익률을 넘는 건 PPA뿐",
-                                        f"Equity IRR: PPA {self.pct(irr['ppa'])} · KEPCO {self.pct(irr['cfd'])} · merchant {self.pct(irr['merchant'])} — only the PPA clears the hurdle"),
+                           self.T(f"요구수익률 {self.pct(self.hurdle, 0)} 기준: {self.clear_text()} — 계약 경로끼리는 가격 차이와 해지 위험의 교환", f"Against the {self.pct(self.hurdle, 0)} hurdle: {self.clear_text()} — between contracts it is price vs termination risk")])
+        return Page("body", "4", self.T(f"지분 IRR: 직접 PPA {self.pct(irr['ppa'])} · 한전 계약 {self.pct(irr['cfd'])} · 시장 {self.pct(irr['merchant'])} — 시장 판매만 요구수익률 미달",
+                                        f"Equity IRR: PPA {self.pct(irr['ppa'])} · KEPCO {self.pct(irr['cfd'])} · merchant {self.pct(irr['merchant'])} — only merchant misses the hurdle"),
                     self.T("경로별 대출 sizing → 지분 IRR·MOIC → 매각 → 민감도", "Debt sizing by route → equity IRR and MOIC → exit → sensitivity"), [c1, c2, c3, c4])
 
     # --- p5 ------------------------------------------------------------------
@@ -454,7 +462,7 @@ class Story:
             rows.append([self.pct(p["hazard"], 1), self.kwh(p["price"]), f"+{p['premium']:,.1f}", f"{p['max_fee']:,.1f}"])
             if abs(p["hazard"] - self.mc_h) < 1e-12:
                 gold |= {(i, 1), (i, 3)}
-        c2 = Cell(title=self.T("해지 확률별 필요 PPA 가격: 연 1%면 한전 계약보다 kWh당 약 5원 더", "Required PPA price by termination rate: about KRW 5/kWh over KEPCO at 1% a year"),
+        c2 = Cell(title=self.T(f"해지 확률별 필요 PPA 가격: 연 {self.pct(self.mc_h, 0)}면 한전 계약보다 kWh당 약 {self.prem(self.mc_h)['premium']:.0f}원 더", f"Required PPA price by termination rate: about KRW {self.prem(self.mc_h)['premium']:.0f}/kWh over KEPCO at {self.pct(self.mc_h, 0)} a year"),
                   src=["mcee", "kepco", "ksj"],
                   table=TableSpec([self.T("연 해지 확률", "Annual termination"), self.T("필요 PPA 가격", "Required PPA"), self.T("프리미엄 (원/kWh)", "Premium (KRW/kWh)"),
                                    self.T("망이용료 상한 (원/kWh)", "Network-charge cap (KRW/kWh)")], rows, [0.22, 0.28, 0.24, 0.26], ["C", "R", "R", "R"],
@@ -495,8 +503,8 @@ class Story:
                                         hlines=[(irr["cfd"], self.T(f"한전 계약 {self.pct(irr['cfd'])}", f"KEPCO {self.pct(irr['cfd'])}"), c["brown_dark"]),
                                                 (self.hurdle, self.T(f"요구수익률 {self.pct(self.hurdle, 0)}", f"Hurdle {self.pct(self.hurdle, 0)}"), c["brick"]),
                                                 (irr["ppa"], self.T(f"해지 없음 {self.pct(irr['ppa'])}", f"No termination {self.pct(irr['ppa'])}"), c["gold"])]),
-                  note=self.T(f"x축 = 해지 연차(그 해부터 SMP {f.market.smp0:,.0f}원 판매, 잠정). PPA 가격 = 회랑 중간 {self.kwh(f.ppa_mid)}, 대출 고정(재조달 없음), 위약금 0",
-                              f"x-axis = termination year (SMP {f.market.smp0:,.0f} from then, provisional). PPA at corridor mid {self.kwh(f.ppa_mid)}, debt fixed (no refinancing), no termination payment"))
+                  note=self.T(f"x축 = 해지 연차(그 해부터 SMP {f.market.smp0:,.1f}원 판매). PPA 가격 = 회랑 중간 {self.kwh(f.ppa_mid)}, 대출 고정(재조달 없음), 위약금 0",
+                              f"x-axis = termination year (SMP {f.market.smp0:,.1f} from then). PPA at corridor mid {self.kwh(f.ppa_mid)}, debt fixed (no refinancing), no termination payment"))
         pick = [1, 3, 5, 8, 10, 15, 20]
         rows = []
         for y, v in f.default_curve:
@@ -561,7 +569,7 @@ class Story:
                  [self.lab("cf_sd_resource"), self.pct(f.mc_spec.cf_sd_resource, 0), (TIER_KR if self.kr else TIER_EN)[I["cf_sd_resource"].tier]],
                  [self.T("PPA 연 해지 확률", "PPA annual termination"), self.pct(self.mc_h, 0), (TIER_KR if self.kr else TIER_EN)["J"]],
                  [self.T("반복 · seed", "Runs · seed"), f"{f.mc_spec.n:,} · {f.mc_spec.seed}", "—"]]
-        c3 = Cell(title=self.T("입력: SMP 변동성·평균회귀는 전력거래소 원자료로 추정 예정 — 지금은 저자 판단", "Inputs: SMP volatility and mean reversion to be estimated from KPX data — author judgement for now"),
+        c3 = Cell(title=self.T(f"입력: SMP 변동성 {f.mc_spec.smp_sigma:.2f}·평균회귀 {f.mc_spec.smp_phi:.2f}는 2002~2025년 연평균 SMP 24년에서 추정", f"Inputs: SMP volatility {f.mc_spec.smp_sigma:.2f} and mean reversion {f.mc_spec.smp_phi:.2f} estimated from 24 years of annual SMP (2002–2025)"),
                   src=["ksj"], table=TableSpec([self.T("입력", "Input"), self.T("값", "Value"), self.T("신뢰 등급", "Grade")], mrows, [0.50, 0.22, 0.28], ["L", "R", "C"], font_size=8.6),
                   note=self.T("SMP: 로그 AR(1), 평균 보존 보정 · 발전량: 장기 추정 오차(한 번) × 연간 변동(매년) · 해지: PPA 기간 중 기하분포",
                               "SMP: log AR(1), mean-preserving · output: one resource error × annual noise · termination: geometric within the PPA term"))
@@ -592,14 +600,15 @@ class Story:
                  self.T("낙찰 평균가(공단 결과) · 계약종별 요금", "Average award (KEA) · tariff class"), "3"],
                 [self.T("망이용료", "Network charges"), self.T(f"상한 {p1['max_fee']:,.0f}원(역산)", f"Cap {p1['max_fee']:,.0f} (implied)"), self.T("송배전이용요금 고시 · 부가정산금 · 손실", "T&D tariffs · settlements · losses"), "5"],
                 [self.T("오프테이커", "Offtaker"), self.T("해지 확률 격자 0~5%", "Termination grid 0–5%"), self.T("신용평가 · 임대 계약 기간 · 보증", "Rating · lease term · guarantees"), "6"],
-                [self.T("발전량", "Output"), self.T(f"이용률 {self.pct(f.asset.capacity_factor, 0)}(잠정)", f"CF {self.pct(f.asset.capacity_factor, 0)} (prov.)"), self.T("P50/P90 발전량 보고서 · 출력제한 이력", "P50/P90 yield report · curtailment"), "4, 7"],
-                [self.T("사업비", "CAPEX"), self.T(f"{self.eok(f.asset.capex)}(LCOE 역산)", f"{self.eok(f.asset.capex)} (from LCOE)"), self.T("EPC 견적 · 토지 · 계통 접속비", "EPC quote · land · grid connection"), "4"],
+                [self.T("발전량", "Output"), self.T(f"이용률 {self.pct(f.asset.capacity_factor, 0)}(BNEF·KEEI)", f"CF {self.pct(f.asset.capacity_factor, 0)} (BNEF/KEEI)"), self.T("P50/P90 발전량 보고서 · 출력제한 이력", "P50/P90 yield report · curtailment"), "4, 7"],
+                [self.T("사업비", "CAPEX"), self.T(f"{self.eok(f.asset.capex)}(LCOE 기준)", f"{self.eok(f.asset.capex)} (LCOE basis)"), self.T("EPC 견적 · 토지 · 계통 접속비", "EPC quote · land · grid connection"), "4"],
                 [self.T("프로파일", "Shape"), self.T("발전량 그대로 판매(pay-as-produced)", "Pay-as-produced"), self.T("24시간 공급 요구 시 부족분 조달 비용(ESS·한전)", "24/7 firming cost (storage, KEPCO)"), "—"]]
         c2 = Cell(title=self.T("IC 체크리스트: 이번 분석의 가정 vs 실제 딜에서 확인할 것", "IC checklist: this note's assumption vs what a real deal must confirm"), src=["ksj"],
                   table=TableSpec([self.T("항목", "Item"), self.T("이번 분석", "This note"), self.T("실제 딜에서 확인", "Confirm in a deal"), self.T("쪽", "p.")], rows,
                                   [0.15, 0.30, 0.45, 0.10], ["L", "L", "L", "C"], font_size=8.0))
         c3 = Cell(title=self.T("이 노트의 한계", "Limits of this note"), src=["ksj"], panel_lead="", bullets=[
-            self.T("공식 원문 확인 전 입력(사업비·이용률·SMP·한전 요금)은 잠정 — 교체 후 숫자가 바뀐다(A4)", "Inputs pending official sources (CAPEX, CF, SMP, tariff) are provisional — numbers will move (A4)"),
+            self.T(f"사업비: 2022년 실제 설치비(kW당 {f.V('capex_per_kw'):,.0f}천원)로 계산한 LCOE {f.lcoe_check['actual_lcoe']:.0f}원이 에너지경제연구원 LCOE {f.lcoe_check['keei'][0]:.0f}~{f.lcoe_check['keei'][1]:.0f}원보다 낮다 — 보수적으로 LCOE 쪽에 맞춤",
+                   f"CAPEX: 2022 actual installed cost (KRW {f.V('capex_per_kw'):,.0f}k/kW) implies an LCOE of {f.lcoe_check['actual_lcoe']:.0f}, below KEEI's {f.lcoe_check['keei'][0]:.0f}–{f.lcoe_check['keei'][1]:.0f} — matched to the LCOE to stay conservative"),
             self.T("PPA는 발전량 그대로 판매로 단순화 — 24시간 공급(형상) 위험과 ESS는 제외", "PPA simplified to pay-as-produced — 24/7 shape risk and storage left out"),
             self.T("한전 요금 인상·RE100 가치는 구매자 상한을 올리지만 보수적으로 제외", "Tariff increases and RE100 value would raise the buyer's ceiling; excluded to stay conservative"),
             self.T("해지 확률은 공개 부도율 근거가 없어 격자로 제시 — 실제는 신용평가로", "No public default data for termination — shown as a grid; a deal uses a credit rating")])

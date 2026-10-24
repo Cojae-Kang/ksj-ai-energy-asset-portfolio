@@ -94,4 +94,22 @@ def test_vol04_facts_build(tmp_path):
     assert p[0.01]["max_fee"] == pytest.approx(f.corridor[1] - p[0.01]["price"])
     assert f.corridor[0] <= f.be_price <= f.corridor[1]
     assert all(f.inputs[k].tier in "ABCJ" for k in f.inputs)
-    assert "smp_base" in f.provisional                                                # 민간 2차 자료는 반드시 교체 대기
+    assert all(f.inputs[k].tier in "BC" for k in f.provisional)                      # 교체 대기는 보도·민간 2차뿐
+    assert not any(x.tier == "C" for x in f.inputs.values())                           # 민간 2차 자료는 확정본에 없음
+    assert f.lcoe_check["base_lcoe"] == pytest.approx(f.V("lcoe_target"))             # 사업비 = KEEI LCOE에 맞춘 값
+
+
+def test_vol04_official_values_reproduce():
+    """입력 파일의 공식값 = 원본 파일(전력거래소·한전)에서 다시 계산한 값."""
+    from pathlib import Path
+    from src.data_fetch.base import load_config, resolve_path
+    from research.vol04 import data as D, sources as S
+    if not list(Path(resolve_path(S.SRC)).glob("*가중평균SMP*.xlsx")):
+        pytest.skip("공식 원본 파일 없음")
+    r = S.run()
+    I = D.load_inputs(resolve_path(load_config()["research"]["vol04"]["inputs_csv"]))
+    assert float(I["kepco_industrial_price"].value) == pytest.approx(r["kepco_industrial_price"], abs=0.005)
+    assert float(I["smp_base"].value) == pytest.approx(r["smp_base"], abs=0.05)
+    assert float(I["smp_sigma"].value) == pytest.approx(r["smp_sigma"], abs=0.0005)
+    assert float(I["smp_phi"].value) == pytest.approx(r["smp_phi"], abs=0.0005)
+    assert r["hourly_match_err"] < 1.0                                                  # 시간별 파일 = 육지

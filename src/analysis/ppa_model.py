@@ -205,6 +205,13 @@ def capex_from_lcoe(mw: float, cf: float, degradation: float, years: int, lcoe: 
     return g / (1 + o)
 
 
+def lcoe(a: Asset, rate: float) -> float:
+    """세전 단순 LCOE(원/kWh) = [CAPEX + Σ OPEX_t/(1+r)^t] ÷ Σ 발전량_t/(1+r)^t — 사업비의 교차 확인용."""
+    t = np.arange(1, a.years + 1)
+    disc = (1 + rate) ** -t
+    return float((a.capex + (opex(a) * disc).sum()) / (generation(a) * disc).sum() * 100.0)
+
+
 def solve(f, lo: float, hi: float, target: float, tol: float = 1e-6) -> float | None:
     """f(x) = target 이분법 (f 단조 증가 가정)."""
     flo, fhi = f(lo) - target, f(hi) - target
