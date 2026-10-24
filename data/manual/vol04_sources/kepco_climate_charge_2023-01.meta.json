@@ -1,0 +1,22 @@
+{
+  "source": "한국전력공사 한전ON 「원가연계형 요금제(기후환경요금)」 웹페이지 (브라우저 PDF 저장)",
+  "endpoint": "https://online.kepco.co.kr/PRM107D00",
+  "params": null,
+  "fetched_at": "2026-10-25",
+  "as_of": "2023-01",
+  "page": "PDF 2쪽(전체 3쪽) 표 '기후환경요금 단가(’23. 1월부터 적용)'",
+  "values": {
+    "rps_krw_per_kwh": 7.7,
+    "ets_krw_per_kwh": 1.1,
+    "coal_krw_per_kwh": 0.2,
+    "total_krw_per_kwh": 9.0,
+    "cost_eok": {
+      "rps": 42980,
+      "ets": 6156,
+      "coal": 978,
+      "total": 50114
+    }
+  },
+  "commit": "36976fc",
+  "license_note": "공공기관(한전) 공개 요금 안내 — 출처 표시, 수치 인용"
+}
