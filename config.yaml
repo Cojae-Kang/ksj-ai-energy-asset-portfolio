@@ -937,5 +937,8 @@ research:
       vol01_sources: ["dart", "krx", "eia", "ecos", "fred", "iea"]
       # ASSUMPTION(judgment): Vol.2·3 상태 → 등급. sourced는 출처 URL이 공식 도메인이면 A, 아니면 B(보도·외부 보고서)
       status_map: {data: "D", derived: "D", evidence: "D", verify: "B", judgment: "J", design: "J", neutral: "J"}
+      # ASSUMPTION(judgment): J 세분 — J-설계 = 가상 자산·기업·거래의 정의값(용량·일정·구조 등, 출처가 존재할 수 없음), J-가정 = 시장·재무 가정 판단.
+      #   Vol.2·3 = 상태 design → J-설계, judgment·neutral → J-가정 · Vol.4 = 출처 문구가 아래 패턴('저자 설계값', '…저자 설계)')이면 J-설계
+      j_design_pattern: "^저자 설계값|저자 설계\\)"
       official_domains: ["go.kr", "sec.gov", "fss.or.kr", "kepco.co.kr", "kpx.or.kr", "bok.or.kr", "krx.co.kr", "iea.org", "eia.gov", "stlouisfed.org"]
     figures: ["1:flow", "6:grades"]     # figures/vol05_p{쪽}_{키}_{언어}.png·pdf

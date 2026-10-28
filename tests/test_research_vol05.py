@@ -181,3 +181,21 @@ def test_build_has_no_render_warnings(F, cfg, tmp_path):
         assert r["afterword_fit"][lang]["size"] >= 9.0
     s = (tmp_path / "build_summary.md").read_text(encoding="utf-8")
     assert "## 핵심 결론 3줄" in s and "## 근거" in s and "## 한계" in s
+
+
+def test_j_split_rule_and_sourceable_base(F, cfg):
+    pat = cfg["research"]["vol05"]["grading"]["j_design_pattern"]
+    assert D.j_kind_text("저자 설계값: 가상 태양광", pat) == "design"
+    assert D.j_kind_text("KSJ Research Vol.2 한국 케이스 설계값(1단계 20MW, 저자 설계)", pat) == "design"
+    assert D.j_kind_text("저자 판단: 신규 대형 데이터센터 설계값 범위의 중간", pat) == "assumption"
+    assert D.j_kind_status(SimpleNamespace(status="design")) == "design"
+    assert D.j_kind_status(SimpleNamespace(status="neutral")) == "assumption"
+    # J 전체 = J-설계 + J-가정, 다른 등급은 그대로
+    for v in D.VOLS:
+        n_j = sum(1 for g in F.grades if g.vol == v and g.grade == "J")
+        assert F.dist[v][D.J_DESIGN] + F.dist[v][D.J_ASSUME] == n_j
+    # Vol.4 정의값(용량·운전 연도)은 J-설계, 금융 가정(요구수익률)은 J-가정
+    b4 = {g.key: g.bucket for g in F.grades if g.vol == 4}
+    assert b4["asset_mw"] == b4["cod_year"] == D.J_DESIGN and b4["equity_hurdle"] == D.J_ASSUME
+    n, ad = D.sourceable(F.total)
+    assert n == len(F.grades) - F.total[D.J_DESIGN] - F.total[D.NO_VALUE] and ad == F.total["A"] + F.total["D"]

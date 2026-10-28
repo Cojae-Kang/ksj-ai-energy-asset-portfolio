@@ -215,10 +215,14 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
           markdown_table([{"키": k, "결론값": x.label_kr, "값": x.kr, "원 편·쪽": x.where(), "등급": x.tier, "가장 약한 입력": x.weakest_kr or "—",
                            "쪽 대조": "✓" if x.page_ok else "✗", "요약 대조": "—" if x.summary_ok is None else ("✓" if x.summary_ok else "✗")} for k, x in f.refs.items()]), ""]
     L += ["### Vol.1~4 입력 신뢰 등급 분포 (코드 집계)", ""]
-    keys = order + [NO_VALUE]
+    keys = data.bucket_keys(order)
     L += [markdown_table([{"편": f"Vol.{n}", **{f"{k} {TIER_KR[k]}": f.dist[n][k] for k in keys}, "합계": sum(f.dist[n].values()),
-                           "입력 수": sum(1 for g in f.grades if g.vol == n)} for n in data.VOLS]
-                         + [{"편": "전체", **{f"{k} {TIER_KR[k]}": f.total[k] for k in keys}, "합계": sum(f.total.values()), "입력 수": len(f.grades)}]), ""]
+                           "입력 수": sum(1 for g in f.grades if g.vol == n),
+                           "출처 가능(값 있음 − J-설계)": data.sourceable(f.dist[n])[0], "그중 A·D": data.sourceable(f.dist[n])[1]} for n in data.VOLS]
+                         + [{"편": "전체", **{f"{k} {TIER_KR[k]}": f.total[k] for k in keys}, "합계": sum(f.total.values()), "입력 수": len(f.grades),
+                            "출처 가능(값 있음 − J-설계)": data.sourceable(f.total)[0], "그중 A·D": data.sourceable(f.total)[1]}]), ""]
+    L += ["- J 세분(J): J-설계 = " + ", ".join(f"Vol.{g.vol} {g.key}" for g in f.grades if g.bucket == data.J_DESIGN)
+          + f" · J-가정 = 나머지 J {sum(1 for g in f.grades if g.bucket == data.J_ASSUME)}개. Vol.4 패턴: {v['grading']['j_design_pattern']}", ""]
     L += ["- 집계 규칙(J): Vol.1 = 공식 원자료 소스(" + ", ".join(v["grading"]["vol01_sources"]) + ") A · Vol.2 = 케이스 A·B 가정표 · Vol.3 = 가정표 · Vol.4 = 입력 CSV tier. "
           "Vol.2·3 상태 → 등급: " + ", ".join(f"{a}→{b}" for a, b in v["grading"]["status_map"].items()) + ", sourced→공식 도메인이면 A 아니면 B, 미입력은 '—'", ""]
     L += ["### 정정 기록 (git 대조)", "",

@@ -26,8 +26,11 @@ logger = logging.getLogger("research.vol05.data")
 
 VOLS = (1, 2, 3, 4)
 NO_VALUE = "—"                                   # 미입력(값 없음) — 등급 집계에서 따로 센다
-TIER_KR = {**TIER_KR, NO_VALUE: "미입력"}
-TIER_EN = {**TIER_EN, NO_VALUE: "Not set"}
+# J 세분 (집계 전용): J-설계 = 가상 자산·기업·거래의 정의값(출처가 존재할 수 없음) · J-가정 = 시장·재무 가정에 대한 저자 판단
+J_DESIGN, J_ASSUME = "J-설계", "J-가정"
+TIER_KR = {**TIER_KR, NO_VALUE: "미입력", J_DESIGN: "가상 자산 정의값", J_ASSUME: "시장·재무 가정 판단"}
+TIER_EN = {**TIER_EN, NO_VALUE: "Not set", J_DESIGN: "Hypothetical-asset definition", J_ASSUME: "Market/financial assumption"}
+CODE_EN = {J_DESIGN: "J-design", J_ASSUME: "J-assumption"}
 CASE_KR, CASE_EN = {"A": "한국", "B": "미국"}, {"A": "Korea", "B": "U.S."}     # Vol.2 케이스 A = 한국 40MW, B = 미국 100MW
 VERDICT_KR = {"invest": "넣는다", "wait": "기다린다", "avoid": "피한다"}
 VERDICT_EN = {"invest": "Invest", "wait": "Wait", "avoid": "Avoid"}
@@ -73,6 +76,14 @@ class Grade:
     label_en: str
     grade: str          # A D B C J 또는 '—'(미입력)
     basis: str          # 등급 근거 (원 편 tier · 상태 · URL 판정)
+    j_kind: str = ""    # J일 때 'design'(가상 자산 정의값) | 'assumption'(시장·재무 가정 판단)
+
+    @property
+    def bucket(self) -> str:
+        """집계 칸: J는 J-설계 / J-가정으로 나눈다."""
+        if self.grade != "J":
+            return self.grade
+        return J_DESIGN if self.j_kind == "design" else J_ASSUME
 
 
 @dataclass
@@ -250,6 +261,16 @@ def grade_assumption(a, g: Mapping) -> tuple[str, str]:
     return sm[st], f"status={st}"
 
 
+def j_kind_status(a) -> str:
+    """Vol.2·3 J 세분: 원 편 상태 design(가상 케이스·기업·거래 설정) → design, judgment·neutral → assumption."""
+    return "design" if a.status == "design" else "assumption"
+
+
+def j_kind_text(source: str, pattern: str) -> str:
+    """Vol.4 J 세분: 입력 출처 문구가 '저자 설계(값)' 표기면 design, 아니면 assumption (패턴은 config vol05.grading.j_design_pattern)."""
+    return "design" if re.search(pattern, source or "") else "assumption"
+
+
 def grade_inputs(cfg: Mapping, vols: Mapping[int, Any]) -> list[Grade]:
     """Vol.1~4 입력 전체의 등급. Vol.1 = 공식 원자료 소스, Vol.2 = 케이스 A·B 가정표, Vol.3 = 가정표, Vol.4 = 입력 CSV."""
     from research.vol02 import data as d2
@@ -265,21 +286,36 @@ def grade_inputs(cfg: Mapping, vols: Mapping[int, Any]) -> list[Grade]:
         for k in d2.table_keys(case, d):
             gr, basis = grade_assumption(d[k], g)
             kr, en = d2.LABELS.get(k, (k, k))
-            out.append(Grade(2, f"{case}.{k}", f"{kr}({CASE_KR.get(case, case)})", f"{en} ({CASE_EN.get(case, case)})", gr, basis))
+            out.append(Grade(2, f"{case}.{k}", f"{kr}({CASE_KR.get(case, case)})", f"{en} ({CASE_EN.get(case, case)})", gr, basis,
+                             j_kind_status(d[k]) if gr == "J" else ""))
     a3 = vols[3].assumptions
     for k in d3.table_keys(a3):
         gr, basis = grade_assumption(a3[k], g)
         kr, en = d3.LABELS.get(k, (k, k))
-        out.append(Grade(3, k, kr, en, gr, basis))
+        out.append(Grade(3, k, kr, en, gr, basis, j_kind_status(a3[k]) if gr == "J" else ""))
     for k, x in vols[4].inputs.items():
         kr, en = d4.LABELS.get(k, (k, k))
-        out.append(Grade(4, k, kr, en, x.tier, "vol04_inputs.csv tier"))
+        out.append(Grade(4, k, kr, en, x.tier, "vol04_inputs.csv tier", j_kind_text(x.source, g["j_design_pattern"]) if x.tier == "J" else ""))
     return out
 
 
+def bucket_keys(order: list[str]) -> list[str]:
+    """집계 칸 순서: A D B C J-설계 J-가정 — (J를 두 칸으로)."""
+    out = []
+    for k in order:
+        out += [J_DESIGN, J_ASSUME] if k == "J" else [k]
+    return out + [NO_VALUE]
+
+
 def distribution(grades: list[Grade], order: list[str]) -> dict[int, dict[str, int]]:
-    keys = list(order) + [NO_VALUE]
-    return {v: {k: sum(1 for x in grades if x.vol == v and x.grade == k) for k in keys} for v in VOLS}
+    keys = bucket_keys(order)
+    return {v: {k: sum(1 for x in grades if x.vol == v and x.bucket == k) for k in keys} for v in VOLS}
+
+
+def sourceable(dist_row: Mapping[str, int]) -> tuple[int, int]:
+    """(출처가 있을 수 있는 입력 수, 그중 A·D 수). 분모 = 값이 있는 입력 − J-설계 (가상 자산 정의값은 출처가 존재할 수 없음)."""
+    n = sum(v for k, v in dist_row.items() if k not in (J_DESIGN, NO_VALUE))
+    return n, dist_row.get("A", 0) + dist_row.get("D", 0)
 
 
 def weakest(drivers: list[tuple[int, str]], gmap: Mapping[tuple[int, str], Grade], order: list[str],

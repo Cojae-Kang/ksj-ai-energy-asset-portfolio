@@ -10,7 +10,8 @@ from typing import Mapping
 from research.vol01.layout import BigBox, Cell, Page, TableSpec, toc_line
 
 from . import charts
-from .data import NO_VALUE, TIER_EN, TIER_KR, VERDICT_EN, VERDICT_KR, Asset, Facts, Ref
+from .data import (CODE_EN, J_ASSUME, J_DESIGN, NO_VALUE, TIER_EN, TIER_KR, VERDICT_EN, VERDICT_KR, Asset, Facts, Ref, bucket_keys,
+                   sourceable)
 
 ASSET_KR = {"cfd_equity": "한전 CfD 태양광 지분", "dc_pf_loan": "데이터센터 PF 선순위 대출", "direct_ppa": "데이터센터 직접 PPA",
             "target_ipo": "Target Co. IPO", "merchant_solar": "시장 판매 태양광", "legacy_rec": "기존 REC 의존 자산",
@@ -244,8 +245,9 @@ class Story:
         add(self.T("피한다 · REC 현물시장 시한(B)", "Avoid · REC spot market ends (B)"), self.t("v4_rec_end"), "5")
         add(self.T("피한다 · 멀티플 기여 3사 순이익 / 4사 영업이익", "Avoid · multiple share 3-name NI / 4-name OP"), f"{self.t('v1_mult_ni')} / {self.t('v1_mult_op')}", "5")
         tot = f.total
-        add(self.T(f"입력 {sum(tot.values())}개 등급 A / D / B / C / J", f"{sum(tot.values())} inputs, grades A / D / B / C / J"),
-            " / ".join(str(tot[k]) for k in f.extra["order"]), "6", True)
+        ns, nad = sourceable(tot)
+        add(self.T(f"출처가 있을 수 있는 입력 중 A·D (전체 {sum(tot.values())}개)", f"A·D among sourceable inputs ({sum(tot.values())} in all)"),
+            f"{nad} / {ns} ({nad / ns * 100:.0f}%)", "6", True)
         ok_ = sum(1 for c in f.corrections if c["verified"])
         add(self.T("정정 기록 (git 대조 일치)", "Corrections (git-verified)"), self.T(f"{len(f.corrections)}건 ({ok_}/{len(f.corrections)})", f"{len(f.corrections)} ({ok_}/{len(f.corrections)})"), "6")
         table = TableSpec([self.T("핵심 지표", "Key metric"), self.T("값", "Value"), self.T("쪽", "p.")], rows, [0.56, 0.35, 0.09], ["L", "R", "C"],
@@ -525,7 +527,11 @@ class Story:
                     [c1, c2, c3, c4])
 
     # --- p6 숫자는 어떻게 지켰나 -------------------------------------------------
-    GRADE_COLORS = {"A": "gold", "D": "brown_mid", "B": "warm_grey", "C": "brick", "J": "brown_dark", NO_VALUE: "warm_grey_light"}
+    GRADE_COLORS = {"A": "gold", "D": "brown_mid", "B": "warm_grey", "C": "brick", J_DESIGN: "brown_dark", J_ASSUME: "charcoal", NO_VALUE: "warm_grey_light"}
+
+    def code(self, k: str) -> str:
+        """등급 칸 표기 (J-설계·J-가정은 영문 별칭)."""
+        return k if self.kr else CODE_EN.get(k, k)
 
     def p6(self) -> Page:
         f, c = self.f, self.c
@@ -546,30 +552,37 @@ class Story:
                                   gold_cells=ok_cells, font_size=7.4, max_grow=1.1),
                   note=self.T("git 대조 = 첫 커밋의 부모와 마지막 커밋의 각 편 빌드 요약에서 '전' 문구가 사라지고 '후' 문구가 생겼는지 코드로 확인. 숫자는 각 시점 보고서 값",
                               "git check = code confirms the 'before' text leaves and the 'after' text appears in the volume's build summary between the first commit's parent and the last commit. Numbers are as published at each point"))
-        order = list(f.extra["order"])
-        keys = order + ([NO_VALUE] if f.total.get(NO_VALUE) else [])
+        keys = [k for k in bucket_keys(f.extra["order"]) if k != NO_VALUE or f.total.get(NO_VALUE)]
         cats = [f"Vol.{n} · {self.T(['공식 소스', '가정표(한·미)', '가정표', '입력표'][n - 1], ['official sources', 'assumptions (KR+US)', 'assumptions', 'inputs'][n - 1])}" for n in (1, 2, 3, 4)] + [self.T("전체", "All")]
         series = []
         for k in keys:
             vals = [f.dist[n][k] for n in (1, 2, 3, 4)] + [f.total[k]]
             series.append((k, vals, c[self.GRADE_COLORS[k]]))
-        tots = [self.T(f"{sum(f.dist[n].values())}개", f"{sum(f.dist[n].values())}") for n in (1, 2, 3, 4)] + [self.T(f"{sum(f.total.values())}개", f"{sum(f.total.values())}")]
+        rows_d = [f.dist[n] for n in (1, 2, 3, 4)] + [f.total]
+        tots = []
+        for d in rows_d:
+            ns, nad = sourceable(d)
+            tots.append(self.T(f"{sum(d.values())}개 · A·D {nad}/{ns}", f"{sum(d.values())} · A·D {nad}/{ns}"))
         tot = f.total
         n_all = sum(tot.values())
-        legend = [(c[self.GRADE_COLORS[k]], f"{k} {self.tier_name(k)}") for k in keys]
-        c2 = Cell(title=self.T(f"입력 {n_all}개의 신뢰 등급: A {tot['A']} · D {tot['D']} · B {tot['B']} · C {tot['C']} · J {tot['J']}" + (f" · 미입력 {tot[NO_VALUE]}" if tot.get(NO_VALUE) else "")
-                               + f" — 저자 판단(J)이 {tot['J'] / n_all * 100:.0f}%, 그래서 판정마다 '뒤집는 가정'을 붙였다",
-                               f"Source grades for {n_all} inputs: A {tot['A']} · D {tot['D']} · B {tot['B']} · C {tot['C']} · J {tot['J']}" + (f" · not set {tot[NO_VALUE]}" if tot.get(NO_VALUE) else "")
-                               + f" — judgement is {tot['J'] / n_all * 100:.0f}%, hence a flipping assumption on every verdict"),
-                  src=["v1", "v2", "v3", "v4"], legend=legend, unit=self.T("개", "count"),
+        n_src, n_ad = sourceable(tot)
+        legend = [(c[self.GRADE_COLORS[k]], f"{self.code(k)} {self.tier_name(k)}") for k in keys]
+        brk = " · ".join(f"{self.code(k)} {tot[k]}" for k in keys if k != NO_VALUE) + (self.T(f" · 미입력 {tot[NO_VALUE]}", f" · not set {tot[NO_VALUE]}") if tot.get(NO_VALUE) else "")
+        c2 = Cell(title=self.T(f"입력 {n_all}개: {brk} — 가상 자산 정의값(J-설계)을 빼면 출처가 있을 수 있는 입력 {n_src}개, 그중 J-가정 {tot[J_ASSUME] / n_src * 100:.0f}% → 판정마다 '뒤집는 가정'을 붙였다",
+                               f"{n_all} inputs: {brk} — excluding hypothetical-asset definitions, {n_src} inputs could have a source; J-assumption is {tot[J_ASSUME] / n_src * 100:.0f}% of them, hence a flipping assumption on every verdict"),
+                  src=["v1", "v2", "v3", "v4"], legend=legend, unit=self.T("개 (막대 끝: 전체 · A·D/출처 가능)", "count (bar end: total · A·D/sourceable)"),
                   chart_key="grades", chart=charts.stacked_h(cats, series, c, tots),
                   note=self.T("코드 집계. Vol.4 = 입력 CSV 등급 그대로 · Vol.1 = 공식 원자료 소스(공시·공공기관·IEA) A · Vol.2·3 = 가정표 상태를 옮김(데이터·실증 → D, 근거 있음 → 공식 도메인이면 A 아니면 B, "
-                              "원문 확인 → B, 저자 판단·설계값·중립값 → J) — 이 변환 규칙은 저자 판단(J)",
+                              "원문 확인 → B, 저자 판단·중립값 → J-가정, 설계값 → J-설계). J-설계 = 용량·일정·구조처럼 가상 자산·기업·거래를 정의하는 값(Vol.4는 출처란 '저자 설계' 표기) — 출처가 존재할 수 없어 분모에서 뺌. "
+                              "분모 = 값이 있는 입력 − J-설계. 변환·분류 규칙은 저자 판단(J)",
                               "Counted in code. Vol.4 = grades in its input file · Vol.1 = official raw-data sources (filings, public bodies, IEA) A · Vol.2–3 = assumption status mapped (data/evidence → D, sourced → A if an official "
-                              "domain else B, verify → B, judgement/design/neutral → J) — the mapping is judgement (J)"))
-        return Page("body", "6", self.T(f"숫자는 어떻게 지켰나: 모든 입력에 등급, 모든 정정에 커밋 — 정정 {len(rows)}건, 입력 {n_all}개 중 공식 원문·계산(A·D) {tot['A'] + tot['D']}개",
-                                        f"How the numbers were kept: a grade on every input, a commit on every correction — {len(rows)} corrections; {tot['A'] + tot['D']} of {n_all} inputs official or computed (A·D)"),
-                    self.T("편별 정정 기록(git·빌드 요약 기준, 전→후) · Vol.1~4 입력 신뢰 등급 분포", "Corrections by volume (git and build summaries, before → after) · source-grade mix of Vol.1–4 inputs"),
+                              "domain else B, verify → B, judgement/neutral → J-assumption, design → J-design). J-design = values that define the hypothetical asset, company or deal (size, timing, structure; "
+                              "Vol.4: 'author's design' in the source field) — no source can exist, so excluded from the base. Base = inputs with a value − J-design. Mapping rules are judgement (J)"))
+        pct_ad = n_ad / n_src * 100
+        return Page("body", "6", self.T(f"숫자는 어떻게 지켰나: 출처가 있을 수 있는 입력 {n_src}개 중 공식 원문·계산(A·D) {n_ad}개({pct_ad:.0f}%) — 정정 {len(rows)}건은 모두 커밋으로 남겼다",
+                                        f"How the numbers were kept: {n_ad} of {n_src} inputs that could have a source ({pct_ad:.0f}%) are official or computed (A·D) — all {len(rows)} corrections kept as commits"),
+                    self.T("편별 정정 기록(git·빌드 요약 기준, 전→후) · Vol.1~4 입력 신뢰 등급 분포(J = 가상 자산 정의값 · 시장·재무 가정 판단)",
+                           "Corrections by volume (git and build summaries, before → after) · source grades of Vol.1–4 inputs (J split into definitions and assumptions)"),
                     [c1, c2], grid="2x1")
 
     # --- A1 IC 메모 ---------------------------------------------------------------
