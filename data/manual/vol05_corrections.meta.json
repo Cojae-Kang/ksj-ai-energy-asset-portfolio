@@ -1,0 +1,8 @@
+{
+  "source": "이 저장소 git 이력 (커밋 해시) · 각 편 research/volNN/build_summary.md의 커밋 전(첫 커밋의 부모)·후(마지막 커밋) 문구",
+  "endpoint": null,
+  "params": null,
+  "fetched_at": "2026-10-28",
+  "as_of": "2026-10-28",
+  "license_note": "저자 작성 기록. check_before/check_after = 해당 커밋 전·후 build_summary.md에 있어야 하는 문구 — research.vol05.data가 git으로 대조(git이 없으면 '미확인'). 전·후 숫자는 각 시점 보고서 값(지어낸 숫자 아님)"
+}

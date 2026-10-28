@@ -907,3 +907,35 @@ research:
       n: 5000
       seed: 42
       hazard: 0.01                      # ASSUMPTION(judgment): 몬테카를로의 PPA 연 해지 확률 (격자 결과와 함께 공개)
+
+  vol05:                                # 완결편 — 새 데이터 없음. Vol.1~4의 load_facts·build_summary에서 결론값을 불러온다 (research/vol05/data.py)
+    output_dir: "research/vol05"
+    build_dir: "research/vol05/_build"
+    page_pt: [960, 720]
+    title_kr: "AI 에너지 자산 투자 지도"
+    title_en: "An Investment Map of AI Energy Assets"
+    subtitle_kr: "수요 → 자산 → 상장 → 계약: 네 편의 결론을 한 장의 지도로 — 무엇에 넣고, 무엇을 기다리고, 무엇을 피하나"
+    subtitle_en: "Demand → assets → listing → contracts: four volumes on one map — where to invest, where to wait, what to avoid"
+    date_label: "2026.11"
+    as_of: "2026-10-28"                 # Vol.5 기준일 (Vol.1~4 숫자는 각 편 기준일 2026-10-20 그대로)
+    corrections_csv: "data/manual/vol05_corrections.csv"   # 편별 정정 기록 (git 커밋·build_summary 전→후 문구)
+    vol04_mc_n: 0                       # Vol.5는 Vol.4 몬테카를로 값을 쓰지 않음 → 생략(빌드 시간). 결정론 결과만 사용
+    # 네 렌즈: 편 → 돈의 흐름 단계·앉은 자리 (문구만, 숫자 없음)
+    lenses:
+      1: {stage_kr: "수요", stage_en: "Demand", seat_kr: "섹터 애널리스트", seat_en: "Sector analyst",
+          question_kr: "주가 상승은 이익인가 배수인가", question_en: "Was the rally earnings or multiple?"}
+      2: {stage_kr: "자산", stage_en: "Assets", seat_kr: "PF 대주", seat_en: "PF lender",
+          question_kr: "데이터센터에 얼마까지 빌려주나", question_en: "How much can a data centre borrow?"}
+      3: {stage_kr: "상장", stage_en: "Listing", seat_kr: "ECM 뱅커", seat_en: "ECM banker",
+          question_kr: "PER 40배 섹터의 공모가 밴드는", question_en: "What price range in a 40x P/E sector?"}
+      4: {stage_kr: "계약", stage_en: "Contracts", seat_kr: "지분투자자", seat_en: "Equity investor",
+          question_kr: "전력 계약은 위험 대비 더 버나", question_en: "Which power contract pays for its risk?"}
+    # 입력 신뢰 등급 집계 규칙 (Vol.4 등급 체계 A 공식 원문 · D 공식 자료 계산 · B 보도·외부 보고서 · C 민간 2차 · J 저자 판단)
+    grading:
+      order: ["A", "D", "B", "C", "J"]  # 강 → 약. 결론값 등급 = 결론을 만든 주요 입력 중 가장 약한 등급(계산값은 최소 D)
+      # ASSUMPTION(judgment): Vol.1 입력 = 공식 원자료 소스(공시·공공기관·IEA 보고서) → 모두 A. SEC는 Vol.3에서 사용(Vol.1 출처표 제외)
+      vol01_sources: ["dart", "krx", "eia", "ecos", "fred", "iea"]
+      # ASSUMPTION(judgment): Vol.2·3 상태 → 등급. sourced는 출처 URL이 공식 도메인이면 A, 아니면 B(보도·외부 보고서)
+      status_map: {data: "D", derived: "D", evidence: "D", verify: "B", judgment: "J", design: "J", neutral: "J"}
+      official_domains: ["go.kr", "sec.gov", "fss.or.kr", "kepco.co.kr", "kpx.or.kr", "bok.or.kr", "krx.co.kr", "iea.org", "eia.gov", "stlouisfed.org"]
+    figures: ["1:flow", "6:grades"]     # figures/vol05_p{쪽}_{키}_{언어}.png·pdf
