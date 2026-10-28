@@ -187,10 +187,10 @@ class Story:
     def headline(self) -> str:
         room = f"{self.room_hi():.0f}"
         net = f"{self.f.V('v4_net_charge'):.0f}"
-        return self.T(f"계약된 현금흐름엔 넣고(CfD IRR {self.R('v4_irr_cfd').value * 100:.1f}% · PF 최소 DSCR {self.t('v2_min_dscr')}), 성립 조건이 안 맞으면 기다리고"
-                      f"(PPA 여유 {room}원 < 부대비용 {net}원), 시장 가격·배수에 기대면 피한다(시장 판매 IRR {self.R('v4_irr_merchant').value * 100:.1f}%)",
-                      f"Invest where cash flows are contracted (CfD IRR {self.R('v4_irr_cfd').value * 100:.1f}%, PF min DSCR {self.t('v2_min_dscr')}), wait where the deal "
-                      f"cannot close yet (PPA room {room} < {net} charges), avoid what leans on market prices or multiples (merchant IRR {self.R('v4_irr_merchant').value * 100:.1f}%)")
+        return self.T(f"계약된 현금흐름엔 넣고(CfD IRR {self.t('v4_irr_cfd')} · PF 최소 DSCR {self.t('v2_min_dscr')}), 성립 조건이 안 맞으면 기다리고"
+                      f"(PPA 여유 최대 {room}원 < 부대비용 {net}원(B)), 시장 가격·배수에 기대면 피한다(시장 판매 IRR {self.t('v4_irr_merchant')})",
+                      f"Invest in contracted cash flows (CfD IRR {self.t('v4_irr_cfd')}, PF min DSCR {self.t('v2_min_dscr')}), wait where deals "
+                      f"cannot close (PPA room ≤ {room} < {net} charges, B), avoid what leans on prices or multiples (merchant IRR {self.t('v4_irr_merchant')})")
 
     def exec_conclusions(self) -> list[str]:
         return [self.headline()] + [b.title for b in self.boxes()]
@@ -346,7 +346,7 @@ class Story:
                                f"3-name P/E {self.t('v1_per')} · multiple share {self.t('v1_mult_ni')} (3-name NI) / {self.t('v1_mult_op')} (4-name OP) {self.g('v1_mult_op')}"),
                              T(f"이익 기준 선택이 결론을 가른다({self.t('v1_mult_ni')} vs {self.t('v1_mult_op')}) · 적용 PER {self.t('v3_per')}이면 같은 이익에서 가치 {self.sgn(self.per_drop())} {self.g('v3_per')}",
                                f"The earnings basis decides it ({self.t('v1_mult_ni')} vs {self.t('v1_mult_op')}) · P/E {self.t('v3_per')} means {self.sgn(self.per_drop())} value on the same earnings {self.g('v3_per')}"),
-                             T("PER이 정상화 배수 근처로 내려오거나, 이익 증가가 배수를 따라잡을 때(멀티플 기여 50% 아래)", "P/E nears the normalised multiple, or earnings catch up (multiple share below 50%)")),
+                             T("PER이 정상화 배수 근처로 내려오거나, 이익 증가가 배수를 따라잡을 때(4사 영업이익 기준 멀티플 기여 50% 아래)", "P/E nears the normalised multiple, or earnings catch up (multiple share below 50% on 4-name operating income)")),
         }
         out = []
         for a in self.f.assets:
@@ -367,10 +367,10 @@ class Story:
                                      self.T("트리거 — 판정을 바꾸는 신호 (J)", "Trigger — what would change it (J)")],
                                     rows, [0.14, 0.24, 0.30, 0.08, 0.24], ["L", "L", "L", "C", "L"], gold_cells=gold, strong_cells=strong, brick_cells=brick,
                                     font_size=7.6, max_grow=1.36),
-                    note=self.T("판정·트리거 = 저자 판단(J). 판정 규칙(J): 넣는다 = 기준 수익률이 요구수익률·목표 DSCR을 넘고 뒤집는 가정을 계약 조건으로 막을 수 있음 · 기다린다 = 수익률은 되지만 거래 성립 조건 미충족 · "
-                                "피한다 = 요구수익률 미달이거나 가격이 배수·시장 가격에 기댐. " + self.grade_note(),
-                                "Verdicts and triggers = judgement (J). Rule (J): invest = clears the hurdle or target DSCR and the flipping assumption can be contracted away · wait = returns clear but the deal "
-                                "cannot close yet · avoid = misses the hurdle or leans on multiples or market prices. " + self.grade_note()))
+                    note=self.T("판정·트리거 = 저자 판단(J). 판정 규칙(J): 넣는다 = 기준 수익률이 요구수익률·목표 DSCR을 넘고 뒤집는 가정을 계약 조건·선행조건(실사 포함)으로 관리할 수 있음 · 기다린다 = 수익률은 되지만 거래 성립 조건 미충족 · "
+                                "피한다 = 요구수익률 미달이거나 가격이 배수·시장 가격에 기댐(상장 전력기기주는 4사 영업이익 기준 멀티플 기여 > 50%). " + self.grade_note(),
+                                "Verdicts and triggers = judgement (J). Rule (J): invest = clears the hurdle or target DSCR and the flipping assumption can be managed by contract terms or CPs (incl. due diligence) · wait = returns clear but the deal "
+                                "cannot close yet · avoid = misses the hurdle or leans on multiples or market prices (listed equipment: multiple share > 50% on 4-name operating income). " + self.grade_note()))
         n = {k: len(self.assets_in(k)) for k in ("invest", "wait", "avoid")}
         return Page("full", "2", self.T(f"투자 지도: 넣는다 {n['invest']} · 기다린다 {n['wait']} · 피한다 {n['avoid']} — 판정을 가르는 것은 수익률보다 '뒤집는 가정'의 크기",
                                         f"The map: invest {n['invest']} · wait {n['wait']} · avoid {n['avoid']} — the size of the flipping assumption matters more than the return"),
@@ -608,7 +608,8 @@ class Story:
         mon = [[self.T("한전 계약시장 낙찰가", "KEPCO contract-market price"), self.t("v4_cfd_price"), self.T("상한보다 낮으면 CfD IRR 재계산", "Below the cap → recompute CfD IRR")],
                [self.T("직접 PPA 부대비용", "Direct-PPA charges"), self.t("v4_net_charge"), self.T(f"{max(f.V('v4_room')):,.1f}원 이하면 PPA 성립", f"≤ {max(f.V('v4_room')):,.1f} → PPA closes")],
                [self.T("SMP (12개월 육지 평균)", "SMP (12-month mainland)"), self.t("v4_smp_base"), self.T(f"{f.V('v4_merchant_smp_hi')[0]:,.1f}원 이상 지속이면 시장 판매 재검토", f"Sustained ≥ {f.V('v4_merchant_smp_hi')[0]:,.1f} → revisit merchant")],
-               [self.T("3사 합산 순이익률", "3-name net margin"), self.t("v3_npm_now"), self.T(f"하한 {f.V('v3_npm_floor')[1] * 100:.1f}% 이상 확인 시 IPO 재산정", f"Floor ≥ {f.V('v3_npm_floor')[1] * 100:.1f}% confirmed → re-price IPO")],
+               [self.T("3사 합산 순이익률", "3-name net margin"), self.t("v3_npm_now"), self.T(f"필요 할인율 ≤ 밴드 최대 {max(f.V('v3_band_disc')) * 100:.1f}%가 되는 하한 확인 시 — FY2023A {f.V('v3_npm_floor')[1] * 100:.1f}%로도 {self.t('v3_req_alt')}라 부족",
+                                                                     f"A floor that brings the required discount to ≤ {max(f.V('v3_band_disc')) * 100:.1f}% — even FY2023A {f.V('v3_npm_floor')[1] * 100:.1f}% gives {self.t('v3_req_alt')}")],
                [self.T("전력기기 적용 PER", "Equipment P/E"), f"{f.V('v3_per')[0]:.1f}" + self.T("배", "x"), self.T(f"정상화 {f.V('v3_per')[1]:.1f}배 근처면 재검토", f"Near the normalised {f.V('v3_per')[1]:.1f}x → revisit")],
                [self.T("국고채 3년", "KTB 3-yr"), self.t("v4_ktb"), self.T("금리 변화 → CfD·PF 금리 재계산", "Rate moves → recompute CfD and PF")],
                [self.T("REC 경과 규정", "REC transition rules"), self.T("보도(B)", "Press (B)"), self.T("원문 고시 시 기존 자산 재평가", "Original text → re-assess existing assets")]]
@@ -647,9 +648,9 @@ class Story:
         cells[0].src = ["v1", "v2", "v3", "v4"]
         cells[1].title = self.T("등급: A 공식 원문 · D 공식 자료 계산 · B 보도·외부 보고서 · C 민간 2차 · J 저자 판단", "Grades: A official · D computed from official · B press/external · C secondary · J judgement")
         cells[1].note = self.T("대조: 첫 O = 원 편 국문 해당 쪽 문구에 같은 값이 있음, 둘째 O = 원 편 빌드 요약에도 있음(· = 요약에 해당 문구 없음). 둘 다 빌드 때 코드로 확인. "
-                               "등급 = 주요 입력 중 가장 약한 등급(계산값 최소 D), 괄호 = 그 입력",
+                               "원 편 쪽에는 반올림 표기일 수 있음(예: 12.25% → 12.2%, 정밀값은 원 편 빌드 요약). 등급 = 주요 입력 중 가장 약한 등급(계산값 최소 D), 괄호 = 그 입력",
                                "Check: first O = the same value appears on that page of the volume (Korean text); second O = also in the volume's build summary (· = not applicable). Both verified in code at build. "
-                               "Grade = weakest main input (computed values at least D); brackets name that input")
+                               "The page may show a rounded figure (e.g. 12.25% → 12.2%; exact values in the build summary). Grade = weakest main input (computed values at least D); brackets name that input")
         return Page("body", "A2", self.T("출처 지도: 모든 결론값을 원 편·쪽·신뢰 등급으로 되짚는다", "Source map: every result traced to its volume, page and source grade"),
                     self.T(f"Vol.1~4 각 편 계산(기준일 2026-10-20)에서 불러온 값 — 지어낸 숫자 없음", "Values loaded from each volume's calculation (as of 20 Oct 2026) — no invented numbers"),
                     cells, grid="1x2")

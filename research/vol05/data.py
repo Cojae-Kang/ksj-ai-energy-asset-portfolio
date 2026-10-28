@@ -366,8 +366,8 @@ def build_refs(cfg: Mapping, vols: Mapping[int, Any]) -> dict[str, Ref]:
     fy0 = min(f3.der.hist)
     add("v3_band", 3, "6", (b.low, b.high), f"{b.low:,.0f}~{b.high:,.0f}원", f"KRW {b.low:,.0f}–{b.high:,.0f}", "희망공모가 밴드 (현재 기준)", "Indicative range (current basis)",
         [f"{b.low:,.0f}~{b.high:,.0f}"], [f"{b.low:,.0f}~{b.high:,.0f}원"])
-    add("v3_band_disc", 3, "6", (b.d_low, b.d_high), f"{pct(b.d_low)}~{pct(b.d_high)}", f"{pct(b.d_low)}–{pct(b.d_high)}", "밴드 할인율 (평가가액 대비)", "Range discount (to value)",
-        [f"{b.d_low * 100:.0f}~{b.d_high * 100:.0f}%"], [f"할인율 {b.d_low * 100:.1f}~{pct(b.d_high)}"])
+    add("v3_band_disc", 3, "A2", (b.d_low, b.d_high), f"{pct(b.d_low)}~{pct(b.d_high)}", f"{pct(b.d_low)}–{pct(b.d_high)}", "밴드 할인율 (평가가액 대비)", "Range discount (to value)",
+        [pct(b.d_low), pct(b.d_high)], [f"할인율 {b.d_low * 100:.1f}~{pct(b.d_high)}"])
     add("v3_value", 3, "6", val.per_share["current"], f"{val.per_share['current']:,.0f}원", f"KRW {val.per_share['current']:,.0f}", "주당 평가가액", "Value per share",
         [f"{val.per_share['current']:,.0f}"], [f"{val.per_share['current']:,.0f}원"])
     add("v3_req_dp", 3, "7", req_dp, pct(req_dp), pct(req_dp), f"필요 할인율 P50 · 순이익률 하한 FY{fy0}A({pct(npm0)})", f"Required discount P50 · margin floor FY{fy0}A ({pct(npm0)})",
@@ -392,7 +392,8 @@ def build_refs(cfg: Mapping, vols: Mapping[int, Any]) -> dict[str, Ref]:
     c = f4.base["cfd"]
     add("v4_cfd_gearing", 4, "4", c.gearing, pct(c.gearing, 0), pct(c.gearing, 0), "대출 비율 · 한전 CfD", "Gearing · KEPCO CfD", [pct(c.gearing, 0)], [pct(c.gearing)])
     add("v4_cfd_dscr", 4, "4", c.min_dscr, xx(c.min_dscr), xx(c.min_dscr, False), "최소 DSCR · 한전 CfD", "Min DSCR · KEPCO CfD", [xx(c.min_dscr)], [f"{c.min_dscr:.3f}"])
-    add("v4_cfd_dscr_target", 4, "4", f4.V("dscr_cfd"), xx(f4.V("dscr_cfd")), xx(f4.V("dscr_cfd"), False), "목표 DSCR · 한전 CfD", "Target DSCR · KEPCO CfD", [])
+    add("v4_cfd_dscr_target", 4, "2", f4.V("dscr_cfd"), xx(f4.V("dscr_cfd")), xx(f4.V("dscr_cfd"), False), "목표 DSCR · 한전 CfD", "Target DSCR · KEPCO CfD",
+        [f"{f4.V('dscr_cfd'):.2f} · {pct(f4.V('gearing_cfd'), 0)}"])
     sens = {r["key"]: r for r in f4.sens}
     cf, cx, smp = sens["capacity_factor"], sens["capex"], sens["smp_base"]
     add("v4_cfd_cf_low", 4, "4", (cf["lo_v"], cf["low"]["cfd"]), f"이용률 {pct(cf['lo_v'], 0)} → {pct(cf['low']['cfd'])}",
@@ -420,8 +421,8 @@ def build_refs(cfg: Mapping, vols: Mapping[int, Any]) -> dict[str, Ref]:
     lo, hi = premium_range(cfg, f4)
     add("v4_room", 4, "5", (hi["max_fee"], lo["max_fee"]), f"{hi['max_fee']:.1f}~{lo['max_fee']:.1f}원", f"KRW {hi['max_fee']:.1f}–{lo['max_fee']:.1f}",
         "데이터센터 망이용료 여유 (kWh당)", "Buyer's room for network charges (per kWh)", [f"{hi['max_fee']:.0f}~{lo['max_fee']:.0f}원"], [f"여유 {hi['max_fee']:.1f}~{lo['max_fee']:.1f}원"])
-    add("v4_ppa_need", 4, "5", (lo["price"], hi["price"]), f"{lo['price']:.1f}~{hi['price']:.1f}원", f"KRW {lo['price']:.1f}–{hi['price']:.1f}",
-        "발전사 필요 PPA 가격 (kWh당)", "Seller's required PPA price (per kWh)", [], [f"필요 PPA {lo['price']:.1f}~{hi['price']:.1f}원"])
+    add("v4_ppa_need", 4, "i", (lo["price"], hi["price"]), f"{lo['price']:.1f}~{hi['price']:.1f}원", f"KRW {lo['price']:.1f}–{hi['price']:.1f}",
+        "발전사 필요 PPA 가격 (kWh당)", "Seller's required PPA price (per kWh)", [f"{lo['price']:.1f}~{hi['price']:.1f}원"], [f"필요 PPA {lo['price']:.1f}~{hi['price']:.1f}원"])
     net = f4.V("net_charge_example")
     add("v4_net_charge", 4, "5", net, f"약 {net:.0f}원", f"~KRW {net:.0f}", "공개 사례 부대비용 (한전 중개 제3자 PPA, 태양광 Case 1)", "Public example of charges (KEPCO-brokered 3rd-party PPA)",
         [f"{net:.0f}원(B)"], [f"망이용료 {net:.0f}원(B)"])
@@ -504,7 +505,7 @@ def verdicts(refs: Mapping[str, Ref]) -> list[Asset]:
     out = []
     v = "invest" if V("v4_irr_cfd") >= h else "wait"
     out.append(Asset("cfd_equity", 4, v, ["v4_irr_cfd", "v4_cfd_gearing", "v4_cfd_dscr"], ["v4_cfd_cf_low", "v4_cfd_capex_hi"],
-                     "지분 IRR ≥ 요구수익률, 매출은 한전 장기 계약", "Equity IRR ≥ hurdle; revenue under a long KEPCO contract"))
+                     "지분 IRR ≥ 요구수익률, 매출은 한전 장기 계약 — 뒤집는 가정(이용률)은 P90 실사를 선행조건으로 관리", "Equity IRR ≥ hurdle; revenue under a long KEPCO contract — the flipping assumption (output) is managed by a P90 study as a CP"))
     v = "invest" if V("v2_min_dscr") >= V("v2_target_dscr") else "wait"
     out.append(Asset("dc_pf_loan", 2, v, ["v2_min_dscr", "v2_debt", "v2_gearing"], ["v2_dscr_gross", "v2_irr_gross", "v2_debt_gross"],
                      "최소 DSCR ≥ 목표 DSCR — 단, 전력비 별도 청구가 선행조건", "Min DSCR ≥ target — with separate power billing as a condition precedent"))
@@ -522,7 +523,7 @@ def verdicts(refs: Mapping[str, Ref]) -> list[Asset]:
                      "REC 현물시장 종료 예정(보도 B) — 수치 모델 없이 정성 판단", "REC spot market set to end (press B) — qualitative, no model"))
     v = "avoid" if V("v1_mult_op") > 0.5 else "wait"
     out.append(Asset("listed_equip", 1, v, ["v1_per", "v1_mult_ni", "v1_mult_op"], ["v3_per"],
-                     "4사 영업이익 기준 멀티플 주도(> 50%) — 추격 매수는 배수 유지에 기대는 것", "Multiple-led on 4-name operating income (> 50%) — chasing relies on the multiple holding"))
+                     "4사 영업이익 기준 멀티플 기여 > 50%(멀티플 주도) — 추격 매수는 배수 유지에 기대는 것", "Multiple-led on 4-name operating income (> 50%) — chasing relies on the multiple holding"))
     return out
 
 
