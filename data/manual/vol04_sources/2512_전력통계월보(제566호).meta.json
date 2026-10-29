@@ -1,0 +1,14 @@
+{
+  "source": "한국전력공사 전력통계월보 제566호(2025년 12월) — PDF와 엑셀 두 파일",
+  "files": [
+    "2512_전력통계월보(제566호).pdf",
+    "2512_전력통계월보(제566호).xlsx"
+  ],
+  "endpoint": "https://home.kepco.co.kr (전력통계)",
+  "params": {},
+  "fetched_at": "2026-10-24",
+  "as_of": "2025-12",
+  "used_for": "PDF: kepco_industrial_price(표 18·18-2), solar_cf(표 16-1·2-1) / 엑셀: solar_month_weights(시트 '16-1.태양광 발전량 추계정보'), research/vol04/sources.py 판매단가 계산",
+  "license_note": "공공기관 공개 자료 — 출처 표기 후 인용",
+  "provided_by": "사용자가 한전 홈페이지에서 내려받아 커밋(2026-10-24, 원본 파일명 유지). fetched_at은 저장소 첫 커밋일"
+}

@@ -1,0 +1,11 @@
+{
+  "source": "한국전력거래소 EPSIS — 계통한계가격 > 시간별 SMP(일별 1~24시)",
+  "endpoint": "https://epsis.kpx.or.kr",
+  "params": {},
+  "fetched_at": "2026-10-24",
+  "as_of": "2026-10-24",
+  "used_for": "sources.land_hourly가 육지 파일을 자동 판정해 시간대 확인에 사용",
+  "license_note": "공공기관 공개 자료 — 출처 표기 후 인용",
+  "provided_by": "사용자가 기관 웹사이트에서 내려받아 커밋(2026-10-24, 원본 파일명 유지). fetched_at은 저장소 첫 커밋일",
+  "note": "같은 화면에서 받은 두 시간별 파일 중 하나(육지/제주) — 파일 해시가 다름"
+}

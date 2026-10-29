@@ -1,0 +1,10 @@
+{
+  "source": "기후에너지환경부·한국전력공사 보도참고자료 「계절·시간대별 전기요금 체계 개편안 공개」(2026-03-13)",
+  "endpoint": "https://www.mcee.go.kr (보도자료)",
+  "params": {},
+  "fetched_at": "2026-10-24",
+  "as_of": "2026-03-13",
+  "used_for": "tou_tariff(PDF 8쪽 [붙임2] 개편 후 산업용(을) 요금표), tou_weekend_discount(PDF 3·7쪽), 시간대 구분(2026-04-16 시행)",
+  "license_note": "정부 보도자료 — 공공누리 출처 표시",
+  "provided_by": "사용자가 기관 웹사이트에서 내려받아 커밋(2026-10-24, 원본 파일명 유지). fetched_at은 저장소 첫 커밋일"
+}

@@ -1,0 +1,10 @@
+{
+  "source": "에너지경제연구원 기본연구보고서 25-04 「재생에너지 보급비용 최소화를 위한 태양광 설치비용 영향요인 실증 연구」",
+  "endpoint": "https://www.keei.re.kr (연구보고서)",
+  "params": {},
+  "fetched_at": "2026-10-24",
+  "as_of": "2025",
+  "used_for": "vol04_inputs: capex_per_kw(PDF 93쪽), capacity_factor, lcoe_target(PDF 9·18쪽), lcoe_discount_rate·WACC(PDF 10·31쪽)",
+  "license_note": "국책연구기관 공개 보고서 — 출처 표기 후 인용",
+  "provided_by": "사용자가 기관 웹사이트에서 내려받아 커밋(2026-10-24, 원본 파일명 유지). fetched_at은 저장소 첫 커밋일"
+}
