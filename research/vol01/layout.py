@@ -104,6 +104,9 @@ class Ctx:
     footer: str
     copyright: str = ""               # 바닥글 왼쪽·표지 (예: © 2026 Shinjae Kang)
     warnings: list[str] = field(default_factory=list)   # 렌더링 점검 결과 (목차 한 줄 넘침 등)
+    moved: dict = field(default_factory=dict)            # (쪽, 셀 번호) → 옮긴 주가 실린 주석 쪽 번호 (prepare_pages가 채움)
+    packed: dict = field(default_factory=dict)           # (쪽, 셀 번호) → 1 출처를 ' | '로 줄 묶음 · 2 한 문단 (표가 들어가도록)
+    foot_sizes: list = field(default_factory=list)       # 실제로 그린 각주 글자 크기 (검사용)
 
 
 # ---------------------------------------------------------------------------
@@ -301,8 +304,9 @@ def draw_table(c, ctx: Ctx, spec: TableSpec, x: float, y_top: float, w: float, h
     size = min(size, cap)
     t = build_table(ctx, spec, w, size, pad)
     _, th = t.wrap(w, h)
-    while th > h and size > 6.0:
-        size -= 0.3
+    floor = min(spec.font_size, foot_cfg()["table_min_font"])     # 표 최소 글자 (config research.table.min_font)
+    while th > h and size > floor:
+        size = max(size - 0.3, floor)
         t = build_table(ctx, spec, w, size, pad)
         _, th = t.wrap(w, h)
     if th > h + 0.5:
@@ -379,6 +383,105 @@ def draw_panel(c, ctx: Ctx, x: float, y_top: float, w: float, h: float, lead: st
         y -= draw_para(c, p, x + 14, y, w - 28) + size * 0.7
 
 
+# ---------------------------------------------------------------------------
+# 각주 (전 편 공통): 출처는 한 개당 한 줄, 넘치면 ' | '로 묶고, 그래도 넘치면 주(설명)를 주석 쪽으로 옮긴다
+# ---------------------------------------------------------------------------
+_FOOT: dict | None = None
+
+
+def foot_cfg() -> dict:
+    """config research.footnote (글자 크기·최소 크기·행간·셀 높이 대비 각주 상한·구분자) + research.table.min_font."""
+    global _FOOT
+    if _FOOT is None:
+        try:
+            from src.data_fetch.base import load_config
+            r = load_config()["research"]
+            f, t = dict(r.get("footnote") or {}), dict(r.get("table") or {})
+        except Exception:  # noqa: BLE001 — 설정 없이도 그릴 수 있게 기본값
+            f, t = {}, {}
+        size = float(f.get("size", 6.9))
+        _FOOT = {"size": max(size, float(f.get("min_size", size))), "min_size": float(f.get("min_size", size)),
+                 "leading": float(f.get("leading", 1.3)), "max_share": float(f.get("max_share", 0.3)), "sep": str(f.get("sep", " | ")),
+                 "table_min_font": float(t.get("min_font", 6.2))}
+    return _FOOT
+
+
+def notes_words(ctx: Ctx) -> dict:
+    kr = ctx.lang == "kr"
+    return {"details": "상세" if kr else "Details", "title": "데이터 노트(계속): 쪽에서 옮긴 상세 주석" if kr else "Data notes (cont.): detailed notes moved from the pages",
+            "sub": "각 쪽의 '상세' 표시가 가리키는 설명 — 쪽 번호 · Exhibit 제목 순" if kr else "Explanations behind each page's 'Details' marker — by page and exhibit",
+            "toc": "데이터 노트(계속)" if kr else "Data notes (cont.)", "page": "쪽" if kr else "p."}
+
+
+def _fw(text: str, bold: bool = False) -> float:
+    return stringWidth(text, RL_BOLD if bold else RL_REGULAR, foot_cfg()["size"])
+
+
+def footnote_paras(ctx: Ctx, cell: Cell, w: float, h: float, moved_to: str | None = None, pack: int = 0) -> tuple[list[Paragraph], bool]:
+    """각주 문단 목록과 '주를 옮겨야 하는가'. 규칙: ① 출처 한 개당 한 줄 → ② 넘치면 ' | '로 한 줄에 여러 개 → ③ 한 문단으로 묶음 → ④ 그래도 넘치면 주를 옮김.
+    글자 크기는 고정(config footnote.size ≥ min_size) — 넘쳐도 줄이지 않는다. moved_to가 있으면 주 자리에 '상세: 쪽'."""
+    fc = foot_cfg()
+    size, lead = fc["size"], fc["leading"]
+    budget = fc["max_share"] * h
+    head = f"{ctx.labels['source']}: "
+    items = [f"*{i} {ctx.sources[k]}" for i, k in enumerate(cell.src, 1)]
+    st = ParagraphStyle(f"fn{size}", fontName=RL_REGULAR, fontSize=size, leading=size * lead, textColor=hexc(ctx.colors["note"]))
+    ind = ParagraphStyle(f"fni{size}", parent=st, leftIndent=_fw(head))
+    hang = ParagraphStyle(f"fnh{size}", parent=ind, firstLineIndent=-_fw(head))     # 첫 출처가 줄바꿈되면 '*1' 아래로 맞춤
+
+    def one_per_line() -> list[Paragraph]:
+        return [Paragraph(escape((head if i == 0 else "") + t), hang if i == 0 else ind) for i, t in enumerate(items)]
+
+    def packed() -> list[Paragraph]:
+        """출처를 ' | '로 한 줄에 여러 개 — 출처 하나는 줄 사이에서 끊지 않는다(너무 길면 그 줄만 줄바꿈). 이어지는 줄은 들여쓰지 않아 폭을 다 쓴다."""
+        lines, cur = [], ""
+        for t in items:
+            cand = t if not cur else cur + fc["sep"] + t
+            room = w - (_fw(head) if not lines else 0.0)
+            if cur and _fw(cand) > room:
+                lines.append(cur)
+                cur = t
+            else:
+                cur = cand
+        if cur:
+            lines.append(cur)
+        return [Paragraph(escape((head if i == 0 else "") + t), st) for i, t in enumerate(lines)]
+
+    def height(ps: list[Paragraph]) -> float:
+        return sum(p.wrap(w, 10_000)[1] for p in ps)
+
+    def one_para() -> list[Paragraph]:
+        return [Paragraph(escape(head + fc["sep"].join(items)), st)]
+
+    src_ps = one_per_line() if items else []
+    note_ps = [Paragraph(escape(f"{ctx.labels['note']}: {cell.note}"), st)] if cell.note else []
+    gap = 2.0 if (src_ps and note_ps) else 0.0
+    over = lambda ps: height(ps) + height(note_ps) + gap > budget  # noqa: E731
+    if src_ps and pack >= 2:                         # 가장 촘촘하게: ' | '로 이은 한 문단(표가 들어가야 할 때만)
+        src_ps = one_para()
+    elif src_ps and (pack or over(src_ps)):
+        src_ps = packed()
+        if over(src_ps) and note_ps and not over(one_para()):   # 주를 옮기기 전에 한 문단으로 묶어 본다
+            src_ps = one_para()
+    move = bool(note_ps) and over(src_ps)
+    if moved_to and cell.note:                       # prepare_pages가 주를 주석 쪽으로 옮긴 경우에만 바꿔 쓴다
+        note_ps = [Paragraph(escape(f"{notes_words(ctx)['details']}: {moved_to}"), st)]
+    out = src_ps + ([Spacer_(gap)] if (src_ps and note_ps) else []) + note_ps
+    return out, move
+
+
+class Spacer_:
+    """각주 출처 목록과 주 사이 간격 (Paragraph와 같은 wrap/drawOn 인터페이스)."""
+    def __init__(self, hgt: float):
+        self.hgt = hgt
+
+    def wrap(self, w, h):  # noqa: ANN001
+        return w, self.hgt
+
+    def drawOn(self, c, x, y):  # noqa: ANN001, N802
+        return None
+
+
 def draw_cell(c, ctx: Ctx, cell: Cell, x: float, y_top: float, w: float, h: float, page_label: str, idx: int) -> None:
     col = ctx.colors
     y = y_top
@@ -389,14 +492,10 @@ def draw_cell(c, ctx: Ctx, cell: Cell, x: float, y_top: float, w: float, h: floa
     if cell.legend or cell.unit:
         draw_legend(c, ctx, x, y - 8, w, cell.legend, cell.unit)
         y -= 15 + LEGEND_LINE * (legend_lines(ctx, w, cell.legend, cell.unit) - 1)
-    # 각주 두 줄 (높이 먼저 측정)
-    fn_st = style(ctx, 6.9, color="note", leading=1.3)
-    lines = []
-    if cell.src:
-        lines.append(f"{ctx.labels['source']}: " + "  ".join(f"*{i} {ctx.sources[k]}" for i, k in enumerate(cell.src, 1)))
-    if cell.note:
-        lines.append(f"{ctx.labels['note']}: {cell.note}")
-    fps = [para(s, fn_st) for s in lines]
+    # 각주: 출처 한 개당 한 줄 → 넘치면 ' | ' 묶음 → 그래도 넘치면 주를 주석 쪽으로 (높이 먼저 측정)
+    fps, _ = footnote_paras(ctx, cell, w, h, ctx.moved.get((page_label, idx)), ctx.packed.get((page_label, idx), 0))
+    if fps:
+        ctx.foot_sizes.append(foot_cfg()["size"])
     fh = sum(p.wrap(w, 1000)[1] for p in fps) + (4 if fps else 0)
     sp = para(cell.strip, style(ctx, 9.2, leading=1.35)) if cell.strip else None
     sh = (sp.wrap(w - 22, 1000)[1] + 14) if sp else 0
@@ -421,6 +520,161 @@ def draw_cell(c, ctx: Ctx, cell: Cell, x: float, y_top: float, w: float, h: floa
     fy = y_top - h + fh - 2
     for p in fps:
         fy -= draw_para(c, p, x, fy, w)
+
+
+# ---------------------------------------------------------------------------
+# 쪽 준비 (전 편 공통): 넘친 주 → 주석 쪽, 한 쪽에 안 들어가는 표 → 쪽 나눔, 목차 갱신
+# ---------------------------------------------------------------------------
+def body_height(ctx: Ctx, cell: Cell, w: float, h: float, moved_to: str | None = None, pack: int = 0) -> float:
+    """draw_cell과 같은 계산으로 본문(차트·표) 높이."""
+    y = 0.0
+    if cell.title:
+        mk = markers(cell.src)
+        t = escape(cell.title) + (f' <font size="8"><super>{mk}</super></font>' if mk else "")
+        y += Paragraph(t, style(ctx, 11.2 if w > 330 else 10.2, bold=True, leading=1.28)).wrap(w, 10_000)[1] + 4
+    if cell.legend or cell.unit:
+        y += 15 + LEGEND_LINE * (legend_lines(ctx, w, cell.legend, cell.unit) - 1)
+    fps, _ = footnote_paras(ctx, cell, w, h, moved_to, pack)
+    fh = sum(p.wrap(w, 1000)[1] for p in fps) + (4 if fps else 0)
+    sh = 0.0
+    if cell.strip:
+        sh = para(cell.strip, style(ctx, 9.2, leading=1.35)).wrap(w - 22, 1000)[1] + 14 + 8
+    return h - y - fh - 2 - sh
+
+
+def page_rects(ctx: Ctx, pg: Page, grid_fn: Callable | None = None) -> list[tuple[float, float, float, float]]:
+    top = ctx.h - BAR_H - GRID_TOP_GAP
+    if pg.kind == "exec":
+        return [(MX, top, (ctx.w - 2 * MX) * 0.40, top - (FOOT_H + 4))]
+    if pg.kind in ("body", "full"):
+        return (grid_fn or grid_rects)(ctx, top, pg.grid)
+    return []
+
+
+def _table_h(ctx: Ctx, spec: TableSpec, w: float, size: float, rows: list | None = None) -> float:
+    """표 높이(글자 size). rows를 주면 그 행만 (높이 측정용이라 색·병합 서식은 뺀다 — 굵은 글씨는 그대로)."""
+    if rows is None:
+        sp = spec
+    else:
+        sp = TableSpec(spec.header, rows, spec.widths, spec.align, font_size=spec.font_size,
+                       bold_rows=set(range(len(rows))) if spec.bold_rows else set())
+    return build_table(ctx, sp, w, size).wrap(w, 100_000)[1]
+
+
+def split_tables(ctx: Ctx, pages: list[Page], grid_fn: Callable | None = None) -> list[Page]:
+    """한 쪽짜리 표(1x1)가 최소 글자(config table.min_font)로도 안 들어가면 행을 나눠 여러 쪽으로 — 제목에 (1/n), 쪽 번호 A2-1 …"""
+    mf = foot_cfg()["table_min_font"]
+    out = []
+    for pg in pages:
+        if not (pg.kind in ("full", "body") and pg.grid == "1x1" and len(pg.cells) == 1 and pg.cells[0].table is not None):
+            out.append(pg)
+            continue
+        cell = pg.cells[0]
+        x, y, w, h = page_rects(ctx, pg, grid_fn)[0]
+        bh = body_height(ctx, cell, w, h, moved_to=f"A{len(pages)}" if cell.note else None, pack=2)   # 가장 여유 있는 경우(출처 묶음·주 옮김)로도 안 들어갈 때만 나눔
+        spec = cell.table
+        if _table_h(ctx, spec, w, min(spec.font_size, mf)) <= bh:
+            out.append(pg)
+            continue
+        chunks, cur = [], []
+        for i, row in enumerate(spec.rows):
+            if cur and _table_h(ctx, spec, w, mf, [spec.rows[j] for j in cur + [i]]) > bh:
+                chunks.append(cur)
+                cur = []
+            cur.append(i)
+        chunks.append(cur)
+        n = len(chunks)
+        for k, idx in enumerate(chunks, 1):
+            remap = {old: new for new, old in enumerate(idx)}
+            sub = TableSpec(**{**spec.__dict__, "rows": [spec.rows[i] for i in idx],
+                               "shade_rows": {remap[r] for r in spec.shade_rows if r in remap},
+                               "bold_rows": {remap[r] for r in spec.bold_rows if r in remap},
+                               "gold_cells": {(remap[r], c_) for r, c_ in spec.gold_cells if r in remap},
+                               "strong_cells": {(remap[r], c_) for r, c_ in spec.strong_cells if r in remap},
+                               "brick_cells": {(remap[r], c_) for r, c_ in spec.brick_cells if r in remap},
+                               "spans": [(remap[r], a_, b_) for r, a_, b_ in spec.spans if r in remap]})
+            c2 = Cell(**{**cell.__dict__, "table": sub})
+            out.append(Page(pg.kind, f"{pg.label}-{k}", f"{pg.title} ({k}/{n})", pg.subtitle, [c2], pg.grid, pg.boxes, pg.toc, dict(pg.extra)))
+    return out
+
+
+def prepare_pages(ctx: Ctx, pages: list[Page], grid_fn: Callable | None = None) -> list[Page]:
+    """렌더링 전 준비: ① 표 쪽 나눔 ② 각주 상한을 넘는 주 → '데이터 노트(계속)' 쪽(2단) ③ 목차 Appendix 줄·쪽 범위 갱신.
+    ctx.moved에 (쪽, 셀) → 주석 쪽 번호를 기록하고 draw_cell이 그 자리에 '상세: 쪽'을 쓴다."""
+    pages = split_tables(ctx, pages, grid_fn)
+    items = []                                   # (쪽, 셀 번호, 셀 제목, 주)
+    for pg in pages:
+        for i, (cell, (x, y, w, h)) in enumerate(zip(pg.cells, page_rects(ctx, pg, grid_fn))):
+            move = bool(cell.note) and footnote_paras(ctx, cell, w, h)[1]
+            if not move and cell.table is not None:      # 표가 최소 글자(table.min_font)로 안 들어가면 ① 출처를 줄 묶음 ② 한 문단 ③ 그래도 안 되면 주를 옮긴다
+                mf = min(cell.table.font_size, foot_cfg()["table_min_font"])
+                th = _table_h(ctx, cell.table, w, mf)
+                for lv in (1, 2):
+                    if th <= body_height(ctx, cell, w, h, pack=lv - 1):
+                        break
+                    ctx.packed[(pg.label, i)] = lv
+                pk = ctx.packed.get((pg.label, i), 0)
+                move = (bool(cell.note) and th > body_height(ctx, cell, w, h, pack=pk)
+                        and body_height(ctx, cell, w, h, moved_to="A00", pack=pk) > body_height(ctx, cell, w, h, pack=pk))   # 옮겨서 자리가 생길 때만
+            if move:
+                items.append((pg.label, i, cell.title, cell.note))
+    if not items:
+        return pages
+    # 주석 쪽: 2단으로 흘려 넣기
+    nums = [int(m.group(1)) for pg in pages for m in [re.match(r"^A(\d+)$", pg.label or "")] if m]
+    nxt = (max(nums) if nums else 0) + 1
+    top = ctx.h - BAR_H - GRID_TOP_GAP
+    col_h, col_w = top - (FOOT_H + 4), (ctx.w - 2 * MX - COL_GAP) / 2
+    nw = notes_words(ctx)
+    hs, bs = style(ctx, 8.8, bold=True, color="brown_dark", leading=1.3), style(ctx, 8.4, leading=1.42)
+    note_pages, cols, col, used = [], [[]], 0, 0.0
+    for it in items:
+        need = (para(f"{it[0]}{nw['page']} · {it[2]}" if ctx.lang == "kr" else f"p.{it[0]} · {it[2]}", hs).wrap(col_w, 10_000)[1]
+                + para(it[3], bs).wrap(col_w, 10_000)[1] + 12)
+        if used + need > col_h and cols[col]:
+            if col == 0:
+                cols.append([])
+                col = 1
+            else:
+                note_pages.append(cols)
+                cols, col = [[]], 0
+            used = 0.0
+        cols[col].append(it)
+        used += need
+    note_pages.append(cols)
+    labels = [f"A{nxt + k}" for k in range(len(note_pages))]
+    new = []
+    for lab, cs in zip(labels, note_pages):
+        for c_ in cs:
+            for it in c_:
+                ctx.moved[(it[0], it[1])] = lab
+        new.append(Page("notes", lab, nw["title"], nw["sub"], extra={"cols": cs}))
+    # 삽입 위치: 마지막 부록(A*) 쪽 뒤, 없으면 뒤표지 앞
+    pos = max((i for i, pg in enumerate(pages) if re.match(r"^A\d", pg.label or "")), default=None)
+    if pos is None:
+        pos = next((i for i, pg in enumerate(pages) if pg.kind == "back"), len(pages)) - 1
+    pages = pages[:pos + 1] + new + pages[pos + 1:]
+    # 목차: Appendix 줄에 주석 쪽 추가, 쪽 범위 끝을 새 번호로
+    rng = labels[0] if len(labels) == 1 else f"{labels[0]}–{labels[-1]}"
+    for pg in pages:
+        if pg.kind == "toc" and pg.toc and pg.toc[-1][0] == "App.":
+            num, name, concl, prange = pg.toc[-1]
+            m = re.match(r"^(A\d+)\s*[–-]\s*A\d+$", prange) or re.match(r"^(A\d+)$", prange)
+            pg.toc[-1] = (num, name, f"{concl} · {rng} {nw['toc']}", f"{m.group(1)}–{labels[-1]}" if m else prange)
+    return pages
+
+
+def draw_notes(c, ctx: Ctx, page: Page) -> None:
+    """데이터 노트(계속): 쪽에서 옮긴 주를 2단으로 (쪽 번호 · Exhibit 제목 → 설명)."""
+    top = header(c, ctx, page.title, page.subtitle)
+    col_w = (ctx.w - 2 * MX - COL_GAP) / 2
+    nw = notes_words(ctx)
+    hs, bs = style(ctx, 8.8, bold=True, color="brown_dark", leading=1.3), style(ctx, 8.4, leading=1.42)
+    for k, items in enumerate(page.extra["cols"]):
+        x, y = MX + k * (col_w + COL_GAP), top
+        for lab, _, title, note in items:
+            y -= draw_para(c, para(f"{lab}{nw['page']} · {title}" if ctx.lang == "kr" else f"p.{lab} · {title}", hs), x, y, col_w) + 2
+            y -= draw_para(c, para(note, bs), x, y, col_w) + 10
 
 
 # ---------------------------------------------------------------------------
@@ -595,6 +849,7 @@ def render(path: Path, ctx: Ctx, pages: list[Page], cover_bg: Path, meta: dict) 
     c.setAuthor(meta["author"])
     c.setSubject(meta["subject"])
     c.setCreator("KSJ Research build.py")
+    pages = prepare_pages(ctx, pages)
     for pg in pages:
         c.setFillColor(rl_colors.white)
         c.rect(0, 0, ctx.w, ctx.h, fill=1, stroke=0)
@@ -607,6 +862,9 @@ def render(path: Path, ctx: Ctx, pages: list[Page], cover_bg: Path, meta: dict) 
             footer(c, ctx, pg.label)
         elif pg.kind == "toc":
             draw_toc(c, ctx, pg)
+            footer(c, ctx, pg.label)
+        elif pg.kind == "notes":
+            draw_notes(c, ctx, pg)
             footer(c, ctx, pg.label)
         else:
             top = header(c, ctx, pg.title, pg.subtitle)
