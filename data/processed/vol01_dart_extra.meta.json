@@ -4,5 +4,19 @@
   "params": {},
   "fetched_at": "2026-10-20T16:12:22+00:00",
   "as_of": "2026-10-20",
-  "license_note": "FY[2022] 사업보고서(11011) 당기 금액, KRW 억원. 지배순이익 우선(net_income). 스키마는 dart_financials.csv와 동일"
+  "license_note": "FY[2022] 사업보고서(11011) 당기 금액, KRW 억원. 지배순이익 우선(net_income). 스키마는 dart_financials.csv와 동일",
+  "manual_overrides": [
+    {
+      "company": "효성중공업",
+      "fiscal_year": "FY2022A",
+      "field": "net_income",
+      "before": 291.29546895,
+      "after": 102.15533944,
+      "unit": "억원",
+      "reason": "API 응답에서 지배순이익 계정을 회사 고유 계정명으로 공시해 매칭 실패 → 총당기순이익 대체됨. 원문으로 교체.",
+      "source": "data/manual/vol01_sources/hyosung_2022_annual_report.pdf p48 (요약연결재무정보: 지배기업의 소유주에 귀속될 당기순이익 10,215,533,944원) · XBRL 동일값",
+      "rcept_no": "20230309000420",
+      "checked_at": "2026-10-29"
+    }
+  ]
 }

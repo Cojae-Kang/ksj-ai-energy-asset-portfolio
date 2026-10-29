@@ -166,7 +166,7 @@ data_fetch:
         # ASSUMPTION: PER 산정용 지배주주 귀속 순이익 우선, 없으면 당기순이익(총계)으로 대체하고 플래그
         sj_div: ["IS", "CIS"]
         account_ids: ["ifrs-full_ProfitLossAttributableToOwnersOfParent"]
-        account_names: ["지배기업의 소유주에게 귀속되는 당기순이익", "지배기업 소유주지분", "지배기업소유주지분"]
+        account_names: ["지배기업의 소유주에게 귀속되는 당기순이익", "지배기업 소유주지분", "지배기업소유주지분", "지배회사지분순이익(손실)", "지배회사지분순이익"]  # 효성중공업은 회사 고유 계정명 사용(2026-10-29 확인)
         fallback_account_ids: ["ifrs-full_ProfitLoss"]
         fallback_account_names: ["당기순이익", "당기순이익(손실)"]
       cash:
