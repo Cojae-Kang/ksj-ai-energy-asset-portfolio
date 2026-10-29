@@ -815,7 +815,8 @@ def test_vol03_margin_floor_alternative_and_target_margin_sensitivity():
     assert alt["npm_low"] == pytest.approx(f.der.hist[alt["fy"]]["npm"])
     assert alt["mc"].npm_tri[1:] == dp.npm_tri[1:] and alt["mc"].seed == dp.seed and alt["npm_low"] > dp.npm_tri[0]
     assert alt["mc"].required[0.5] < dp.required[0.5]
-    assert dp.required[0.5] == pytest.approx(0.434, abs=0.003) and alt["mc"].required[0.5] == pytest.approx(0.379, abs=0.003)
+    # 2026-10-29: 효성중공업 FY2022A 지배순이익 원값(102.2억원) 교체 후 재현값 (전: 0.434 / 0.379)
+    assert dp.required[0.5] == pytest.approx(0.435, abs=0.003) and alt["mc"].required[0.5] == pytest.approx(0.374, abs=0.003)
     ms = Story(cfg, f, "kr").margin_sens()
     assert ms is not None and ms["company"] == "LS ELECTRIC"
     assert ms["value"] == pytest.approx(f.val.per_share["current"] * ms["npm"] / f.assumptions["npm"].value)
