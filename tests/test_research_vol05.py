@@ -49,6 +49,8 @@ def test_grade_assumption_mapping(cfg):
     A = lambda **kw: SimpleNamespace(**{"value": 1.0, "origin": "csv", "status": "sourced", "url": "", **kw})  # noqa: E731
     assert D.grade_assumption(A(url="https://www.law.go.kr/x"), g)[0] == "A"
     assert D.grade_assumption(A(url="https://www.edaily.co.kr/x ; https://www.etoday.co.kr/y"), g)[0] == "B"
+    assert D.grade_assumption(A(url="https://taxguide.im/blog/corptax-rate"), g)[0] == "C"            # 민간 정보 사이트 → C
+    assert D.grade_assumption(A(url="https://www.law.go.kr/법령/법인세법 ; https://taxguide.im/x"), g)[0] == "A"
     assert D.grade_assumption(A(url="https://press.example.com ; https://www.sec.gov/Archives/x"), g)[0] == "A"
     assert D.grade_assumption(A(origin="evidence"), g)[0] == "D"
     assert D.grade_assumption(A(status="data"), g)[0] == "D"
@@ -59,7 +61,7 @@ def test_grade_assumption_mapping(cfg):
 
 
 def test_rec_end_year_read_from_input_source_text():
-    f4 = SimpleNamespace(inputs={"rec_eligible": SimpleNamespace(source="신규 사업자 제한, REC 현물시장은 2031년 말까지 — 보도")})
+    f4 = SimpleNamespace(inputs={"rec_eligible": SimpleNamespace(source="재생에너지법 부칙 제2조: 제12조의7은 2031-12-31까지 효력 · 제3조①")})
     assert D.rec_end_year(f4) == 2031
     f4.inputs["rec_eligible"].source = "출처 문구 없음"
     assert D.rec_end_year(f4) is None
@@ -67,7 +69,7 @@ def test_rec_end_year_read_from_input_source_text():
 
 def _refs(**vals):
     base_ = dict(v4_hurdle=0.08, v4_irr_cfd=0.12, v2_min_dscr=1.7, v2_target_dscr=1.45, v4_irr_ppa=0.13, v4_room=(5.0, 17.0),
-                 v4_net_charge=40.0, v3_req_alt=0.38, v3_band_disc=(0.22, 0.35), v4_irr_merchant=0.037, v1_mult_op=0.69)
+                 v4_net_charge=40.0, v3_req_alt=0.38, v3_band_disc=(0.22, 0.35), v4_irr_merchant=0.037, v1_mult_op=0.69, v4_rec_continue=1)
     base_.update(vals)
     return {k: D.Ref(k, 4, "1", v, "", "", "", "") for k, v in base_.items()}
 
@@ -75,7 +77,9 @@ def _refs(**vals):
 def test_verdict_rules_follow_numbers():
     v = {a.key: a.verdict for a in D.verdicts(_refs())}
     assert v == {"cfd_equity": "invest", "dc_pf_loan": "invest", "direct_ppa": "wait", "target_ipo": "wait",
-                 "merchant_solar": "avoid", "legacy_rec": "avoid", "listed_equip": "avoid"}
+                 "merchant_solar": "avoid", "legacy_rec": "wait", "listed_equip": "avoid"}
+    # 경과조치(부칙 제3조②③)가 없으면 기존 REC 자산은 피한다
+    assert {a.key: a.verdict for a in D.verdicts(_refs(v4_rec_continue=0))}["legacy_rec"] == "avoid"
     v = {a.key: a.verdict for a in D.verdicts(_refs(v4_room=(30.0, 45.0), v3_req_alt=0.30, v4_irr_cfd=0.07, v4_irr_merchant=0.09, v1_mult_op=0.4))}
     assert v["direct_ppa"] == "invest" and v["target_ipo"] == "invest" and v["cfd_equity"] == "wait"
     assert v["merchant_solar"] == "wait" and v["listed_equip"] == "wait"
@@ -166,7 +170,11 @@ def test_public_text_and_judgement_labels(F, cfg):
 
 def test_afterword_kept_verbatim_shape():
     from research.vol05.story import AFTERWORD_EN, AFTERWORD_KR
-    assert len(AFTERWORD_KR) == len(AFTERWORD_EN) == 8
+    assert len(AFTERWORD_KR) == len(AFTERWORD_EN) == 10
+    assert "이제는 앞으로 나아가는 일만 남았다는 것입니다." in AFTERWORD_KR[6]
+    assert AFTERWORD_KR[8] == "이 시리즈를 완성본이 아니라 그 길의 출발점으로 남겨 둡니다. 석사를 마친 뒤에도 이 질문들을 놓지 않고 계속 공부해 나가겠습니다."
+    import re
+    assert not re.search(r"\b(GP|LP|VC|PE|IB)\b", AFTERWORD_EN[7])          # 직무명 없이 역할 서술로
     assert AFTERWORD_KR[0].startswith("이 시리즈는 하나의 질문에서 시작했습니다.")
     assert "코드는 AI의 도움을 받았지만, 무엇을 물을지 정하고 그 숫자를 믿어도 되는지 확인하는 일은 끝까지 제 몫으로 두었습니다." in AFTERWORD_KR[4]
     assert AFTERWORD_KR[-1] == "읽어 주신 모든 분께 감사드립니다."
@@ -199,3 +207,13 @@ def test_j_split_rule_and_sourceable_base(F, cfg):
     assert b4["asset_mw"] == b4["cod_year"] == D.J_DESIGN and b4["equity_hurdle"] == D.J_ASSUME
     n, ad = D.sourceable(F.total)
     assert n == len(F.grades) - F.total[D.J_DESIGN] - F.total[D.NO_VALUE] and ad == F.total["A"] + F.total["D"]
+
+
+def test_rec_verdict_follows_the_act_and_page_check(F):
+    """기존 REC 자산: Vol.4 입력의 부칙 제3조②③(A) → 기다린다, 근거 값은 원 편 쪽에서 대조된다."""
+    a = next(x for x in F.assets if x.key == "legacy_rec")
+    assert a.verdict == ("wait" if F.V("v4_rec_continue") else "avoid")
+    for k in ("v4_rec_end", "v4_rec_continue"):
+        assert F.refs[k].tier == "A" and F.refs[k].page_ok, k
+    assert F.R("v4_rec_end").value == 2029
+
