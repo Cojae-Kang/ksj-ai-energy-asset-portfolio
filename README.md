@@ -30,6 +30,8 @@ IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오입�
 | 4 | 데이터센터에 전기를 파는 법 — 가상 태양광 35MW의 지분투자: 한전 계약·직접 PPA·시장 판매 | 2026.10 | [PDF](research/vol04/KSJ_Research_Vol04_KR.pdf) | [PDF](research/vol04/KSJ_Research_Vol04_EN.pdf) | [LinkedIn](https://lnkd.in/p/gNmUPiig) |
 | 5 | AI 에너지 자산 투자 지도 | 2026.11 | [PDF](research/vol05/KSJ_Research_Vol05_KR.pdf) | [PDF](research/vol05/KSJ_Research_Vol05_EN.pdf) | — |
 
+**5편 1쪽 요약**: [국문 PDF](research/series/KSJ_Research_Series_Summary_KR.pdf) · [English PDF](research/series/KSJ_Research_Series_Summary_EN.pdf)
+
 **시리즈 로드맵**: Vol.1 수요·시장 → Vol.2 데이터센터 PF(한국 40MW·미국 100MW) → Vol.3 IPO 공모가·해외 피어 → Vol.4 데이터센터 전력 공급(발전 자산·PPA) → Vol.5 완결: AI 에너지 자산 투자 지도
 
 ## 분석 방법
@@ -125,6 +127,8 @@ Recalculated from official-source data each time the report is built.
 | 3 | Pricing an IPO in a 40x P/E Sector — an indicative price range for a hypothetical power-equipment maker | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | [LinkedIn](https://lnkd.in/p/gDURQSZK) |
 | 4 | Selling Power to a Data Centre — equity in a hypothetical 35 MW solar asset: KEPCO contract, direct PPA or merchant | 2026.10 | [PDF](research/vol04/KSJ_Research_Vol04_KR.pdf) | [PDF](research/vol04/KSJ_Research_Vol04_EN.pdf) | [LinkedIn](https://lnkd.in/p/gNmUPiig) |
 | 5 | An Investment Map of AI Energy Assets | 2026.11 | [PDF](research/vol05/KSJ_Research_Vol05_KR.pdf) | [PDF](research/vol05/KSJ_Research_Vol05_EN.pdf) | — |
+
+**Five-volume one-page summary**: [Korean PDF](research/series/KSJ_Research_Series_Summary_KR.pdf) · [English PDF](research/series/KSJ_Research_Series_Summary_EN.pdf)
 
 **Series roadmap**: Vol.1 demand and market → Vol.2 data-centre PF (Korea 40 MW, U.S. 100 MW) → Vol.3 IPO pricing and overseas peers → Vol.4 powering data centres (generation assets, PPAs) → Vol.5 finale: an AI energy asset investment map
 
