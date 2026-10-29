@@ -13,7 +13,7 @@ IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오입�
 <!-- vol01:findings:kr -->
 1. **수요는 진짜다 — 2030년 945TWh, AI 데이터센터 수요 +50%**<br><sub>데이터센터 전력 소비 2030E ÷ 2024 (IEA 기준 시나리오): 2.3배</sub>
 2. **현장에서도 보인다 — 미국 전체(+10%)를 지수 63포인트 앞섰다**<br><sub>버지니아 상업용 전력 판매 2015→2025 (EIA): +73%</sub>
-3. **이익이 이끌었다 — 3사(두산에너빌리티 제외) 시총 증가의 61%가 이익 증가(3사 순이익 기준, 시작 시총의 28%) · 4사 영업이익 기준이면 이익 기여 31%·멀티플 69%(멀티플 주도)**<br><sub>4사 시총 합계 기준, 2023-01-02→2026-10-19 (회사별 4.4배~26.1배): 7.7배</sub>
+3. **이익이 이끌었다 — 3사(두산에너빌리티 제외) 시총 증가의 63%가 이익 증가(3사 순이익 기준, 시작 시총의 28%) · 4사 영업이익 기준이면 이익 기여 31%·멀티플 69%(멀티플 주도)**<br><sub>4사 시총 합계 기준, 2023-01-02→2026-10-19 (회사별 4.4배~26.1배): 7.7배</sub>
 <!-- /vol01:findings:kr -->
 
 ![Vol.1 p4 대표 Exhibit: 국내 전력기기 상장사 시가총액](docs/img/vol01_p4_kr.png)
@@ -111,7 +111,7 @@ Recalculated from official-source data each time the report is built.
 <!-- vol01:findings:en -->
 1. **Demand is real — 945 TWh by 2030; AI data-centre demand +50%**<br><sub>Data-centre power 2030E ÷ 2024 (IEA Base Case): 2.3x</sub>
 2. **It shows up on the ground — 63 index points ahead of the U.S. (+10%)**<br><sub>Virginia commercial power sales 2015→2025 (EIA): +73%</sub>
-3. **Earnings led — 61% of the gain for 3 names (ex. Doosan Enerbility) is earnings growth (3-name net-income basis, 28% of starting cap) · on 4-name operating income: earnings 31%, multiple 69% (multiple-led)**<br><sub>4 names, combined cap, 2023-01-02→2026-10-19 (range 4.4x–26.1x): 7.7x</sub>
+3. **Earnings led — 63% of the gain for 3 names (ex. Doosan Enerbility) is earnings growth (3-name net-income basis, 28% of starting cap) · on 4-name operating income: earnings 31%, multiple 69% (multiple-led)**<br><sub>4 names, combined cap, 2023-01-02→2026-10-19 (range 4.4x–26.1x): 7.7x</sub>
 <!-- /vol01:findings:en -->
 
 ![Vol.1 p4 representative exhibit: market cap of listed Korean power-equipment names](docs/img/vol01_p4_en.png)
