@@ -952,3 +952,14 @@ research:
       private_secondary_domains: ["taxguide.im"]
       official_domains: ["go.kr", "sec.gov", "fss.or.kr", "kepco.co.kr", "kpx.or.kr", "bok.or.kr", "krx.co.kr", "iea.org", "eia.gov", "stlouisfed.org"]
     figures: ["1:flow", "6:grades"]     # figures/vol05_p{쪽}_{키}_{언어}.png·pdf
+
+  series:                               # 시리즈 1쪽 요약 (research/series/build.py) — 새 데이터 없음, 숫자는 Vol.5 load_facts(= Vol.1~4 load_facts·build_summary)에서
+    output_dir: "research/series"
+    build_dir: "research/series/_build"
+    page_pt: [960, 720]
+    title_kr: "AI 에너지 자산 포트폴리오 — 5편 요약"
+    title_en: "AI Energy Asset Portfolio — Five-Volume Summary"
+    date_label: "2026.11"
+    # Vol.5 자리·질문 (문구만, 숫자 없음). Vol.1~4는 research.vol05.lenses 그대로
+    vol05_lens: {stage_kr: "지도", stage_en: "Map", seat_kr: "투자위원회(IC)", seat_en: "Investment committee",
+                 question_kr: "어느 자산에 넣고, 기다리고, 피하나", question_en: "Where to invest, wait or avoid?"}
