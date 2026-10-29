@@ -112,7 +112,8 @@ def solar_cf(year: int = 2025) -> dict:
     return {"solar_mwh": mwh, "solar_kw_yearend": kw, "solar_cf_check": mwh * 1000 / (kw * 8760), "solar_months": int(len(r))}
 
 
-def run(as_of: str = "2026-10-20") -> dict:
+def run(as_of: str = "2026-10-20", out_dir: Path | None = None) -> dict:
+    """공식 원본 → vol04_official.csv(+ .meta.json). out_dir가 있으면 그 폴더에 쓴다(테스트는 임시 폴더 — 커밋된 파일의 fetched_at을 바꾸지 않게)."""
     m = monthly_smp()
     s = smp_stats(m, as_of)
     h, hname, herr = land_hourly(m)
@@ -122,7 +123,7 @@ def run(as_of: str = "2026-10-20") -> dict:
     k = kepco_industrial()
     out = {**s, **k, **solar_cf()}
     rows = [{"key": a, "value": v} for a, v in out.items() if not isinstance(v, dict)]
-    p = resolve_path("data/processed/vol04_official.csv")
+    p = (Path(out_dir) / "vol04_official.csv") if out_dir is not None else resolve_path("data/processed/vol04_official.csv")
     p.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(p, index=False, encoding="utf-8-sig")
     meta = {"source": "전력거래소 EPSIS(계통한계가격 가중평균·시간별 SMP 엑셀), 한전 전력통계월보 제566호(2025.12) 엑셀",

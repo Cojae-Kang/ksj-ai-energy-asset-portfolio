@@ -108,14 +108,14 @@ def test_vol04_facts_build(tmp_path):
     assert f.lcoe_check["base_lcoe"] == pytest.approx(f.V("lcoe_target"))             # 사업비 = KEEI LCOE에 맞춘 값
 
 
-def test_vol04_official_values_reproduce():
+def test_vol04_official_values_reproduce(tmp_path):
     """입력 파일의 공식값 = 원본 파일(전력거래소·한전)에서 다시 계산한 값."""
     from pathlib import Path
     from src.data_fetch.base import load_config, resolve_path
     from research.vol04 import data as D, sources as S
     if not list(Path(resolve_path(S.SRC)).glob("*가중평균SMP*.xlsx")):
         pytest.skip("공식 원본 파일 없음")
-    r = S.run()
+    r = S.run(out_dir=tmp_path)                                                         # 커밋된 data/processed는 건드리지 않음
     I = D.load_inputs(resolve_path(load_config()["research"]["vol04"]["inputs_csv"]))
     assert float(I["kepco_industrial_price"].value) == pytest.approx(r["kepco_industrial_price"], abs=0.005)
     assert float(I["smp_base"].value) == pytest.approx(r["smp_base"], abs=0.05)
