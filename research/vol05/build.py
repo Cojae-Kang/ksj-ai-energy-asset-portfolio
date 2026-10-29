@@ -102,6 +102,7 @@ def render(path: Path, ctx, pages: list, cover_bg: Path, meta: dict) -> int:
     c.setAuthor(meta["author"])
     c.setSubject(meta["subject"])
     c.setCreator("KSJ Research build.py")
+    pages = L.prepare_pages(ctx, pages, grid_rects)
     for pg in pages:
         c.setFillColor(rl_colors.white)
         c.rect(0, 0, ctx.w, ctx.h, fill=1, stroke=0)
@@ -117,6 +118,9 @@ def render(path: Path, ctx, pages: list, cover_bg: Path, meta: dict) -> int:
             L.footer(c, ctx, pg.label)
         elif pg.kind == "toc":
             L.draw_toc(c, ctx, pg)
+            L.footer(c, ctx, pg.label)
+        elif pg.kind == "notes":
+            L.draw_notes(c, ctx, pg)
             L.footer(c, ctx, pg.label)
         else:
             top = L.header(c, ctx, pg.title, pg.subtitle)
