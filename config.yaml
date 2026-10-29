@@ -940,5 +940,7 @@ research:
       # ASSUMPTION(judgment): J 세분 — J-설계 = 가상 자산·기업·거래의 정의값(용량·일정·구조 등, 출처가 존재할 수 없음), J-가정 = 시장·재무 가정 판단.
       #   Vol.2·3 = 상태 design → J-설계, judgment·neutral → J-가정 · Vol.4 = 출처 문구가 아래 패턴('저자 설계값', '…저자 설계)')이면 J-설계
       j_design_pattern: "^저자 설계값|저자 설계\\)"
+      # ASSUMPTION(judgment): 공식 원문이 아닌 민간 정보 사이트(법령 해설 등) — 근거 있음이어도 C(민간 2차, 원문 대조 대기)
+      private_secondary_domains: ["taxguide.im"]
       official_domains: ["go.kr", "sec.gov", "fss.or.kr", "kepco.co.kr", "kpx.or.kr", "bok.or.kr", "krx.co.kr", "iea.org", "eia.gov", "stlouisfed.org"]
     figures: ["1:flow", "6:grades"]     # figures/vol05_p{쪽}_{키}_{언어}.png·pdf

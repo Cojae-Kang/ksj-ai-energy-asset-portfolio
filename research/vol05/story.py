@@ -32,9 +32,14 @@ AFTERWORD_KR = [
     "같은 산업이라도 앉은 자리에 따라 묻는 질문이 달랐고, 판단은 그 질문들을 이어 붙일 때 비로소 단단해진다는 것을 배웠습니다.",
     "숫자에는 특히 공을 들였습니다. 모든 입력값에 출처와 신뢰 등급을 붙였고, 요금표와 고시 원문을 직접 찾아 한 줄씩 대조했습니다. 게시한 뒤에도 독립 검토로 결론을 바꾸는 가정을 찾아냈고, "
     "고친 내용은 감추지 않고 기록으로 남겼습니다. 코드는 AI의 도움을 받았지만, 무엇을 물을지 정하고 그 숫자를 믿어도 되는지 확인하는 일은 끝까지 제 몫으로 두었습니다.",
-    "물론 이 작업은 공개 자료와 가정 위에 세운 연습입니다. 실제 딜에는 계약서의 한 조항, 협상 테이블의 분위기, 숫자로 잡히지 않는 위험이 훨씬 많을 것입니다. "
-    "그래서 이 시리즈를 완성본이 아니라 출발점이라고 생각합니다. 부족한 부분을 짚어 주시면 무엇이든 감사히 배우겠습니다.",
-    "저는 에너지·인프라 자산을 숫자로 판단하고, 그 판단의 근거를 끝까지 설명할 수 있는 금융인이 되고 싶습니다. 석사를 마친 뒤에도 이 질문들을 놓지 않고 계속 공부해 나가겠습니다.",
+    "그럼에도 이 작업은 졸업과 취업을 준비하는 틈틈이 혼자 공부하고 혼자 추정한 결과입니다. 공개 자료와 가정 위에 세운 연습이라 실무의 눈으로 보시면 부족한 점이 많을 것입니다. "
+    "실제 딜에는 계약서의 한 조항, 협상 테이블의 분위기, 숫자로 잡히지 않는 위험이 훨씬 많다는 것도 압니다. 부족한 부분을 짚어 주시면 무엇이든 감사히 배우겠습니다.",
+    "돌아보면 저는 늘 꿈을 놓지 않으려고 애써 왔습니다. 전공의 경계를 넘어 금융을 찾아 공부하는 동안, 너무 이상만 좇으며 살아온 것은 아닌가 스스로 묻게 되는 날도 있었습니다. "
+    "금융인으로서 잘 자리 잡고 성장할 수 있을지, 솔직히 아직 확신하지는 못합니다. 그래도 이 시리즈를 마치며 분명해진 것이 하나 있습니다. 이제는 앞으로 나아가는 일만 남았다는 것입니다.",
+    "앞으로도 이 시리즈에서 연습한 방식을 이어 가려 합니다. 같은 자산을 두고, 자금을 운용하는 사람이라면 어떻게 가치를 지킬지, 자금을 맡기는 사람이라면 어떤 조건에서 맡길지 함께 생각해 보겠습니다. "
+    "새로운 사업 기회를 먼저 알아보는 사람이라면 무엇을 볼지, 투자 전략을 수립해 가치를 키우는 사람이라면 무엇을 바꿀지도 물어보겠습니다. "
+    "그 출발점은 딜을 구조화하고 자금 조달을 설계하는 일이라고 생각합니다. 어느 자리에 있든 에너지·인프라 자산을 숫자로 판단하고, 그 판단의 근거를 끝까지 설명할 수 있는 금융인이 되는 것이 목표입니다.",
+    "이 시리즈를 완성본이 아니라 그 길의 출발점으로 남겨 둡니다. 석사를 마친 뒤에도 이 질문들을 놓지 않고 계속 공부해 나가겠습니다.",
     "읽어 주신 모든 분께 감사드립니다.",
 ]
 AFTERWORD_EN = [
@@ -50,10 +55,16 @@ AFTERWORD_EN = [
     "I took particular care with the numbers. Every input carries a source and a reliability grade, and I went back to the tariff tables and official notices themselves to check them line by line. "
     "After publishing, independent reviews still found assumptions that changed conclusions; I corrected them and kept the corrections on the record rather than hiding them. "
     "AI helped me write the code, but deciding what to ask, and checking whether the numbers could be trusted, remained my job to the end.",
-    "Of course, this work is an exercise built on public information and assumptions. A real deal holds far more: a single clause in a contract, the mood at the negotiating table, risks that numbers do not capture. "
-    "That is why I think of this series not as a finished piece but as a starting point. If you point out where it falls short, I will be grateful to learn from it.",
-    "I want to become a finance professional who judges energy and infrastructure assets through numbers and can explain the basis for that judgement all the way through. "
-    "After my master's, I will hold on to these questions and keep studying.",
+    "Even so, this is work I studied and estimated on my own, in the gaps between preparing to graduate and looking for a job. It is an exercise built on public information and assumptions, "
+    "and to a practitioner's eye it will fall short in many places. I also know that a real deal holds far more: a single clause in a contract, the mood at the negotiating table, risks that numbers do not capture. "
+    "If you point out where it falls short, I will be grateful to learn from it.",
+    "Looking back, I have always tried not to let go of my dreams. While I crossed the boundaries of my major to study finance, there were days when I asked myself whether I had been chasing ideals too much. "
+    "Honestly, I am not yet sure that I can settle in and grow well as a finance professional. Still, one thing became clear as I finished this series: all that is left now is to move forward.",
+    "I want to keep practising the approach of this series. Looking at the same asset, I will think about how someone who manages capital would protect its value, and on what terms someone who entrusts capital would commit it. "
+    "I will also ask what someone who spots new business opportunities early would look for, and what someone who sets an investment strategy to grow value would change. "
+    "I believe the starting point for all of this is structuring deals and designing how they are financed. Wherever I sit, my goal is to become a finance professional who judges energy and infrastructure assets "
+    "through numbers and can explain the basis for that judgement all the way through.",
+    "I leave this series not as a finished piece but as the starting point of that path. After my master's, I will hold on to these questions and keep studying.",
     "Thank you to everyone who has read this series.",
 ]
 SIGN_KR, SIGN_EN = "강신재", "Shinjae Kang"
@@ -185,6 +196,8 @@ class Story:
         return Page("back", title="Disclosures", extra={"items": items, "repo": self.cfg["research"]["repo_url"], "contact": contact_line(self.cfg)})
 
     # --- i 요약 ----------------------------------------------------------------
+    VPAGE = {"invest": "3", "wait": "4", "avoid": "5"}
+
     def headline(self) -> str:
         room = f"{self.room_hi():.0f}"
         net = f"{self.f.V('v4_net_charge'):.0f}"
@@ -196,35 +209,90 @@ class Story:
     def exec_conclusions(self) -> list[str]:
         return [self.headline()] + [b.title for b in self.boxes()]
 
-    def boxes(self) -> list[BigBox]:
-        names = lambda v: " · ".join(self.name(a.key) for a in self.assets_in(v))  # noqa: E731
-        n = lambda v: len(self.assets_in(v))  # noqa: E731
+    def rec_wait(self) -> bool:
+        """기존 REC 자산: 부칙 제3조②③ 경과조치가 있으면(입력 rec_legacy_continue = 1) 판정이 '기다린다'."""
+        return self.asset["legacy_rec"].verdict == "wait"
+
+    # 판정별 머리 문구 (박스 제목 앞) · 쪽 꼬리 문구
+    BOX_LEAD = {"invest": ("계약이 있는 현금흐름", "Contracted cash flows"),
+                "wait": ("수익률·제도는 되지만 거래가 아직 안 닫힌다", "Returns or rules hold but the deals do not close yet"),
+                "avoid": ("시장 가격·배수에 기댄다", "They lean on market prices or multiples")}
+    PAGE_TAIL = {"invest": ("계약된 현금흐름", "contracted cash flows"), "wait": ("수익률이 아니라 성립 조건이 아직", "not the return, the closing conditions"),
+                 "avoid": ("계약으로 막을 수 없는 가격에 기댄다", "returns hang on prices no contract can fix")}
+
+    def seg(self, k: str) -> str:
+        """쪽 제목용 자산 한 토막."""
+        r_hi, net = self.room_hi(), self.f.V("v4_net_charge")
+        return {
+            "cfd_equity": self.T(f"한전 CfD 지분(IRR {self.t('v4_irr_cfd')})", f"KEPCO CfD equity (IRR {self.t('v4_irr_cfd')})"),
+            "dc_pf_loan": self.T(f"데이터센터 PF 선순위 대출(최소 DSCR {self.t('v2_min_dscr')})", f"data-centre PF senior loan (min DSCR {self.t('v2_min_dscr')})"),
+            "direct_ppa": self.T(f"직접 PPA(IRR {self.t('v4_irr_ppa')}, 여유 {r_hi:.0f}원 < {net:.0f}원)", f"direct PPA (IRR {self.t('v4_irr_ppa')}, room {r_hi:.0f} < {net:.0f})"),
+            "target_ipo": self.T(f"Target Co. IPO(필요 할인율 {self.t('v3_req_alt')}~{self.t('v3_req_dp')})", f"Target Co. IPO (required {self.t('v3_req_alt')}–{self.t('v3_req_dp')})"),
+            "merchant_solar": self.T(f"시장 판매(IRR {self.t('v4_irr_merchant')})", f"merchant (IRR {self.t('v4_irr_merchant')})"),
+            "legacy_rec": (self.T("기존 REC 의존 자산(종전 규정 유지, 고시 대기)", "REC-dependent assets (former rules kept, notice pending)") if self.rec_wait()
+                           else self.T(f"기존 REC 의존 자산(REC 조항 {self.t('v4_rec_end')} 종료)", f"REC-dependent assets (REC article lapses {self.t('v4_rec_end')})")),
+            "listed_equip": self.T(f"PER 40배 구간 추격(멀티플 기여 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')})", f"chasing ~40x P/E (multiple share {self.t('v1_mult_ni')}–{self.t('v1_mult_op')})"),
+        }[k]
+
+    def box_phrase(self, k: str) -> str:
+        dmax = max(self.f.V("v3_band_disc")) * 100
+        return {
+            "cfd_equity": self.T(f"한전 CfD 지분 IRR {self.t('v4_irr_cfd')}(요구 {self.hurdle})", f"KEPCO CfD equity IRR {self.t('v4_irr_cfd')} (hurdle {self.hurdle})"),
+            "dc_pf_loan": self.T(f"데이터센터 PF 최소 DSCR {self.t('v2_min_dscr')}(목표 {self.t('v2_target_dscr')})", f"data-centre PF min DSCR {self.t('v2_min_dscr')} (target {self.t('v2_target_dscr')})"),
+            "direct_ppa": self.T(f"PPA 여유 {self.t('v4_room')} < 부대비용 {self.t('v4_net_charge')}(B)", f"PPA room {self.t('v4_room')} < charges {self.t('v4_net_charge')} (B)"),
+            "target_ipo": self.T(f"IPO 필요 할인율 {self.t('v3_req_alt')}~{self.t('v3_req_dp')} > 밴드 최대 {dmax:.1f}%", f"IPO required discount {self.t('v3_req_alt')}–{self.t('v3_req_dp')} > the range's widest {dmax:.1f}%"),
+            "merchant_solar": self.T(f"시장 판매 IRR {self.t('v4_irr_merchant')}", f"merchant IRR {self.t('v4_irr_merchant')}"),
+            "legacy_rec": (self.T("기존 REC 자산은 종전 규정 유지(부칙 제3조, A) — 고시 대기", "existing REC assets keep the former rules (addendum art. 3, A) — notice pending") if self.rec_wait()
+                           else self.T(f"REC 조항 {self.t('v4_rec_end')} 효력 종료", f"REC article lapses {self.t('v4_rec_end')}")),
+            "listed_equip": self.T(f"멀티플 기여 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')}", f"multiple contribution {self.t('v1_mult_ni')}–{self.t('v1_mult_op')}"),
+        }[k]
+
+    def box_bullet(self, k: str) -> str:
         lo_g, hi_g = self.ipo_gap()
-        b1 = BigBox(VERDICT_KR["invest"] if self.kr else VERDICT_EN["invest"],
-                    self.T(f"자산 {n('invest')}개: {names('invest')}", f"{n('invest')} assets: {names('invest')}"),
-                    self.T(f"계약이 있는 현금흐름: 한전 CfD 지분 IRR {self.t('v4_irr_cfd')}(요구 {self.hurdle}), 데이터센터 PF 최소 DSCR {self.t('v2_min_dscr')}(목표 {self.t('v2_target_dscr')})",
-                           f"Contracted cash flows: KEPCO CfD equity IRR {self.t('v4_irr_cfd')} (hurdle {self.hurdle}); data-centre PF min DSCR {self.t('v2_min_dscr')} (target {self.t('v2_target_dscr')})"),
-                    [self.T(f"CfD 지분: 대출 {self.t('v4_cfd_gearing')} · 최소 DSCR {self.t('v4_cfd_dscr')} — 뒤집는 가정: {self.t('v4_cfd_cf_low')} {self.g('v4_cfd_cf_low')}",
-                            f"CfD equity: gearing {self.t('v4_cfd_gearing')} · min DSCR {self.t('v4_cfd_dscr')} — flipped by output: {self.t('v4_cfd_cf_low')} {self.g('v4_cfd_cf_low')}"),
-                     self.T(f"DC PF 대출 {self.t('v2_debt')}(총사업비 {self.t('v2_gearing')}): 선행조건은 전력비 별도 청구 — 포함이면 같은 대출에서 최소 DSCR {self.t('v2_dscr_gross')}, 다시 잡으면 Equity IRR {self.t('v2_irr_gross')} {self.g('v2_irr_gross')}",
-                            f"DC PF loan {self.t('v2_debt')} ({self.t('v2_gearing')} of cost): condition precedent = power billed separately — if included, min DSCR {self.t('v2_dscr_gross')} on the same debt; re-sized, equity IRR {self.t('v2_irr_gross')} {self.g('v2_irr_gross')}")])
-        b2 = BigBox(VERDICT_KR["wait"] if self.kr else VERDICT_EN["wait"],
-                    self.T(f"자산 {n('wait')}개: {names('wait')}", f"{n('wait')} assets: {names('wait')}"),
-                    self.T(f"수익률은 되지만 거래가 아직 안 닫힌다: PPA 여유 {self.t('v4_room')} < 부대비용 {self.t('v4_net_charge')}(B), IPO 필요 할인율 {self.t('v3_req_alt')}~{self.t('v3_req_dp')} > 밴드 최대 {max(self.f.V('v3_band_disc')) * 100:.1f}%",
-                           f"Returns clear but the deals do not close yet: PPA room {self.t('v4_room')} < charges {self.t('v4_net_charge')} (B); IPO required discount {self.t('v3_req_alt')}–{self.t('v3_req_dp')} > the range's widest {max(self.f.V('v3_band_disc')) * 100:.1f}%"),
-                    [self.T(f"직접 PPA(IRR {self.t('v4_irr_ppa')}): 부대비용이 {self.t('v4_gap')} 줄거나 구매자가 그만큼 더 내야 성립 — 트리거는 망이용료 인하 · 망 미이용 공급 {self.g('v4_gap')}",
-                            f"Direct PPA (IRR {self.t('v4_irr_ppa')}): charges must fall by {self.t('v4_gap')} or the buyer must pay that much more — triggers: lower network charges, supply without the grid {self.g('v4_gap')}"),
-                     self.T(f"Target Co. IPO(밴드 {self.t('v3_band')}): 필요 할인율이 밴드보다 {self.pp(lo_g)}~{self.pp(hi_g)} 크다 — 트리거는 이익률 하한 확인 {self.g('v3_req_dp')}",
-                            f"Target Co. IPO (range {self.t('v3_band')}): required discount exceeds the range by {self.pp(lo_g)}–{self.pp(hi_g)} — trigger: confirming the margin floor {self.g('v3_req_dp')}")])
-        b3 = BigBox(VERDICT_KR["avoid"] if self.kr else VERDICT_EN["avoid"],
-                    self.T(f"자산 {n('avoid')}개: {names('avoid')}", f"{n('avoid')} assets: {names('avoid')}"),
-                    self.T(f"시장 가격·배수에 기댄다: 시장 판매 IRR {self.t('v4_irr_merchant')}, REC 현물시장 {self.t('v4_rec_end')}까지(B), 멀티플 기여 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')}",
-                           f"They lean on market prices or multiples: merchant IRR {self.t('v4_irr_merchant')}; REC spot market to {self.t('v4_rec_end')} (B); multiple contribution {self.t('v1_mult_ni')}–{self.t('v1_mult_op')}"),
-                    [self.T(f"시장 판매: SMP가 범위 상단에 머물러야 {self.R('v4_merchant_smp_hi').value[1] * 100:.1f}%로 겨우 요구수익률 — REC 없음 {self.g('v4_irr_merchant')}",
-                            f"Merchant: only at the top of the SMP range does it reach {self.R('v4_merchant_smp_hi').value[1] * 100:.1f}%, barely the hurdle — no RECs {self.g('v4_irr_merchant')}"),
-                     self.T(f"PER {self.t('v1_per')}: 이익 기준을 3사 순이익으로 잡느냐 4사 영업이익으로 잡느냐에 따라 멀티플 기여 {self.t('v1_mult_ni')} vs {self.t('v1_mult_op')} {self.g('v1_mult_op')}",
-                            f"P/E {self.t('v1_per')}: the multiple's share is {self.t('v1_mult_ni')} on 3-name net income vs {self.t('v1_mult_op')} on 4-name operating income {self.g('v1_mult_op')}")])
-        return [b1, b2, b3]
+        return {
+            "cfd_equity": self.T(f"CfD 지분: 대출 {self.t('v4_cfd_gearing')} · 최소 DSCR {self.t('v4_cfd_dscr')} — 뒤집는 가정: {self.t('v4_cfd_cf_low')} {self.g('v4_cfd_cf_low')}",
+                                 f"CfD equity: gearing {self.t('v4_cfd_gearing')} · min DSCR {self.t('v4_cfd_dscr')} — flipped by output: {self.t('v4_cfd_cf_low')} {self.g('v4_cfd_cf_low')}"),
+            "dc_pf_loan": self.T(f"DC PF 대출 {self.t('v2_debt')}(총사업비 {self.t('v2_gearing')}): 선행조건은 전력비 별도 청구 — 포함이면 같은 대출에서 최소 DSCR {self.t('v2_dscr_gross')}, 다시 잡으면 Equity IRR {self.t('v2_irr_gross')} {self.g('v2_irr_gross')}",
+                                 f"DC PF loan {self.t('v2_debt')} ({self.t('v2_gearing')} of cost): condition precedent = power billed separately — if included, min DSCR {self.t('v2_dscr_gross')} on the same debt; re-sized, equity IRR {self.t('v2_irr_gross')} {self.g('v2_irr_gross')}"),
+            "direct_ppa": self.T(f"직접 PPA(IRR {self.t('v4_irr_ppa')}): 부대비용이 {self.t('v4_gap')} 줄거나 구매자가 그만큼 더 내야 성립 — 트리거는 망이용료 인하 · 망 미이용 공급 {self.g('v4_gap')}",
+                                 f"Direct PPA (IRR {self.t('v4_irr_ppa')}): charges must fall by {self.t('v4_gap')} or the buyer must pay that much more — triggers: lower network charges, supply without the grid {self.g('v4_gap')}"),
+            "target_ipo": self.T(f"Target Co. IPO(밴드 {self.t('v3_band')}): 필요 할인율이 밴드보다 {self.pp(lo_g)}~{self.pp(hi_g)} 크다 — 트리거는 이익률 하한 확인 {self.g('v3_req_dp')}",
+                                 f"Target Co. IPO (range {self.t('v3_band')}): required discount exceeds the range by {self.pp(lo_g)}–{self.pp(hi_g)} — trigger: confirming the margin floor {self.g('v3_req_dp')}"),
+            "merchant_solar": self.T(f"시장 판매: SMP가 범위 상단에 머물러야 {self.R('v4_merchant_smp_hi').value[1] * 100:.1f}%로 겨우 요구수익률 — REC 없음 {self.g('v4_irr_merchant')}",
+                                     f"Merchant: only at the top of the SMP range does it reach {self.R('v4_merchant_smp_hi').value[1] * 100:.1f}%, barely the hurdle — no RECs {self.g('v4_irr_merchant')}"),
+            "legacy_rec": (self.T(f"기존 REC 자산: 제도 종료로 수입이 사라지지 않는다(부칙 제3조②③) — 남은 위험은 REC 가격·수요와 고시의 인정 범위, 트리거는 고시 확정 {self.g('v4_rec_continue')}",
+                                  f"Existing REC assets: revenue does not vanish with the scheme (addendum art. 3(2)–(3)) — what remains is REC price and demand and the notice's scope; trigger: the notice {self.g('v4_rec_continue')}") if self.rec_wait()
+                           else self.T(f"기존 REC 자산: REC 조항 {self.t('v4_rec_end')} 효력 종료 {self.g('v4_rec_end')}", f"Existing REC assets: REC article lapses {self.t('v4_rec_end')} {self.g('v4_rec_end')}")),
+            "listed_equip": self.T(f"PER {self.t('v1_per')}: 이익 기준을 3사 순이익으로 잡느냐 4사 영업이익으로 잡느냐에 따라 멀티플 기여 {self.t('v1_mult_ni')} vs {self.t('v1_mult_op')} {self.g('v1_mult_op')}",
+                                   f"P/E {self.t('v1_per')}: the multiple's share is {self.t('v1_mult_ni')} on 3-name net income vs {self.t('v1_mult_op')} on 4-name operating income {self.g('v1_mult_op')}"),
+        }[k]
+
+    def boxes(self) -> list[BigBox]:
+        out = []
+        for v in ("invest", "wait", "avoid"):
+            aa = self.assets_in(v)
+            names = " · ".join(self.name(a.key) for a in aa)
+            lead = self.T(*self.BOX_LEAD[v])
+            out.append(BigBox(VERDICT_KR[v] if self.kr else VERDICT_EN[v],
+                              self.T(f"자산 {len(aa)}개: {names}", f"{len(aa)} assets: {names}"),
+                              f"{lead}: " + self.T(", ", "; ").join(self.box_phrase(a.key) for a in aa),
+                              [self.box_bullet(a.key) for a in aa]))
+        return out
+
+    def exec_rows(self, k: str) -> list[tuple[str, str, bool]]:
+        """요약 쪽 핵심 지표 (자산별: 라벨, 값, 강조)."""
+        return {
+            "cfd_equity": [(self.T("한전 CfD 지분 IRR / 요구수익률", "KEPCO CfD equity IRR / hurdle"), f"{self.t('v4_irr_cfd')} / {self.hurdle}", True)],
+            "dc_pf_loan": [(self.T("DC PF 최소 DSCR / 목표", "DC PF min DSCR / target"), f"{self.t('v2_min_dscr')} / {self.t('v2_target_dscr')}", True),
+                           (self.T("  선행조건: 전력비 포함이면 최소 DSCR", "  CP: min DSCR if power is in the rent"), self.t("v2_dscr_gross"), False)],
+            "direct_ppa": [(self.T("직접 PPA 여유 vs 부대비용(B)", "PPA room vs charges (B)"), f"{self.t('v4_room')} vs {self.t('v4_net_charge')}", True)],
+            "target_ipo": [(self.T("IPO 필요 할인율 vs 밴드 할인율", "IPO required vs range discount"),
+                            f"{self.t('v3_req_alt')}{self.T('~', '–')}{self.t('v3_req_dp')} vs {self.t('v3_band_disc')}", True)],
+            "merchant_solar": [(self.T("시장 판매 지분 IRR", "merchant equity IRR"), self.t("v4_irr_merchant"), True)],
+            "legacy_rec": [(self.T("기존 REC 자산 경과조치(부칙 제3조, A)", "REC transitional rule (addendum art. 3, A)"), self.T("종전 규정 유지 · 고시 대기", "former rules · notice pending"), False)
+                           if self.rec_wait() else (self.T("REC 조항 효력 종료(A)", "REC article lapses (A)"), self.t("v4_rec_end"), False)],
+            "listed_equip": [(self.T("멀티플 기여 3사 순이익 / 4사 영업이익", "multiple share 3-name NI / 4-name OP"), f"{self.t('v1_mult_ni')} / {self.t('v1_mult_op')}", False)],
+        }[k]
 
     def executive(self) -> Page:
         f = self.f
@@ -235,15 +303,11 @@ class Story:
                 shade.add(len(rows))
                 gold.add((len(rows), 1))
             rows.append([label, value, page])
-        add(self.T("넣는다 · 한전 CfD 지분 IRR / 요구수익률", "Invest · KEPCO CfD equity IRR / hurdle"), f"{self.t('v4_irr_cfd')} / {self.hurdle}", "3", True)
-        add(self.T("넣는다 · DC PF 최소 DSCR / 목표", "Invest · DC PF min DSCR / target"), f"{self.t('v2_min_dscr')} / {self.t('v2_target_dscr')}", "3", True)
-        add(self.T("  선행조건: 전력비 포함이면 최소 DSCR", "  CP: min DSCR if power is in the rent"), self.t("v2_dscr_gross"), "3")
-        add(self.T("기다린다 · 직접 PPA 여유 vs 부대비용(B)", "Wait · PPA room vs charges (B)"), f"{self.t('v4_room')} vs {self.t('v4_net_charge')}", "4", True)
-        add(self.T("기다린다 · IPO 필요 할인율 vs 밴드 할인율", "Wait · IPO required vs range discount"),
-            f"{self.t('v3_req_alt')}{self.T('~', '–')}{self.t('v3_req_dp')} vs {self.t('v3_band_disc')}", "4", True)
-        add(self.T("피한다 · 시장 판매 지분 IRR", "Avoid · merchant equity IRR"), self.t("v4_irr_merchant"), "5", True)
-        add(self.T("피한다 · REC 현물시장 시한(B)", "Avoid · REC spot market ends (B)"), self.t("v4_rec_end"), "5")
-        add(self.T("피한다 · 멀티플 기여 3사 순이익 / 4사 영업이익", "Avoid · multiple share 3-name NI / 4-name OP"), f"{self.t('v1_mult_ni')} / {self.t('v1_mult_op')}", "5")
+        for v in ("invest", "wait", "avoid"):
+            for a in self.assets_in(v):
+                for lab, val, key in self.exec_rows(a.key):
+                    pre = "" if lab.startswith("  ") else f"{self.verdict(a.key)} · "
+                    add(pre + lab, val, self.VPAGE[v], key)
         tot = f.total
         ns, nad = sourceable(tot)
         add(self.T(f"출처가 있을 수 있는 입력 중 A·D (전체 {sum(tot.values())}개)", f"A·D among sourceable inputs ({sum(tot.values())} in all)"),
@@ -340,10 +404,15 @@ class Story:
                                T(f"SMP {smp_hi:,.1f}원(범위 상단)이 이어져야 {m_hi * 100:.1f}%로 겨우 통과 {self.g('v4_merchant_smp_hi')} · 2022년 실제 설치비로도 {self.t('v4_merchant_actual')}",
                                  f"Only SMP held at {smp_hi:,.1f} (range top) lifts it to {m_hi * 100:.1f}%, barely clearing {self.g('v4_merchant_smp_hi')} · even at 2022 actual cost: {self.t('v4_merchant_actual')}"),
                                T("장기 고정가 계약(한전 계약시장) 확보, 또는 SMP 범위 상단 고착이 확인될 때", "A long fixed-price contract (KEPCO market), or SMP settling at the top of its range")),
-            "legacy_rec": (T(f"수치 모델 없음 — REC 현물시장 {self.t('v4_rec_end')}까지(보도) {self.g('v4_rec_end')}",
-                             f"No model — REC spot market until {self.t('v4_rec_end')} (press) {self.g('v4_rec_end')}"),
-                           T("기존 설비의 REC 처리(경과 규정)가 원문으로 확인되면 바뀔 수 있다 — 정성 판단", "Could change once transition rules for existing plants are confirmed in the original text — qualitative"),
-                           T("기후에너지환경부 보도자료·경과 규정 원문 확인(Vol.4 공식 원문 교체 대기 항목)", "Ministry release and transition rules in the original (a Vol.4 item awaiting its official source)")),
+            "legacy_rec": ((T(f"수치 모델 없음 — REC 조항 {self.t('v4_rec_end')} 효력 종료(부칙 제2조), 기한까지 발급받은 자·고시 인정자는 종전 규정 유지(부칙 제3조②③) {self.g('v4_rec_continue')}",
+                              f"No model — REC article lapses {self.t('v4_rec_end')} (addendum art. 2); holders issued by the deadline and recognised licensees keep the former rules (art. 3(2)–(3)) {self.g('v4_rec_continue')}"),
+                            T("제도 종료로 수입이 사라지지는 않는다 — 남은 위험은 REC 가격·수요 변화와 고시의 인정 범위(정성 판단)",
+                              "Revenue does not vanish with the scheme — what remains is REC price and demand, and the notice's scope (qualitative)"),
+                            T("장관 고시(부칙 제3조③ 인정 범위·제4조 이행실적 인정 방법) 확정, REC 거래가격 추이",
+                              "The ministerial notice (scope under art. 3(3), counting method under art. 4) and REC prices")) if self.rec_wait() else
+                           (T(f"수치 모델 없음 — REC 조항 {self.t('v4_rec_end')} 효력 종료(부칙 제2조) {self.g('v4_rec_end')}", f"No model — REC article lapses {self.t('v4_rec_end')} (addendum art. 2) {self.g('v4_rec_end')}"),
+                            T("경과조치가 확인되면 바뀔 수 있다 — 정성 판단", "Could change if a transitional rule is confirmed — qualitative"),
+                            T("경과조치 원문 확인", "A transitional rule in the original"))),
             "listed_equip": (T(f"3사 PER {self.t('v1_per')} · 멀티플 기여 3사 순이익 {self.t('v1_mult_ni')} / 4사 영업이익 {self.t('v1_mult_op')} {self.g('v1_mult_op')}",
                                f"3-name P/E {self.t('v1_per')} · multiple share {self.t('v1_mult_ni')} (3-name NI) / {self.t('v1_mult_op')} (4-name OP) {self.g('v1_mult_op')}"),
                              T(f"이익 기준 선택이 결론을 가른다({self.t('v1_mult_ni')} vs {self.t('v1_mult_op')}) · 적용 PER {self.t('v3_per')}이면 같은 이익에서 가치 {self.sgn(self.per_drop())} {self.g('v3_per')}",
@@ -369,10 +438,9 @@ class Story:
                                      self.T("트리거 — 판정을 바꾸는 신호 (J)", "Trigger — what would change it (J)")],
                                     rows, [0.14, 0.24, 0.30, 0.08, 0.24], ["L", "L", "L", "C", "L"], gold_cells=gold, strong_cells=strong, brick_cells=brick,
                                     font_size=7.6, max_grow=1.36),
-                    note=self.T("판정·트리거 = 저자 판단(J). 판정 규칙(J): 넣는다 = 기준 수익률이 요구수익률·목표 DSCR을 넘고 뒤집는 가정을 계약 조건·선행조건(실사 포함)으로 관리할 수 있음 · 기다린다 = 수익률은 되지만 거래 성립 조건 미충족 · "
+                    note=self.T("판정·트리거 = 저자 판단(J). 판정 규칙(J): 넣는다 = 기준 수익률이 요구수익률·목표 DSCR을 넘고 뒤집는 가정을 계약 조건·선행조건(실사 포함)으로 관리할 수 있음 · 기다린다 = 수익률(또는 제도상 수입)은 있지만 거래 성립 조건·고시가 아직 · "
                                 "피한다 = 요구수익률 미달이거나 가격이 배수·시장 가격에 기댐(상장 전력기기주는 4사 영업이익 기준 멀티플 기여 > 50%). " + self.grade_note(),
-                                "Verdicts and triggers = judgement (J). Rule (J): invest = clears the hurdle or target DSCR and the flipping assumption can be managed by contract terms or CPs (incl. due diligence) · wait = returns clear but the deal "
-                                "cannot close yet · avoid = misses the hurdle or leans on multiples or market prices (listed equipment: multiple share > 50% on 4-name operating income). " + self.grade_note()))
+                                "Verdicts and triggers = judgement (J). Rule (J): invest = clears the hurdle or target DSCR and the flipping assumption can be managed by contract terms or CPs (incl. due diligence) · wait = returns (or statutory revenue) hold but closing conditions or a notice are still pending · avoid = misses the hurdle or leans on multiples or market prices (listed equipment: multiple share > 50% on 4-name operating income). " + self.grade_note()))
         n = {k: len(self.assets_in(k)) for k in ("invest", "wait", "avoid")}
         return Page("full", "2", self.T(f"투자 지도: 넣는다 {n['invest']} · 기다린다 {n['wait']} · 피한다 {n['avoid']} — 판정을 가르는 것은 수익률보다 '뒤집는 가정'의 크기",
                                         f"The map: invest {n['invest']} · wait {n['wait']} · avoid {n['avoid']} — the size of the flipping assumption matters more than the return"),
@@ -394,7 +462,7 @@ class Story:
     def pct_fmt(self, d: int = 1):
         return lambda v: f"{v:.{d}f}%"
 
-    def p3(self) -> Page:
+    def cells_cfd_equity(self) -> tuple[list[Cell], list[Cell]]:
         f, c = self.f, self.c
         h = f.V("v4_hurdle") * 100
         cf_lo, irr_lo = f.V("v4_cfd_cf_low")
@@ -414,8 +482,12 @@ class Story:
                                                    gold_keys={"v4_irr_cfd", "v4_cfd_dscr"}),
                   note=self.T("조건(J): 대출 비율은 P90 발전량 실사 후 확정 · 계약시장 낙찰가가 입찰 상한보다 낮으면 IRR 재계산. 한전 계약가(J) = 2026년 입찰 상한을 2027년 계약시장 대리값으로",
                               "Conditions (J): fix gearing after a P90 resource study · recompute if the auction clears below the cap. KEPCO price (J) = the 2026 cap as a proxy for the 2027 market"))
+        return [c1], [c2]
+
+    def cells_dc_pf_loan(self) -> tuple[list[Cell], list[Cell]]:
+        f, c = self.f, self.c
         d0, dg, tg = f.V("v2_min_dscr"), f.V("v2_dscr_gross"), f.V("v2_target_dscr")
-        c3 = Cell(title=self.T(f"데이터센터 PF 최소 DSCR {self.t('v2_min_dscr')} — 임대료에 전력비가 들어가면 같은 대출에서 {self.t('v2_dscr_gross')}",
+        c1 = Cell(title=self.T(f"데이터센터 PF 최소 DSCR {self.t('v2_min_dscr')} — 임대료에 전력비가 들어가면 같은 대출에서 {self.t('v2_dscr_gross')}",
                                f"Data-centre PF min DSCR {self.t('v2_min_dscr')} — with power inside the rent, {self.t('v2_dscr_gross')} on the same debt"),
                   src=["v2"], unit=self.T("배", "x"),
                   chart_key="pf", chart=charts.hbar_ref([self.T("전력비 별도 청구 (기준)", "Power billed separately (base)"), self.T("같은 대출 · 전력비 포함 임대", "Same debt · power in rent")],
@@ -423,19 +495,15 @@ class Story:
                                                         [(tg, self.T(f"목표 {tg:.2f}배", f"Target {tg:.2f}x"), c["brown_dark"]), (1.0, "1.00" + self.T("배", "x"), c["brick"])]),
                   note=self.T(f"Vol.2 한국 40MW 케이스 A — 기준 {self.g('v2_min_dscr')}, 전력 포함 스트레스 {self.g('v2_dscr_gross')}. 목표 DSCR은 저자 판단(J)",
                               f"Vol.2 Korean 40 MW case A — base {self.g('v2_min_dscr')}, power-included stress {self.g('v2_dscr_gross')}. Target DSCR is judgement (J)"))
-        c4 = Cell(title=self.T(f"선행조건(CP): 임대차계약서의 전력비 별도 청구 — 포함이면 한도 {self.t('v2_debt_gross')}·Equity IRR {self.t('v2_irr_gross')}",
+        c2 = Cell(title=self.T(f"선행조건(CP): 임대차계약서의 전력비 별도 청구 — 포함이면 한도 {self.t('v2_debt_gross')}·Equity IRR {self.t('v2_irr_gross')}",
                                f"Condition precedent: power billed separately in the lease — otherwise capacity {self.t('v2_debt_gross')}, equity IRR {self.t('v2_irr_gross')}"),
                   src=["v2"], table=self.ref_table(["v2_debt", "v2_gearing", "v2_min_dscr", "v2_target_dscr", "v2_irr_pt", "v2_dscr_gross", "v2_debt_gross", "v2_irr_gross"],
                                                    gold_keys={"v2_min_dscr", "v2_debt"}),
                   note=self.T("대주 관점: 원리금은 계약 임대료가 갚는다 — 전력비가 임대료 안에 있으면 그 일부가 한전으로 빠져나가 DSCR이 1배 아래로",
                               "Lender's view: contracted rent services the debt — if power sits inside the rent, part of it flows to KEPCO and DSCR drops below 1x"))
-        return Page("body", "3", self.T(f"넣는다: 한전 CfD 지분(IRR {self.t('v4_irr_cfd')}) · 데이터센터 PF 선순위 대출(최소 DSCR {self.t('v2_min_dscr')}) — 둘 다 계약된 현금흐름",
-                                        f"Invest: KEPCO CfD equity (IRR {self.t('v4_irr_cfd')}) · data-centre PF senior loan (min DSCR {self.t('v2_min_dscr')}) — both contracted cash flows"),
-                    self.T("조건은 둘: CfD는 이용률(P90 실사), PF는 전력비 별도 청구 조항(인출 선행조건)", "Two conditions: output for the CfD (P90 study), separate power billing for the PF loan (CP to drawdown)"),
-                    [c1, c2, c3, c4])
+        return [c1], [c2]
 
-    # --- p4 기다린다 -------------------------------------------------------------
-    def p4(self) -> Page:
+    def cells_direct_ppa(self) -> tuple[list[Cell], list[Cell]]:
         f, c = self.f, self.c
         r_lo, r_hi = f.V("v4_room")
         net = f.V("v4_net_charge")
@@ -453,10 +521,14 @@ class Story:
                   src=["v4"], table=self.ref_table(["v4_irr_ppa", "v4_ppa_mid", "v4_ppa_need", "v4_room", "v4_net_charge", "v4_gap"], gold_keys={"v4_room", "v4_gap"}),
                   note=self.T(f"고시 단서: {self.t('v4_proviso')} {self.g('v4_proviso')}. 판정이 바뀌는 선(J): 부대비용 ≤ 구매자 여유 최대 {r_hi:,.1f}원",
                               f"Notice proviso: {self.t('v4_proviso')} {self.g('v4_proviso')}. Line that changes the verdict (J): charges ≤ the buyer's maximum room {r_hi:,.1f}"))
+        return [c1], [c2]
+
+    def cells_target_ipo(self) -> tuple[list[Cell], list[Cell]]:
+        f, c = self.f, self.c
         d_lo, d_hi = f.V("v3_band_disc")
         q_alt, q_dp = f.V("v3_req_alt"), f.V("v3_req_dp")
         lo_g, hi_g = self.ipo_gap()
-        c3 = Cell(title=self.T(f"Target Co. IPO: 필요 할인율 {self.t('v3_req_alt')}~{self.t('v3_req_dp')} > 밴드 할인율 {self.t('v3_band_disc')} — 이익률 하한 확인 전엔 밴드가 높다",
+        c1 = Cell(title=self.T(f"Target Co. IPO: 필요 할인율 {self.t('v3_req_alt')}~{self.t('v3_req_dp')} > 밴드 할인율 {self.t('v3_band_disc')} — 이익률 하한 확인 전엔 밴드가 높다",
                                f"Target Co. IPO: required discount {self.t('v3_req_alt')}–{self.t('v3_req_dp')} > range discount {self.t('v3_band_disc')} — the range is high until the margin floor is known"),
                   src=["v3"], unit="%",
                   chart_key="ipo", chart=charts.spans([(self.T("밴드 할인율", "Range discount"), d_lo * 100, d_hi * 100, c["gold"]),
@@ -465,18 +537,14 @@ class Story:
                                                       (d_hi * 100, q_alt * 100, self.T(f"격차 {self.pp(lo_g)}~", f"Gap {self.pp(lo_g)}+"))),
                   note=self.T(f"Vol.3 p6 밴드 {self.g('v3_band')} · p7 이중 고점(순이익률 삼각분포) 몬테카를로 {self.g('v3_req_dp')}. 격차 {self.pp(lo_g)}~{self.pp(hi_g)}",
                               f"Vol.3 p.6 range {self.g('v3_band')} · p.7 double-peak (triangular margin) Monte Carlo {self.g('v3_req_dp')}. Gap {self.pp(lo_g)}–{self.pp(hi_g)}"))
-        c4 = Cell(title=self.T("트리거: 이익률 하한 확인 — 다음 결산에서 순이익률 바닥이 확인돼 필요 할인율이 밴드 안으로 들어올 때",
+        c2 = Cell(title=self.T("트리거: 이익률 하한 확인 — 다음 결산에서 순이익률 바닥이 확인돼 필요 할인율이 밴드 안으로 들어올 때",
                                "Trigger: confirm the margin floor — when the next results pin down the trough and the required discount falls inside the range"),
                   src=["v3"], table=self.ref_table(["v3_band", "v3_value", "v3_band_disc", "v3_npm_now", "v3_npm_floor", "v3_req_dp", "v3_req_alt"], gold_keys={"v3_req_dp", "v3_req_alt"}),
                   note=self.T("ECM 관점(J): 밴드를 낮춰 제시하기보다, 이익률 하한의 근거(수주잔고·가격 결정력)를 먼저 확인 — 하한이 FY2023A 수준이어도 격차가 남는다",
                               "ECM view (J): before cutting the range, evidence the margin floor (backlog, pricing power) — even an FY2023A floor leaves a gap"))
-        return Page("body", "4", self.T(f"기다린다: 직접 PPA(IRR {self.t('v4_irr_ppa')}, 여유 {r_hi:.0f}원 < {net:.0f}원) · Target Co. IPO(필요 할인율 {self.t('v3_req_alt')}~{self.t('v3_req_dp')}) — 수익률이 아니라 성립 조건이 아직",
-                                        f"Wait: direct PPA (IRR {self.t('v4_irr_ppa')}, room {r_hi:.0f} < {net:.0f}) · Target Co. IPO (required {self.t('v3_req_alt')}–{self.t('v3_req_dp')}) — not the return, the closing conditions"),
-                    self.T("트리거가 오면 넣는다로: PPA는 망이용료, IPO는 이익률 하한", "Triggers move them to invest: network charges for the PPA, the margin floor for the IPO"),
-                    [c1, c2, c3, c4])
+        return [c1], [c2]
 
-    # --- p5 피한다 ---------------------------------------------------------------
-    def p5(self) -> Page:
+    def cells_merchant_solar(self) -> tuple[list[Cell], list[Cell]]:
         f, c = self.f, self.c
         h = f.V("v4_hurdle") * 100
         smp_hi, m_hi = f.V("v4_merchant_smp_hi")
@@ -491,40 +559,101 @@ class Story:
                   chart_key="merchant", chart=charts.hbar_ref(labs, [v * 100 for v in vals], cols, c, self.pct_fmt(), [(h, self.T(f"요구 {h:.0f}%", f"Hurdle {h:.0f}%"), c["brick"])]),
                   note=self.T(f"Vol.4 p4 {self.g('v4_irr_merchant')} · SMP 범위 = EPSIS 최근 12개월 육지(A) · 2027년 이후 신규 사업자 {self.t('v4_rec_none')} {self.g('v4_rec_none')}",
                               f"Vol.4 p.4 {self.g('v4_irr_merchant')} · SMP range = EPSIS 12-month mainland (A) · {self.t('v4_rec_none')} for post-2027 entrants {self.g('v4_rec_none')}"))
-        yr = f.V("v4_rec_end")
-        c2 = Cell(title=self.T(f"기존 REC 의존 자산: REC 현물시장 {self.t('v4_rec_end')}까지(B) — 수치 모델 없이 정성 판단", f"Existing REC-dependent assets: REC spot market until {self.t('v4_rec_end')} (B) — qualitative"),
-                  src=["v4"], panel_lead="", bullets=[
-                      self.T(f"2027-01-01부터 신규 사업자 REC 발급 제한, REC 현물시장은 {yr}년 말까지 — 정부 공청회 보도(B), 공식 원문 교체 대기 {self.g('v4_rec_end')}",
-                             f"New entrants lose RECs from 1 Jan 2027; the REC spot market runs to end-{yr} — press report of a ministry hearing (B), official text pending {self.g('v4_rec_end')}"),
-                      self.T(f"REC 매출 비중이 큰 기존 설비는 {yr}년 이후 매출의 한 축이 흔들릴 수 있다 — 경과 규정(기존 설비 처리)을 원문으로 보기 전에는 가치를 셀 수 없다(J)",
-                             f"Existing plants that rely on REC sales may lose a revenue leg after {yr} — their value cannot be counted until transition rules are read in the original (J)"),
-                      self.T("그래서 숫자를 만들지 않았다: Vol.4는 신규 자산만 모델링 — 기존 자산은 잔존 계약기간·REC 비중 자료가 있어야 계산할 수 있다(자료 확보 전)",
-                             "So no number is made: Vol.4 models only a new asset — existing assets need remaining contract terms and REC shares (data not yet in hand)"),
-                      self.T("트리거(J): 기후에너지환경부 보도자료·경과 규정 원문 확인, 기존 설비의 장기 계약 전환 여부", "Trigger (J): the ministry release and transition rules in the original; whether existing plants can switch to long contracts")])
+        return [c1], []
+
+    def cells_listed_equip(self) -> tuple[list[Cell], list[Cell]]:
+        f, c = self.f, self.c
         ni_e, ni_m = f.V("v1_earn_ni"), f.V("v1_mult_ni")
         op_m = f.V("v1_mult_op")
-        c3 = Cell(title=self.T(f"PER {self.t('v1_per')}: 멀티플 기여는 기준에 따라 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')} — 추격 매수는 배수가 유지된다는 데 거는 것",
+        c1 = Cell(title=self.T(f"PER {self.t('v1_per')}: 멀티플 기여는 기준에 따라 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')} — 추격 매수는 배수가 유지된다는 데 거는 것",
                                f"P/E {self.t('v1_per')}: the multiple's share is {self.t('v1_mult_ni')}–{self.t('v1_mult_op')} by basis — chasing bets the multiple holds"),
                   src=["v1"], legend=[(c["brown_mid"], self.T("이익 기여", "Earnings")), (c["gold"], self.T("멀티플 기여", "Multiple"))], unit=self.T("Δln 시총 대비 %", "% of Δln market cap"),
                   chart_key="per", chart=charts.contrib_bars([self.T(f"3사 · 순이익 (시작 시총 {self.t('v1_cover')})", f"3 names · NI ({self.t('v1_cover')} of cap)"), self.T("4사 · 영업이익", "4 names · OP")],
                                                              [ni_e * 100, (1 - op_m) * 100], [ni_m * 100, op_m * 100], c, (self.T("이익", "Earnings"), self.T("멀티플", "Multiple"))),
                   note=self.T(f"Vol.1 p4 {self.g('v1_mult_op')} — 두산에너빌리티(FY2022A 지배순손실)는 순이익 기준 분해 불가. 정상화 PER {self.g('v3_per')}",
                               f"Vol.1 p.4 {self.g('v1_mult_op')} — Doosan Enerbility (FY2022A net loss) cannot be split on net income. Normalised P/E {self.g('v3_per')}"))
-        rows = [[self.name("merchant_solar"), self.T(f"IRR {self.t('v4_irr_merchant')} < {self.hurdle}, REC 없음", f"IRR {self.t('v4_irr_merchant')} < {self.hurdle}, no RECs"),
-                 self.T("장기 고정가 계약 확보", "A long fixed-price contract")],
-                [self.name("legacy_rec"), self.T(f"REC 현물시장 {self.t('v4_rec_end')}까지(B)", f"REC spot market to {self.t('v4_rec_end')} (B)"),
-                 self.T("경과 규정 원문 확인", "Transition rules in the original")],
-                [self.name("listed_equip"), self.T(f"멀티플 기여 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')} · 정상화 시 {self.sgn(self.per_drop())}", f"Multiple share {self.t('v1_mult_ni')}–{self.t('v1_mult_op')} · {self.sgn(self.per_drop())} if normalised"),
-                 self.T(f"PER이 정상화 {f.V('v3_per')[1]:.1f}배 근처로", f"P/E near the normalised {f.V('v3_per')[1]:.1f}x")]]
-        c4 = Cell(title=self.T("피하는 이유와 다시 볼 신호 — 셋 다 '내가 정할 수 없는 가격'에 기댄다", "Why avoid, and what would bring them back — all three lean on prices nobody can contract"),
-                  src=["v1", "v3", "v4"], table=TableSpec([self.T("자산", "Asset"), self.T("피하는 이유", "Why avoid"), self.T("다시 볼 신호 (J)", "Signal to revisit (J)")], rows,
-                                                          [0.30, 0.40, 0.30], ["L", "L", "L"], brick_cells={(i, 1) for i in range(3)}, font_size=8.2),
-                  note=self.T("피한다 = 영구 제외가 아니라 지금 가격에서 사지 않는다는 뜻(J). 상장 전력기기주는 섹터 수준 판단이며 특정 종목 의견이 아니다",
-                              "Avoid = not at today's price, not never (J). Listed names are a sector-level view, not a call on any stock"))
-        return Page("body", "5", self.T(f"피한다: 시장 판매(IRR {self.t('v4_irr_merchant')}) · 기존 REC 의존 자산(현물시장 {self.t('v4_rec_end')}, B) · PER 40배 구간 추격(멀티플 기여 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')})",
-                                        f"Avoid: merchant (IRR {self.t('v4_irr_merchant')}) · REC-dependent assets (spot market to {self.t('v4_rec_end')}, B) · chasing ~40x P/E (multiple share {self.t('v1_mult_ni')}–{self.t('v1_mult_op')})"),
-                    self.T("공통점: 계약으로 막을 수 없는 가격(SMP·REC·배수)에 수익이 달려 있다", "Common thread: returns hang on prices no contract can fix (SMP, RECs, multiples)"),
-                    [c1, c2, c3, c4])
+        return [c1], []
+
+    def cells_legacy_rec(self) -> tuple[list[Cell], list[Cell]]:
+        f = self.f
+        yr = f.V("v4_rec_end")
+        if self.rec_wait():
+            c1 = Cell(title=self.T("기존 REC 의존 자산: 기존 발급자·고시 인정자는 종전 규정 유지(부칙 제3조②③, A) — 고시가 나올 때까지 기다린다",
+                                   "Existing REC-dependent assets: existing holders and recognised licensees keep the former rules (addendum art. 3(2)–(3), A) — wait for the notice"),
+                      src=["v4"], panel_lead="", bullets=[
+                          self.T(f"REC 조항(제12조의7)은 {yr}년 말까지 효력, REC 발급기한은 2026-12-31(재생에너지법 부칙 제2조·제3조①) {self.g('v4_rec_end')}",
+                                 f"The REC article (12-7) stays in force to end-{yr}; the issuance deadline is 31 Dec 2026 (RE Act addendum arts. 2, 3(1)) {self.g('v4_rec_end')}"),
+                          self.T(f"기한까지 발급받은 자는 종전 규정에 따라 계속 발급·거래하고, 시행 전 허가를 받은 발전사업자 중 장관 고시로 인정한 자도 같다(부칙 제3조②③) — '제도 종료로 수입 소멸' 논리는 성립하지 않는다 {self.g('v4_rec_continue')}",
+                                 f"Holders issued RECs by the deadline keep issuing and trading under the former rules, as do pre-act licensees recognised by ministerial notice (addendum art. 3(2)–(3)) — 'the scheme ends, so the revenue goes' does not hold {self.g('v4_rec_continue')}"),
+                          self.T("남은 위험(J): REC 가격·수요 변화와 고시의 인정 범위 — 의무량을 넘겨 산 REC의 이행실적 인정(부칙 제4조)도 방법은 고시로 정한다. 수치 모델 없이 정성 판단",
+                                 "What remains (J): REC price and demand, and the notice's scope — even counting excess RECs toward targets (addendum art. 4) awaits a notice. Qualitative, no model"),
+                          self.T("트리거(J): 장관 고시(부칙 제3조③ 인정 범위 · 제4조 이행실적 인정 방법) 확정과 REC 거래가격 추이 — 그 뒤 잔존 발급기간·REC 매출 비중 자료로 가치를 계산한다",
+                                 "Trigger (J): the ministerial notice (scope under art. 3(3), counting method under art. 4) and REC prices — then value the asset from remaining issuance years and REC revenue share")])
+        else:
+            c1 = Cell(title=self.T(f"기존 REC 의존 자산: REC 조항 {yr}년 말 효력 종료(A) — 수치 모델 없이 정성 판단", f"Existing REC-dependent assets: REC article lapses end-{yr} (A) — qualitative"),
+                      src=["v4"], panel_lead="", bullets=[
+                          self.T(f"REC 조항(제12조의7)은 {yr}년 말까지 효력(부칙 제2조) {self.g('v4_rec_end')}", f"The REC article (12-7) stays in force to end-{yr} (addendum art. 2) {self.g('v4_rec_end')}"),
+                          self.T("경과조치가 확인되지 않아 REC 매출이 이어진다고 볼 근거가 없다(J)", "No transitional rule confirmed, so REC revenue cannot be assumed to continue (J)")])
+        return [c1], []
+
+    def avoid_row(self, k: str) -> list[str]:
+        f = self.f
+        return {
+            "merchant_solar": [self.name(k), self.T(f"IRR {self.t('v4_irr_merchant')} < {self.hurdle}, REC 없음", f"IRR {self.t('v4_irr_merchant')} < {self.hurdle}, no RECs"),
+                               self.T("장기 고정가 계약 확보", "A long fixed-price contract")],
+            "legacy_rec": [self.name(k), self.T(f"REC 조항 {self.t('v4_rec_end')} 효력 종료", f"REC article lapses {self.t('v4_rec_end')}"), self.T("경과조치 확인", "A transitional rule")],
+            "listed_equip": [self.name(k), self.T(f"멀티플 기여 {self.t('v1_mult_ni')}~{self.t('v1_mult_op')} · 정상화 시 {self.sgn(self.per_drop())}",
+                                                  f"Multiple share {self.t('v1_mult_ni')}–{self.t('v1_mult_op')} · {self.sgn(self.per_drop())} if normalised"),
+                             self.T(f"PER이 정상화 {f.V('v3_per')[1]:.1f}배 근처로", f"P/E near the normalised {f.V('v3_per')[1]:.1f}x")],
+        }.get(k, [self.name(k), "—", "—"])
+
+    DRIVER = {"merchant_solar": ("SMP", "SMP"), "legacy_rec": ("REC", "RECs"), "listed_equip": ("배수", "multiples")}
+    COND = {"cfd_equity": ("CfD는 이용률(P90 실사)", "output for the CfD (P90 study)"),
+            "dc_pf_loan": ("PF는 전력비 별도 청구 조항(인출 선행조건)", "separate power billing for the PF loan (CP to drawdown)"),
+            "direct_ppa": ("PPA는 망이용료", "network charges for the PPA"), "target_ipo": ("IPO는 이익률 하한", "the margin floor for the IPO"),
+            "legacy_rec": ("기존 REC 자산은 장관 고시", "the ministerial notice for REC assets")}
+
+    def verdict_page(self, v: str) -> Page:
+        """판정별 쪽: 자산별 주 셀(차트·패널) + 상세 셀(표). 피한다 쪽은 요약표를 덧붙인다. 셀 수로 격자를 정한다."""
+        aa = self.assets_in(v)
+        mains, details = [], []
+        for a in aa:
+            m, d = getattr(self, f"cells_{a.key}")()
+            mains.append(m)
+            details.append(d)
+        if v == "avoid":
+            rows = [self.avoid_row(a.key) for a in aa]
+            details.append([Cell(title=self.T(f"피하는 이유와 다시 볼 신호 — {len(rows)}개 모두 계약으로 정할 수 없는 가격에 기댄다", f"Why avoid, and what would bring them back — all {len(rows)} lean on prices nobody can contract"),
+                                 src=["v1", "v3", "v4"], table=TableSpec([self.T("자산", "Asset"), self.T("피하는 이유", "Why avoid"), self.T("다시 볼 신호 (J)", "Signal to revisit (J)")], rows,
+                                                                         [0.30, 0.40, 0.30], ["L", "L", "L"], brick_cells={(i, 1) for i in range(len(rows))}, font_size=8.2),
+                                 note=self.T("피한다 = 영구 제외가 아니라 지금 가격에서 사지 않는다는 뜻(J). 상장 전력기기주는 섹터 수준 판단이며 특정 종목 의견이 아니다",
+                                             "Avoid = not at today's price, not never (J). Listed names are a sector-level view, not a call on any stock"))])
+        flat_m = [c for m in mains for c in m]
+        flat_d = [c for d in details for c in d]
+        if len(flat_m) == len(flat_d) and all(len(m) == 1 and len(d) == 1 for m, d in zip(mains, details)):
+            cells = [c for m, d in zip(flat_m, flat_d) for c in (m, d)]           # 자산마다 한 줄: 차트 | 표
+        else:
+            cells = flat_m + flat_d                                               # 위: 차트·패널, 아래: 표
+        grid = {1: "1x1", 2: "1x2", 3: "2-1", 4: "2x2", 5: "3-2", 6: "3x2"}[len(cells)]
+        tail = self.T(*self.PAGE_TAIL[v])
+        title = f"{self.T(VERDICT_KR[v], VERDICT_EN[v])}: " + " · ".join(self.seg(a.key) for a in aa) + f" — {tail}"
+        if v == "avoid":
+            sub = self.T("공통점: 계약으로 막을 수 없는 가격(" + "·".join(self.DRIVER[a.key][0] for a in aa if a.key in self.DRIVER) + ")에 수익이 달려 있다",
+                         "Common thread: returns hang on prices no contract can fix (" + ", ".join(self.DRIVER[a.key][1] for a in aa if a.key in self.DRIVER) + ")")
+        elif v == "wait":
+            sub = self.T("트리거가 오면 넣는다로: ", "Triggers move them to invest: ") + self.T(", ", "; ").join(self.T(*self.COND[a.key]) for a in aa if a.key in self.COND)
+        else:
+            sub = self.T(f"조건은 {len(aa)}개: ", f"{len(aa)} conditions: ") + self.T(", ", "; ").join(self.T(*self.COND[a.key]) for a in aa if a.key in self.COND)
+        return Page("body", self.VPAGE[v], title, sub, cells, grid=grid)
+
+    def p3(self) -> Page:
+        return self.verdict_page("invest")
+
+    def p4(self) -> Page:
+        return self.verdict_page("wait")
+
+    def p5(self) -> Page:
+        return self.verdict_page("avoid")
 
     # --- p6 숫자는 어떻게 지켰나 -------------------------------------------------
     GRADE_COLORS = {"A": "gold", "D": "brown_mid", "B": "warm_grey", "C": "brick", J_DESIGN: "brown_dark", J_ASSUME: "charcoal", NO_VALUE: "warm_grey_light"}
@@ -593,7 +722,8 @@ class Story:
                "direct_ppa": self.T("보류 — 부대비용 확정·구매자 RE100 지불의사 확인 후 재상정", "Hold — resubmit once charges and the buyer's RE100 premium are confirmed"),
                "target_ipo": self.T("밴드 제시 보류 — 이익률 하한 근거 확인 후 재산정", "Hold the range — re-price once the margin floor is evidenced"),
                "merchant_solar": self.T("투자하지 않음 — 장기 계약 없이는 요구수익률 미달", "Do not invest — misses the hurdle without a long contract"),
-               "legacy_rec": self.T("신규 편입 안 함 — 경과 규정 원문 확인 전", "Do not add — until transition rules are read in the original"),
+               "legacy_rec": (self.T("편입 보류 — 허가 시점·고시 인정 여부 실사, 고시 확정 후 재상정", "Hold — check licence date and recognition; resubmit once the notice is out") if self.rec_wait()
+                              else self.T("신규 편입 안 함 — 경과조치 확인 전", "Do not add — until a transitional rule is confirmed")),
                "listed_equip": self.T("추격 매수 안 함 — 정상화 배수 근처에서 재검토", "Do not chase — revisit near the normalised multiple")}
         rows, gold, strong, brick = [], set(), set(), set()
         for i, a in enumerate(f.assets):
@@ -607,6 +737,7 @@ class Story:
                  [self.T("부대비용 > 구매자 여유", "Charges > buyer's room"), self.T(f"{self.t('v4_room')} vs {self.t('v4_net_charge')}", f"{self.t('v4_room')} vs {self.t('v4_net_charge')}"), self.g("v4_room", False)],
                  [self.T("이익률 정점(이중 고점)", "Peak margins (double peak)"), self.T(f"필요 할인율 {self.t('v3_req_dp')}", f"Required discount {self.t('v3_req_dp')}"), self.g("v3_req_dp", False)],
                  [self.T("SMP 하락", "SMP fall"), self.t("v4_merchant_smp_lo"), self.g("v4_merchant_smp_lo", False)],
+                 [self.T("REC 가격·고시 인정 범위", "REC prices, scope of the notice"), self.T("종전 규정 유지(부칙 제3조②③) — 인정 범위·방법은 고시 대기", "Former rules kept (art. 3(2)–(3)) — scope and method await a notice"), self.g("v4_rec_continue", False)],
                  [self.T("배수 정상화", "Multiple normalises"), self.T(f"PER {self.t('v3_per')} → 가치 {self.sgn(self.per_drop())}", f"P/E {self.t('v3_per')} → value {self.sgn(self.per_drop())}"), self.g("v3_per", False)]]
         c2 = Cell(title=self.T("핵심 위험 — 숫자로", "Key risks, in numbers"), src=["v1", "v2", "v3", "v4"],
                   table=TableSpec([self.T("위험", "Risk"), self.T("영향", "Impact"), self.T("원 편·쪽", "Source")], risks, [0.34, 0.46, 0.20], ["L", "L", "C"], font_size=7.8))
@@ -615,7 +746,8 @@ class Story:
                [self.T(f"계약시장 낙찰가 확인 (가정 {self.t('v4_cfd_price')})", f"Auction clearing price (assumed {self.t('v4_cfd_price')})"), self.name("cfd_equity"), self.g("v4_cfd_price", False)],
                [self.T("현재 송배전 이용요금·부가정산금으로 구매자 실효 단가 확정", "Buyer's all-in price at current T&D and settlement rates"), self.name("direct_ppa"), self.g("v4_gap", False)],
                [self.T("오프테이커 위약금·모회사 보증", "Termination payment, parent guarantee"), self.name("direct_ppa"), "[Vol.4 pA1]" if self.kr else "[Vol.4 p.A1]"],
-               [self.T("다음 결산 순이익률(하한 근거)", "Next results: net-margin floor"), self.name("target_ipo"), self.g("v3_req_alt", False)]]
+               [self.T("다음 결산 순이익률(하한 근거)", "Next results: net-margin floor"), self.name("target_ipo"), self.g("v3_req_alt", False)],
+               [self.T("REC 발급 이력(2026-12-31 전)·시행 전 허가·고시 인정 여부", "REC issuance before 31 Dec 2026, pre-act licence, recognition by notice"), self.name("legacy_rec"), self.g("v4_rec_continue", False)]]
         c3 = Cell(title=self.T("선행조건 (CP)", "Conditions precedent (CP)"), src=["v2", "v3", "v4"],
                   table=TableSpec([self.T("선행조건", "Condition"), self.T("대상", "Applies to"), self.T("근거", "Basis")], cps, [0.50, 0.30, 0.20], ["L", "L", "C"], font_size=7.6))
         mon = [[self.T("한전 계약시장 낙찰가", "KEPCO contract-market price"), self.t("v4_cfd_price"), self.T("상한보다 낮으면 CfD IRR 재계산", "Below the cap → recompute CfD IRR")],
@@ -625,7 +757,8 @@ class Story:
                                                                      f"A floor that brings the required discount to ≤ {max(f.V('v3_band_disc')) * 100:.1f}% — even FY2023A {f.V('v3_npm_floor')[1] * 100:.1f}% gives {self.t('v3_req_alt')}")],
                [self.T("전력기기 적용 PER", "Equipment P/E"), f"{f.V('v3_per')[0]:.1f}" + self.T("배", "x"), self.T(f"정상화 {f.V('v3_per')[1]:.1f}배 근처면 재검토", f"Near the normalised {f.V('v3_per')[1]:.1f}x → revisit")],
                [self.T("국고채 3년", "KTB 3-yr"), self.t("v4_ktb"), self.T("금리 변화 → CfD·PF 금리 재계산", "Rate moves → recompute CfD and PF")],
-               [self.T("REC 경과 규정", "REC transition rules"), self.T("보도(B)", "Press (B)"), self.T("원문 고시 시 기존 자산 재평가", "Original text → re-assess existing assets")]]
+               [self.T("REC 경과조치 고시·REC 가격", "REC transitional notice, REC prices"), self.T("법률 원문(A), 고시 미정", "Act (A), notice pending"),
+                self.T("고시 확정(인정 범위·제4조 방법)·가격 추이 → 기존 자산 재평가", "Notice issued (scope, art. 4 method) and prices → re-assess existing assets")]]
         c4 = Cell(title=self.T("모니터링 지표 — 판정을 바꾸는 수준(J)", "Monitoring — levels that change a verdict (J)"), src=["v3", "v4"],
                   table=TableSpec([self.T("지표", "Indicator"), self.T("현재", "Now"), self.T("판정을 바꾸는 수준 (J)", "Level that changes it (J)")], mon, [0.30, 0.26, 0.44], ["L", "R", "L"], font_size=7.6),
                   note=self.T("현재 값은 각 편 기준일(2026-10-20). 수준은 원 편 계산값에서 가져왔고, 그 수준을 판정 변경선으로 쓰는 것은 저자 판단",
@@ -677,7 +810,8 @@ class Story:
             (self.T("신뢰 등급", "Source grade"), self.T("A 공식 원문 · D 공식 자료로 계산 · B 보도·외부 보고서 · C 민간 2차(잠정) · J 저자 판단", "A official · D computed from official data · B press/external report · C secondary (provisional) · J judgement")),
             ("CfD", self.T("차액계약 — 계약가와 SMP의 차이를 정산. 2027년부터 신규 태양광은 한전 장기 계약이 기본", "Contract for difference with KEPCO; from 2027 the default for new solar")),
             ("PPA", self.T("전력구매계약 — 발전사와 구매자가 가격·기간·물량을 직접 정하는 계약", "Power purchase agreement — seller and buyer fix price, term and volume directly")),
-            ("SMP · REC", self.T("계통한계가격(도매 전력가격) · 신재생에너지 공급인증서(신규 사업자는 2027년부터 발급 제한)", "System marginal price (wholesale power) · renewable certificate (restricted for new entrants from 2027)")),
+            ("SMP · REC", self.T("계통한계가격(도매 전력가격) · 신재생에너지 공급인증서(발급기한 2026-12-31, 기존 발급자·고시 인정자는 종전 규정 — 재생에너지법 부칙 제3조)",
+                                 "System marginal price (wholesale power) · renewable certificate (issuance deadline 31 Dec 2026; existing holders and recognised licensees keep the former rules — RE Act addendum art. 3)")),
             ("DSCR", self.T("원리금상환비율 = 상환 가능 현금흐름 ÷ 원리금. 대주는 최소값과 목표값을 본다", "Debt service coverage = cash flow available ÷ debt service; lenders watch the minimum against a target")),
             (self.T("선행조건 (CP)", "Condition precedent (CP)"), self.T("대출 인출·투자 실행 전에 충족해야 하는 조건", "A condition to be met before drawdown or closing")),
             (self.T("지분 IRR · 요구수익률", "Equity IRR · hurdle"), self.T("지분 투자 수익률 · 투자자가 요구하는 최소 수익률(Vol.4 저자 판단)", "Return on equity · minimum return required (judgement in Vol.4)")),

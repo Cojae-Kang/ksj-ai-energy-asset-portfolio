@@ -78,6 +78,22 @@ def draw_afterword(c, ctx, page, warnings: list[str]) -> None:
     page.extra["fit"] = {"size": size, "leading": lead}
 
 
+def grid_rects(ctx, top: float, grid: str) -> list[tuple[float, float, float, float]]:
+    """Vol.1 격자 + Vol.5 추가 격자: '2-1'(위 2칸 + 아래 전체 폭 1칸), '3x2'(위아래 3칸씩)."""
+    from research.vol01 import layout as L
+    if grid not in ("2-1", "3x2"):
+        return L.grid_rects(ctx, top, grid)
+    full_w, full_h = ctx.w - 2 * L.MX, top - (L.FOOT_H + 4)
+    ch = (full_h - L.ROW_GAP) / 2
+    y2 = top - ch - L.ROW_GAP
+    if grid == "2-1":
+        cw = (full_w - L.COL_GAP) / 2
+        return [(L.MX, top, cw, ch), (L.MX + cw + L.COL_GAP, top, cw, ch), (L.MX, y2, full_w, ch)]
+    gap = L.COL_GAP * 0.75
+    w3 = (full_w - 2 * gap) / 3
+    return [(L.MX + k * (w3 + gap), y, w3, ch) for y in (top, y2) for k in range(3)]
+
+
 def render(path: Path, ctx, pages: list, cover_bg: Path, meta: dict) -> int:
     from research.vol01 import layout as L
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,7 +120,7 @@ def render(path: Path, ctx, pages: list, cover_bg: Path, meta: dict) -> int:
             L.footer(c, ctx, pg.label)
         else:
             top = L.header(c, ctx, pg.title, pg.subtitle)
-            for i, (cell, (x, y, w, h)) in enumerate(zip(pg.cells, L.grid_rects(ctx, top, pg.grid))):
+            for i, (cell, (x, y, w, h)) in enumerate(zip(pg.cells, grid_rects(ctx, top, pg.grid))):
                 L.draw_cell(c, ctx, cell, x, y, w, h, pg.label, i)
             L.footer(c, ctx, pg.label)
         c.showPage()
@@ -184,18 +200,11 @@ def export_figures(cfg: Mapping, st, pages, lang: str) -> list[Path]:
     return out
 
 
-def key_conclusions(f: data.Facts) -> list[str]:
-    """빌드 요약 '핵심 결론 3줄' — 판정별 한 줄 (값은 Facts, 판정은 저자 판단 J)."""
-    R = f.refs
-    names = {"invest": [], "wait": [], "avoid": []}
-    for a in f.assets:
-        names[a.verdict].append(a.key)
-    return [f"넣는다(J): 한전 CfD 지분 IRR {R['v4_irr_cfd'].kr}(요구 {R['v4_hurdle'].kr}) · DC PF 최소 DSCR {R['v2_min_dscr'].kr}(목표 {R['v2_target_dscr'].kr}) — "
-            f"CP 전력비 별도 청구(포함 시 Equity IRR {R['v2_irr_gross'].kr}, 같은 대출 최소 DSCR {R['v2_dscr_gross'].kr})",
-            f"기다린다(J): 직접 PPA IRR {R['v4_irr_ppa'].kr}이지만 여유 {R['v4_room'].kr} < 부대비용 {R['v4_net_charge'].kr}(B) · Target Co. IPO 밴드 {R['v3_band'].kr} vs 필요 할인율 "
-            f"{R['v3_req_alt'].kr}~{R['v3_req_dp'].kr}(밴드 최대 {max(R['v3_band_disc'].value) * 100:.1f}%)",
-            f"피한다(J): 시장 판매 IRR {R['v4_irr_merchant'].kr}(REC 없음, B) · 기존 REC 의존 자산(현물시장 {R['v4_rec_end'].kr}, B) · PER {R['v1_per'].kr} 추격(멀티플 기여 "
-            f"{R['v1_mult_ni'].kr} 3사 순이익 / {R['v1_mult_op'].kr} 4사 영업이익)"]
+def key_conclusions(f: data.Facts, cfg: Mapping) -> list[str]:
+    """빌드 요약 '핵심 결론 3줄' — 판정별 한 줄 = 국문 PDF 요약 쪽 박스 제목 (값은 Facts, 판정은 저자 판단 J)."""
+    from . import story
+    st = story.Story(cfg, f, "kr")
+    return [f"{VERDICT_KR[v]}(J) {len(st.assets_in(v))}개 — {b.title}" for v, b in zip(("invest", "wait", "avoid"), st.boxes())]
 
 
 def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
@@ -204,7 +213,7 @@ def write_summary(path: Path, r: dict, cfg: Mapping) -> None:
     order = list(f.extra["order"])
     L = ["# Vol.5 빌드 요약\n", f"- 기준일: {f.as_of} (Vol.1~4 숫자는 각 편 기준일 그대로) · 빌드(UTC): {utc_now_iso()}", f"- 폰트: {r['fonts']}",
          "- 새 데이터 없음 — Vol.1~4의 load_facts·Story·build_summary.md에서 불러옴. 판정·트리거는 저자 판단(J). 교육·연구 목적, 투자 권유 아님", ""]
-    L += ["## 핵심 결론 3줄", ""] + [f"{i}. {t}" for i, t in enumerate(key_conclusions(f), 1)] + [""]
+    L += ["## 핵심 결론 3줄", ""] + [f"{i}. {t}" for i, t in enumerate(key_conclusions(f, cfg), 1)] + [""]
     if r.get("exec_lines"):
         L += ["## Executive Summary 결론 문장 (국문 PDF와 같은 문장)", "", f"- 헤드라인: {r['exec_lines'][0]}"] + [f"{i}. {t}" for i, t in enumerate(r["exec_lines"][1:], 1)] + [""]
     L += ["## 근거", "", "### 투자 지도 (판정표 전문, 국문)", ""]
@@ -270,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"폰트: {r['fonts']}")
     for lang, path in r["pdfs"].items():
         print(f"{path}  ({r['pages'][lang]}쪽)")
-    for t in key_conclusions(r["facts"]):
+    for t in key_conclusions(r["facts"], cfg):
         print(f"  · {t}")
     n_w = sum(len(w) for w in r["render_warnings"].values())
     print(f"  렌더링 경고 {n_w}건 → build_summary.md")

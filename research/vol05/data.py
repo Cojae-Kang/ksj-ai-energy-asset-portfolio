@@ -106,7 +106,8 @@ class Ref:
     summary_ok: bool | None = None
 
     def where(self, kr: bool = True) -> str:
-        return f"Vol.{self.vol} p{self.page}" if kr else f"Vol.{self.vol} p.{self.page}"
+        sep = "" if kr and (self.page.isdigit() or self.page[:1] == "A") else "."     # 요약 쪽(i)은 'p.i'
+        return f"Vol.{self.vol} p{sep}{self.page}"
 
 
 @dataclass
@@ -257,7 +258,11 @@ def grade_assumption(a, g: Mapping) -> tuple[str, str]:
         return sm["evidence"], "origin=evidence"
     st = a.status
     if st == "sourced":
-        return ("A", "sourced·공식 도메인") if _official(a.url, g["official_domains"]) else ("B", "sourced·보도/외부 보고서")
+        if _official(a.url, g["official_domains"]):
+            return "A", "sourced·공식 도메인"
+        if _official(a.url, g.get("private_secondary_domains", [])):
+            return "C", "sourced·민간 2차(원문 대조 대기)"
+        return "B", "sourced·보도/외부 보고서"
     return sm[st], f"status={st}"
 
 
@@ -347,8 +352,8 @@ def premium_range(cfg: Mapping, f4) -> tuple[dict, dict]:
 
 
 def rec_end_year(f4) -> int | None:
-    """REC 현물시장 종료 연도 — Vol.4 입력 rec_eligible 출처 문구('REC 현물시장은 YYYY년 말까지')에서 읽는다(B)."""
-    m = re.search(r"REC 현물시장은\s*(\d{4})년", f4.inputs["rec_eligible"].source)
+    """REC 조항 효력 종료 연도 — Vol.4 입력 rec_eligible 출처 문구(재생에너지법 부칙 제2조 원문: '…YYYY-12-31까지 효력')에서 읽는다(A)."""
+    m = re.search(r"(\d{4})-12-31까지 효력", f4.inputs["rec_eligible"].source)
     return int(m.group(1)) if m else None
 
 
@@ -470,8 +475,13 @@ def build_refs(cfg: Mapping, vols: Mapping[int, Any]) -> dict[str, Ref]:
     add("v4_proviso", 4, "A4", nb["proviso_kr"], nb["proviso_kr"].replace("단서: ", "").split(" · ")[0], nb["proviso_en"].replace("Proviso: ", "").split(" · ")[0],
         "직접 PPA 고시 단서 (망 미이용)", "Direct-PPA notice proviso (no grid use)", ["송·배전망을 이용하지 않으면"])
     yr = rec_end_year(f4)
-    add("v4_rec_end", 4, "2", yr, f"{yr}년 말" if yr else "TODO(data)", f"end-{yr}" if yr else "TODO(data)", "REC 현물시장 존속 시한", "REC spot market ends",
-        [f"REC 현물시장은 {yr}년 말까지"] if yr else [])
+    add("v4_rec_end", 4, "2", yr, f"{yr}년 말" if yr else "TODO(data)", f"end-{yr}" if yr else "TODO(data)", "REC 조항 효력 종료(재생에너지법 부칙 제2조)",
+        "REC article lapses (RE Act addendum art. 2)", [f"{yr}-12-31까지 효력"] if yr else [])
+    rc = f4.inputs.get("rec_legacy_continue")
+    rcv = int(float(rc.value)) if rc is not None and isinstance(rc.value, (int, float)) else 0
+    add("v4_rec_continue", 4, "2", rcv, "종전 규정 유지" if rcv else "경과조치 없음", "former rules kept" if rcv else "no transitional rule",
+        "기존 REC 발급자·고시 인정자 경과조치(부칙 제3조②③)", "Transitional rule for existing REC holders and recognised licensees (addendum art. 3(2)–(3))",
+        ["종전 규정 유지"] if rcv else [])
     add("v4_rec_none", 4, "2", f4.V("rec_eligible"), "REC 없음" if f4.V("rec_eligible") == 0 else "REC 있음", "no RECs" if f4.V("rec_eligible") == 0 else "RECs",
         "2027년 이후 신규 사업자 REC 수익", "REC revenue for post-2027 entrants", ["REC가 없다"])
     return R
@@ -508,9 +518,10 @@ DRIVERS: dict[str, list[tuple[int, str]]] = {
     "v4_net_charge": [(4, "net_charge_example")],
     "v4_gap": [(4, "net_charge_example"), (4, "tou_tariff"), (4, "fuel_adj"), (4, "power_fund_rate"), (4, "solar_shape_p"), (4, "cfd_price")],
     "v4_rec_end": [(4, "rec_eligible")],
+    "v4_rec_continue": [(4, "rec_legacy_continue")],
     "v4_rec_none": [(4, "rec_eligible")],
 }
-DIRECT = {"v2_target_dscr", "v4_hurdle", "v4_cfd_dscr_target", "v4_cf_base", "v4_cfd_price", "v4_net_charge", "v4_rec_end", "v4_rec_none",
+DIRECT = {"v2_target_dscr", "v4_hurdle", "v4_cfd_dscr_target", "v4_cf_base", "v4_cfd_price", "v4_net_charge", "v4_rec_end", "v4_rec_none", "v4_rec_continue",
           "v3_npm_floor", "v3_npm_now", "v4_smp_base", "v4_ktb"}      # 입력을 그대로 옮긴 값 → 그 입력의 등급 (계산값 최소 D 규칙 미적용)
 DOC_REFS = {"v4_proviso": "A"}  # 고시 원문 조항 (Vol.4 입력 아님, config net_charge_basis에 출처 A로 기록)
 
@@ -555,8 +566,13 @@ def verdicts(refs: Mapping[str, Ref]) -> list[Asset]:
     v = "avoid" if V("v4_irr_merchant") < h else "wait"
     out.append(Asset("merchant_solar", 4, v, ["v4_irr_merchant", "v4_rec_none"], ["v4_merchant_smp_hi", "v4_merchant_actual"],
                      "지분 IRR < 요구수익률, REC 없음", "Equity IRR < hurdle; no RECs"))
-    out.append(Asset("legacy_rec", 4, "avoid", ["v4_rec_end"], [],
-                     "REC 현물시장 종료 예정(보도 B) — 수치 모델 없이 정성 판단", "REC spot market set to end (press B) — qualitative, no model"))
+    if V("v4_rec_continue"):     # 부칙 제3조②③: 기존 발급자·고시 인정자는 종전 규정 → 수입 소멸 논리 불성립, 고시 대기
+        out.append(Asset("legacy_rec", 4, "wait", ["v4_rec_end", "v4_rec_continue"], [],
+                         "REC 조항은 종료되지만 기존 발급자·고시 인정자는 종전 규정 유지(부칙 제3조②③, A) → 남은 위험 = REC 가격·수요와 고시 인정 범위, 고시 대기",
+                         "The REC article lapses but existing holders and recognised licensees keep the former rules (addendum art. 3(2)–(3), A) → remaining risk = REC price and demand and the notice's scope; wait for the notice"))
+    else:
+        out.append(Asset("legacy_rec", 4, "avoid", ["v4_rec_end"], [],
+                         "REC 조항 효력 종료, 경과조치 없음 — 수치 모델 없이 정성 판단", "REC article lapses with no transitional rule — qualitative, no model"))
     v = "avoid" if V("v1_mult_op") > 0.5 else "wait"
     out.append(Asset("listed_equip", 1, v, ["v1_per", "v1_mult_ni", "v1_mult_op"], ["v3_per"],
                      "4사 영업이익 기준 멀티플 기여 > 50%(멀티플 주도) — 추격 매수는 배수 유지에 기대는 것", "Multiple-led on 4-name operating income (> 50%) — chasing relies on the multiple holding"))
