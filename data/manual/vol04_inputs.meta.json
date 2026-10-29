@@ -2,7 +2,7 @@
   "source": "공개 자료 수기 입력 (항목별 출처·URL·발표일은 CSV의 source_name·url·published 열)",
   "endpoint": null,
   "params": null,
-  "fetched_at": "2026-10-24",
+  "fetched_at": "2026-10-29",
   "as_of": "2026-10-20",
-  "license_note": "정부 보도자료·법령·SEC 공시·언론 보도의 사실 수치 인용. 신뢰 등급 tier: A 공식 원문, B 공식 발표 보도, C 민간 2차(잠정, 확정 전 교체), J 저자 판단. official_todo가 있으면 공식 원문 교체 대기"
+  "license_note": "정부 보도자료·법령·SEC 공시·언론 보도의 사실 수치 인용. 신뢰 등급 tier: A 공식 원문, B 공식 발표 보도, C 민간 2차(잠정, 확정 전 교체), J 저자 판단. official_todo가 있으면 공식 원문 교체 대기. 영문 열(value_en·unit_en·source_name_en) = 영문 PDF 입력표 표기용 번역(숫자 동일). 2026-10-29: 재생에너지법 원문(법률 제21943호)·한전ON 연료비조정 약관·법인세법 제55조 원문 반영"
 }
