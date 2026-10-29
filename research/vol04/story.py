@@ -101,6 +101,9 @@ class Story:
         return {
             "mcee": self.T("기후에너지환경부 보도자료(2026-07-16, 2026년도 1차 태양광 경쟁입찰 공고)",
                            "Ministry of Climate, Energy and Environment release (16 Jul 2026, round-1 solar auction)"),
+            "react": self.T("재생에너지법 개정(법률 제21943호, 2026-09-15 공포) 제12조의14·부칙 제1~4조 — 국가법령정보센터 원문",
+                            "Renewable Energy Act amendment (Act No. 21943, promulgated 15 Sep 2026), art. 12-14 and addendum arts. 1–4 — law.go.kr original"),
+            "kepco_fuel": self.T("한전ON 원가연계형 요금제(연료비조정요금) — 조정단가 연간 상하한", "KEPCO ON cost-linked tariff (fuel cost adjustment) — annual band on the adjustment rate"),
             "reform": self.T("파이낸셜뉴스(2026-09-15, 기후에너지환경부 발표 인용): 재생에너지법 개정·계약시장 전환",
                              "Financial News (15 Sep 2026, citing the ministry): Renewable Energy Act reform"),
             "kepco": self.T("한전 전력통계월보 제566호(2025.12) 표 18·18-2(계약종별 판매전력량·판매수입)", "KEPCO Monthly Statistics no.566 (Dec 2025), tables 18 and 18-2"),
@@ -170,6 +173,28 @@ class Story:
     def prem_rng(self) -> tuple[dict, dict]:
         sp = self.v["risk_spreads"]
         return self.pg(self.mc_h, min(sp)), self.pg(self.mc_h, max(sp))
+
+    def rec_end(self) -> str:
+        """REC 조항 효력 종료 연도 — 입력 rec_eligible 출처(재생에너지법 부칙 제2조 원문)에서 읽는다."""
+        import re
+        m = re.search(r"(\d{4})-12-31까지 효력", self.f.inputs["rec_eligible"].source)
+        return m.group(1) if m else "TODO"
+
+    def fuel_cap_text(self) -> str:
+        """연료비조정 적용값 vs 약관상 연간 상한(한전ON, A): 상한과 같으면 '구매자 상한을 가장 높게 잡은 가정' 문장."""
+        cap = self.f.inputs.get("fuel_adj_cap")
+        fa = self.f.inputs["fuel_adj"].value
+        if cap is None or not isinstance(cap.value, (int, float)) or not isinstance(fa, (int, float)):
+            return ""
+        lo = self.prem_rng()[0]
+        at_cap = abs(float(fa) - float(cap.value)) < 1e-9
+        short = self.verdict() != "ok"
+        if at_cap:
+            return self.T(f"연료비조정 +{fa:g}원은 약관상 연간 상한(±{cap.value:g}원, 한전ON, A) — 20년 적용은 구매자 상한을 가장 높게 잡은 가정이며"
+                          + (f", 그래도 망이용료를 덮지 못함(여유 최대 {lo['max_fee']:.1f}원 < 사례 {self.net_ex():.0f}원). " if short else ". "),
+                          f"The +{fa:g} fuel adjustment is the KEPCO rule's annual cap (±{cap.value:g}, KEPCO ON, A) — holding it for 20 years puts the buyer ceiling at its highest"
+                          + (f", and it still does not cover network charges (room at most {lo['max_fee']:.1f} < {self.net_ex():.0f} example). " if short else ". "))
+        return self.T(f"연료비조정 +{fa:g}원은 약관상 연간 상한(±{cap.value:g}원, A) 안. ", f"The +{fa:g} fuel adjustment sits inside the ±{cap.value:g} annual cap (A). ")
 
     def net_ex(self) -> float:
         return self.f.V("net_charge_example")
@@ -485,13 +510,14 @@ class Story:
             ["2026-05-07", self.T("AI 데이터센터 특별법 본회의 통과 — 업계가 요청한 LNG 발전 직접 PPA 특례는 제외", "AI Data Centre Act passed — the requested LNG direct-PPA carve-out was dropped"), G["B"]],
             ["2026-05", self.T("분산에너지 설비 원칙상 40MW 이하 — 대형 데이터센터 직접 공급 특례안은 국회 계류(기후부 부정적 입장, 보도)", "Distributed resources capped at 40 MW in principle; a data-centre carve-out bill is pending (ministry reported opposed)"), G["B"]],
             ["2026-07-16", self.T(f"2026년 1차 태양광 경쟁입찰 공고: 상한 {self.kwh(f.market.cfd_price, 3)}(전년 대비 약 5% 하향), 약 1,000MW", f"2026 round-1 solar auction: cap {self.kwh(f.market.cfd_price, 3)} (about 5% lower), ~1,000 MW"), G["A"]],
-            ["2026-09-15", self.T("재생에너지법 개정 공포 — RPS 폐지, 한전과 장기 고정가 계약시장으로 일원화", "Renewable Energy Act amended — RPS ends; a single long-term contract market with KEPCO"), G["B"]],
-            ["2027-01-01", self.T("시행 — 신규 사업자 REC 발급 제한, REC 현물시장은 2029년 말까지", "Effective — RECs restricted for new entrants; REC spot market until end-2029"), G["B"]],
+            ["2026-09-15", self.T("재생에너지법 개정 공포(법률 제21943호) — 장기 고정가격계약 등 계약시장제도 신설(제12조의14). 한전과의 계약 일원화는 보도 기준", "Renewable Energy Act amended (Act No. 21943) — a contract market incl. long-term fixed-price contracts (art. 12-14); a single KEPCO channel is per press reports"), G["A"]],
+            ["2027-01-01", self.T(f"시행 — REC 조항(제12조의7) {self.rec_end()}-12-31까지 효력, 발급기한 2026-12-31 · 기존 발급자·시행 전 허가자 중 고시 인정자는 종전 규정 유지(부칙 제2·3조)",
+                                  f"Effective — REC article (12-7) in force to 31 Dec {self.rec_end()}, issuance deadline 31 Dec 2026 · existing holders and pre-act licensees recognised by notice keep the former rules (addendum arts. 2–3)"), G["A"]],
         ]
         c1 = Cell(title=self.T("제도 타임라인: 2027년부터 한전 장기계약이 기본값, 직접 PPA는 선택지", "Timeline: from 2027 a KEPCO long-term contract is the default, a direct PPA the alternative"),
-                  src=["mcee", "reform", "dist"],
+                  src=["mcee", "react", "reform", "dist"],
                   table=TableSpec([self.T("날짜", "Date"), self.T("내용", "Change"), self.T("신뢰 등급", "Grade")], tl, [0.12, 0.72, 0.16], ["C", "L", "C"],
-                                  gold_cells={(3, 2)}, shade_rows={3, 4}, font_size=8.0),
+                                  gold_cells={(3, 2), (4, 2), (5, 2)}, shade_rows={3, 4, 5}, font_size=8.0),
                   note=self.T("신뢰 등급: 공식 원문 = 정부 보도자료 원문 확인 · 보도·외부 보고서 = 정부 발표를 인용한 언론 보도(정부 원문 미대조) — 날짜·내용은 보도 기준",
                               "Grades: official = government release checked · press/outside report = media citing a government release (original not yet matched) — dates and content as reported"))
         d = f.debts
@@ -513,7 +539,7 @@ class Story:
                               f"{self.pct(f.ktb, 2)} ({f.ktb_date}) + {f.V('margin_bp'):.0f}bp"))
         return Page("body", "2", self.T("제도: 2027년부터 신규 태양광은 한전 20년 계약이 기본 — 직접 PPA는 대안, 시장 판매엔 REC가 없다",
                                         "Rules: from 2027 new solar defaults to a 20-yr KEPCO contract — a PPA is the alternative, merchant sales get no RECs"),
-                    self.T("RPS 폐지 · 계약시장 · 분산에너지 한도 · AI 데이터센터 특별법 → 지분 투자자의 선택지 3개", "RPS repeal · contract market · distributed-energy cap · AI data-centre act → three routes"),
+                    self.T("계약시장 신설 · REC 조항 시한 · 분산에너지 한도 · AI 데이터센터 특별법 → 지분 투자자의 선택지 3개", "Contract market · REC sunset · distributed-energy cap · AI data-centre act → three routes"),
                     [c1, c2], grid="2x1")
 
     # --- p3 ------------------------------------------------------------------
@@ -537,14 +563,14 @@ class Story:
             t1 = self.T(f"가격 회랑 {lo:,.1f}~{hi:,.1f}원 — 공개 사례 부대비용 약 {self.net_ex():.0f}원을 빼면 구매자 실효 상한 {self.room_cap() - self.net_ex():,.1f}원(기반기금 포함 기준)으로 회랑이 닫힌다",
                         f"Corridor {lo:,.1f}–{hi:,.1f} — net of ~{self.net_ex():.0f} in public-example charges the buyer's ceiling falls to {self.room_cap() - self.net_ex():,.1f} (levy-matched) and the corridor closes")
         c1 = Cell(title=t1,
-                  src=["mcee", "tou", "solar", "kepco", "keei", "smp", "sfoc", "notice", "decree", "ksj"], unit=self.T("원/kWh", "KRW/kWh"),
+                  src=["mcee", "tou", "solar", "kepco", "kepco_fuel", "keei", "smp", "sfoc", "notice", "decree", "ksj"], unit=self.T("원/kWh", "KRW/kWh"),
                   legend=[(c["warm_grey_light"], self.T(f"태양광 LCOE {lc.low:.0f}~{lc.high:.0f}", f"Solar LCOE {lc.low:.0f}–{lc.high:.0f}"))],
                   chart_key="corridor",
                   chart=charts.corridor(pts, [("LCOE", lc.low, lc.high, c["warm_grey_light"], 0.45)], c, lambda v: f"{v:,.1f}", (80, 200),
                                         gap=None),
-                  note=self.T(f"한전 계약가 = 2026년 1차 입찰 상한(2027년 계약시장 가격 대리값). 구매자 상한 = {self.stage_text()} — 에너지요금은 산업용(을) {self.contract()} 개편 후 전력량요금을 태양광 발전 시간에 맞춰 2025년 월별 발전량으로 가중(기본요금 제외, 하루 발전 형상은 저자 판단), 연료비조정은 2026년 4분기 단가(보도, B), {self.climate_text()}. 평균 판매단가는 참고선. LCOE = 2024년 국내 범위." + self.net_basis_note(items_shown=False)
+                  note=self.T(f"한전 계약가 = 2026년 1차 입찰 상한(2027년 계약시장 가격 대리값). 구매자 상한 = {self.stage_text()} — 에너지요금은 산업용(을) {self.contract()} 개편 후 전력량요금을 태양광 발전 시간에 맞춰 2025년 월별 발전량으로 가중(기본요금 제외, 하루 발전 형상은 저자 판단), 연료비조정은 2026년 4분기 단가(보도, B), {self.climate_text()}. 평균 판매단가는 참고선. LCOE = 2024년 국내 범위. " + self.fuel_cap_text() + self.net_basis_note(items_shown=False)
                               + self.prov_note(["solar_shape_p", "tou_saturday", "fuel_adj", "climate_env"]),
-                              f"KEPCO price = 2026 round-1 cap (proxy for 2027). Buyer ceiling = {self.stage_text()} — energy = post-reform industrial (B) {self.contract()} rates in solar hours, weighted by 2025 monthly output (no demand charge; daily shape is a judgement); fuel adjustment = Q4 2026 rate (press report, B); {self.climate_text()}. Average tariff = reference only. LCOE = 2024 Korean range." + self.net_basis_note(items_shown=False)
+                              f"KEPCO price = 2026 round-1 cap (proxy for 2027). Buyer ceiling = {self.stage_text()} — energy = post-reform industrial (B) {self.contract()} rates in solar hours, weighted by 2025 monthly output (no demand charge; daily shape is a judgement); fuel adjustment = Q4 2026 rate (press report, B); {self.climate_text()}. Average tariff = reference only. LCOE = 2024 Korean range. " + self.fuel_cap_text() + self.net_basis_note(items_shown=False)
                               + self.prov_note(["solar_shape_p", "tou_saturday", "fuel_adj", "climate_env"])))
         G = TIER_KR if self.kr else TIER_EN
         I = f.inputs
@@ -972,14 +998,15 @@ class Story:
               if f.be_price > f.corridor[1] else
               self.T(f"가격은 우위가 아니다: 회랑 중간이면 한전 계약 대비 IRR {self.sg((irr['ppa'] - irr['cfd']) * 100, 2, True)}%p — 한전 계약과 같아지는 {self.kwh(f.be_price)}은 구매자 상한 {self.kwh(f.corridor[1])} 안이지만, 그 차이 {f.corridor[1] - f.be_price:,.1f}원으로 망이용료를 내야 한다",
                      f"No price edge: at the corridor mid, {self.sg((irr['ppa'] - irr['cfd']) * 100, 2, True)}pp IRR vs KEPCO — matching KEPCO needs {self.kwh(f.be_price)}, inside the {self.kwh(f.corridor[1])} ceiling, leaving only {f.corridor[1] - f.be_price:,.1f} for network charges"))),
-            self.T("수요 확실성: AI 데이터센터의 RE100 조달 수요 — 2027년 RPS 폐지 후 직접 조달 경로가 귀해진다", "Demand: AI data centres need RE100 supply — direct routes get scarcer after the 2027 RPS repeal"),
+            self.T("수요 확실성: AI 데이터센터의 RE100 조달 수요 — 2027년 계약시장 전환·REC 발급기한(2026-12-31) 후 직접 조달 경로가 귀해진다", "Demand: AI data centres need RE100 supply — direct routes get scarcer after the 2027 contract-market shift and the REC issuance deadline (31 Dec 2026)"),
             self.T(f"하방 점검: 1년 차에 해지돼 SMP {f.market.smp0:,.0f}원에 팔면 최소 DSCR {f.extra['downside']['base']:.2f}배(원리금은 내지만 통상 배당 제한 수준), SMP {f.extra['downside']['low_smp']:,.0f}원이면 {f.extra['downside']['low']:.2f}배로 원리금 부족 — 위약금·보증이 필수",
                    f"Downside: terminated in year 1 and selling at SMP {f.market.smp0:,.0f}, min DSCR {f.extra['downside']['base']:.2f}x (debt paid, lock-up territory); at SMP {f.extra['downside']['low_smp']:,.0f} it falls to {f.extra['downside']['low']:.2f}x — termination payments and guarantees are essential")])
         rr = [[self.T("오프테이커 해지", "Offtaker termination"), self.T("위약금(잔여 가치 차액 일부) · 모회사 보증·신용장 · 계약 승계", "Termination payment · parent guarantee/LC · assignment")],
               [self.T("부대비용이 구매자 여유 초과", "Charges exceed the buyer's room"), self.T("계약 전 현재 송배전이용요금·부가정산금으로 구매자 실효 단가 확정, 법 변경 재협상 조항", "Fix the buyer's all-in price with current T&D tariffs and settlements before signing; change-in-law reopener")],
               [self.T("발전량 부족", "Output shortfall"), self.T("P90 기준 대출 sizing · 출력제한 보상 조항", "P90 debt sizing · curtailment compensation")],
               [self.T("SMP 하락(해지 후)", "SMP fall (after termination)"), self.T("해지 시 재계약 우선권 · 한전 계약시장 재입찰 가능성 검토", "Re-contracting rights · re-bidding into the KEPCO market")],
-              [self.T("제도 변경", "Policy change"), self.T("RPS→계약시장 경과 규정 확인(2027년 이전 사용전검사 여부)", "Check transition rules (pre-2027 commissioning)")]]
+              [self.T("제도 변경", "Policy change"), self.T("시행 전 허가 + 고시 인정 시 REC 유지 가능(부칙 제3조③) — 이 자산은 2027년 이후 허가 가정이라 해당 없음, 허가 시점·고시 확인",
+                                                           "Pre-act licence + recognition by notice keeps RECs (addendum art. 3(3)) — not this plant (licensed after 2027 by assumption); check licence date and the notice")]]
         c3 = Cell(title=self.T("위험과 완화책", "Risks and mitigants"), src=["ksj"],
                   table=TableSpec([self.T("위험", "Risk"), self.T("완화책", "Mitigant")], rr, [0.30, 0.70], ["L", "L"], font_size=8.2))
         ts = [[self.T("기간", "Term"), self.T(f"{f.market.ppa_term}년 (임대 계약과 맞춤)", f"{f.market.ppa_term} yrs (aligned with leases)")],
@@ -1014,14 +1041,17 @@ class Story:
         rows, gold, brick, strong = [], set(), set(), set()
         for i, k in enumerate(keys):
             x = f.inputs[k]
-            val = (x.value or "TODO(data)") if isinstance(x.value, str) else (f"{x.value:,.4g}" if x.value is not None else "—")
+            sv = x.value if self.kr or not x.value_en else x.value_en          # 문자 값은 영문 열 (영문 PDF에 한국어가 남지 않게)
+            val = (sv or "TODO(data)") if isinstance(x.value, str) else (f"{x.value:,.4g}" if x.value is not None else "—")
             if k in ("cod_year", "solar_month_weights"):
                 val = f"{int(float(x.value))}"
             if k == "ktb_3y":
                 val = f"{f.ktb * 100:.2f}"
-            rng_ = f" ({x.low:,.4g}~{x.high:,.4g})" if x.low is not None and x.high is not None else ""
-            src = x.source if len(x.source) <= 92 else x.source[:90] + "…"
-            rows.append([self.lab(k), str(val) + rng_, x.unit, G[x.tier] + (self.T("(예정)", " (pending)") if val == "TODO(data)" else ""), src])
+            rng_ = f" ({x.low:,.4g}{self.T('~', '–')}{x.high:,.4g})" if x.low is not None and x.high is not None else ""
+            s_ = x.source if self.kr or not x.source_en else x.source_en
+            src = s_ if len(s_) <= 92 else s_[:90] + "…"
+            unit = x.unit if self.kr or not x.unit_en else x.unit_en
+            rows.append([self.lab(k), str(val) + rng_, unit, G[x.tier] + (self.T("(예정)", " (pending)") if val == "TODO(data)" else ""), src])
             if x.tier == "A":
                 gold.add((i, 3))
             elif x.tier == "C":
@@ -1081,14 +1111,14 @@ class Story:
         room_row = max(i for i, (k, v) in enumerate(t["stages"]) if v is not None)     # 망이용료 여유 기준(④, 없으면 ③)
         c2 = Cell(title=self.T(f"구매자 상한 {nst}단과 민감도: {self.stage_text()} · 민감도 {min(cur):,.1f}~{max(cur):,.1f}원 — 계약종별이 하루 형상보다 크게 움직인다",
                                f"Buyer ceiling, {nst} stages: {self.stage_text()} · sensitivities {min(cur):,.1f}–{max(cur):,.1f}, led by tariff class"),
-                  src=["tou", "solar", "sfoc", "notice", "decree", "kimchang", "ksj"],
+                  src=["tou", "solar", "kepco_fuel", "sfoc", "notice", "decree", "kimchang", "ksj"],
                   table=TableSpec([self.T("가정", "Assumption"), self.T("연간 회피 요금 (원/kWh)", "Annual saving (KRW/kWh)"),
                                    self.T(f"망이용료 여유 (필요 PPA {p1['price']:,.1f} 대비)", f"Room (vs required {p1['price']:,.1f})")],
                                   srows, [0.56, 0.22, 0.22], ["L", "R", "R"], shade_rows=set(range(nst)), gold_cells={(base_row, 1), (room_row, 2)}, font_size=7.4),
                   note=self.T(f"①~③ = 기준 가정(고압A 선택Ⅱ · 형상 p = {f.V('solar_shape_p'):g} · 토요일 평일 시간대)에서 kWh당 추가 요금을 차례로 더한 값, ④ = ③ × (1 + 기반기금 {self.fund_pct()}). 골드 = PPA 가격 상한(③)과 보고서 망이용료 여유(④). 아래 민감도는 추가 요금({ad:,.1f}원)을 포함한 회피 요금, 여유는 ④ 기준(× (1 + {self.fund_pct()}) − 필요 PPA), 한 번에 한 가정만 바꿈. "
-                              f"필요 PPA = 연 해지 {self.pct(self.mc_h, 0)}·스프레드 0." + self.net_basis_note(),
+                              f"필요 PPA = 연 해지 {self.pct(self.mc_h, 0)}·스프레드 0. " + self.fuel_cap_text() + self.net_basis_note(),
                               f"①–③ = base assumptions (HV-A option II · shape p = {f.V('solar_shape_p'):g} · Saturday as weekday) adding per-kWh charges in turn; ④ = ③ × (1 + {self.fund_pct()} fund levy). Gold = PPA price ceiling (③) and the room used (④). Sensitivities show the avoided rate with add-ons ({ad:,.1f}); room on the ④ basis (× (1 + {self.fund_pct()}) − required PPA), one assumption at a time. "
-                              f"Required PPA at {self.pct(self.mc_h, 0)} termination, no spread." + self.net_basis_note()))
+                              f"Required PPA at {self.pct(self.mc_h, 0)} termination, no spread. " + self.fuel_cap_text() + self.net_basis_note()))
         return Page("full", "A4", self.T("데이터 노트: 공신력 원칙 — 공식 원문 우선, 나머지는 교체 대기로 표시", "Data notes: official sources first; everything else flagged for replacement"),
                     self.T(f"기준일 {f.as_of} · 국고채 3년 {self.pct(f.ktb, 2)}({f.ktb_date}) · 모델: 연 단위 명목, 금액 억원, 가격 원/kWh",
                            f"As of {f.as_of} · KTB 3-yr {self.pct(f.ktb, 2)} ({f.ktb_date}) · annual nominal model, KRW 100mn, KRW/kWh"), [c1, c2], grid="2x1")
@@ -1098,8 +1128,9 @@ class Story:
             ("PPA", self.T("전력구매계약 — 발전사와 구매자가 가격·기간·물량을 정해 직접 사고파는 계약", "Power purchase agreement — seller and buyer fix price, term and volume directly")),
             ("CfD", self.T("차액계약 — 계약가와 시장가(SMP)의 차이를 정산. 2027년부터 한전과의 장기 고정가 계약", "Contract for difference — settles contract vs market price; from 2027, long-term contracts with KEPCO")),
             ("SMP", self.T("계통한계가격 — 전력시장의 시간별 도매가격", "System marginal price — Korea's hourly wholesale power price")),
-            ("REC", self.T("신재생에너지 공급인증서 — RPS 의무 이행용 인증서. 신규 사업자는 2027년부터 발급 제한", "Renewable energy certificate under RPS; restricted for new entrants from 2027")),
-            ("RPS", self.T("신재생에너지 공급의무화 제도 — 2027년 계약시장으로 전환", "Renewable portfolio standard — replaced by a contract market in 2027")),
+            ("REC", self.T(f"신재생에너지 공급인증서 — RPS 의무 이행용 인증서. 발급기한 2026-12-31, REC 조항 {self.rec_end()}년 말 효력 종료 · 기존 발급자·고시 인정자는 종전 규정 유지(재생에너지법 부칙 제2·3조)",
+                           f"Renewable energy certificate under RPS. Issuance deadline 31 Dec 2026; REC article lapses end-{self.rec_end()}; existing holders and recognised licensees keep the former rules (RE Act addendum arts. 2–3)")),
+            ("RPS", self.T("신재생에너지 공급의무화 제도 — 2027년부터 신규 설비는 계약시장제도(제12조의14) 중심", "Renewable portfolio standard — from 2027 new plants go through the contract market (art. 12-14)")),
             ("LCOE", self.T("균등화발전비용 — 수명 동안 비용 현재가치 ÷ 발전량 현재가치", "Levelised cost of electricity — PV of lifetime costs ÷ PV of output")),
             (self.T("망이용료", "Network charges"), self.T("직접 PPA 구매자가 한전에 내는 송배전망 이용 요금과 부가 비용", "Transmission and distribution charges a direct-PPA buyer pays KEPCO")),
             (self.T("오프테이커", "Offtaker"), self.T("전력을 사는 계약 상대방 (이번 편: 데이터센터 SPV)", "The buyer under the contract (here the data-centre SPV)")),

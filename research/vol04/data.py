@@ -39,10 +39,11 @@ LABELS: dict[str, tuple[str, str]] = {
     "tou_weekend_discount": ("봄·가을 주말 낮 할인", "Spring/autumn weekend midday discount"),
     "tou_sunday_holiday": ("일요일·공휴일 요금 적용", "Sunday/holiday rate rule"), "tou_saturday": ("토요일 시간대 적용", "Saturday time-band rule"),
     "solar_month_weights": ("월별 태양광 발전량 가중치", "Monthly solar output weights"), "solar_shape_p": ("하루 발전 형상 지수", "Daily output shape exponent"),
-    "fuel_adj": ("연료비조정요금(2026년 4분기)", "Fuel cost adjustment (Q4 2026)"), "climate_env": ("기후환경요금", "Climate & environment charge"),
+    "fuel_adj": ("연료비조정요금(2026년 4분기)", "Fuel cost adjustment (Q4 2026)"),
+    "fuel_adj_cap": ("연료비조정단가 연간 상한(약관)", "Fuel adjustment annual cap (KEPCO rule)"), "climate_env": ("기후환경요금", "Climate & environment charge"),
     "smp_base": ("SMP 기준값", "SMP base"), "smp_escalation": ("SMP 추세", "SMP trend"),
     "smp_sigma": ("SMP 변동성", "SMP volatility"), "smp_phi": ("SMP 평균회귀(AR1)", "SMP mean reversion (AR1)"),
-    "rec_eligible": ("REC 수익 여부", "REC revenue"), "cf_sd_annual": ("발전량 연 변동", "Annual output variation"),
+    "rec_eligible": ("REC 수익 여부", "REC revenue"), "rec_legacy_continue": ("기존 REC 발급자 경과조치", "REC transitional rule for existing holders"), "cf_sd_annual": ("발전량 연 변동", "Annual output variation"),
     "cf_sd_resource": ("발전량 추정 오차", "Resource estimate error"), "ktb_3y": ("국고채 3년", "KTB 3-yr"),
     "margin_bp": ("가산금리", "Credit margin"), "dscr_cfd": ("목표 DSCR · CfD", "Target DSCR · CfD"),
     "dscr_ppa": ("목표 DSCR · PPA", "Target DSCR · PPA"), "dscr_merchant": ("목표 DSCR · 시장", "Target DSCR · merchant"),
@@ -83,6 +84,9 @@ class Input:
     published: str
     official_todo: str
     official_todo_en: str = ""
+    value_en: str = ""          # 문자 값의 영문 표기 (영문 PDF 입력표)
+    unit_en: str = ""
+    source_en: str = ""
 
     @property
     def pending_official(self) -> bool:
@@ -103,7 +107,8 @@ def load_inputs(path: Path) -> dict[str, Input]:
             v = r["value"]
             val: Any = _num(v) if _num(v) is not None else v
             out[r["key"]] = Input(r["key"], val, _num(r["low"]), _num(r["high"]), r["unit"], r["tier"].strip(), r["source_name"],
-                                  r["url"], r["published"], r.get("official_todo", "") or "", r.get("official_todo_en", "") or "")
+                                  r["url"], r["published"], r.get("official_todo", "") or "", r.get("official_todo_en", "") or "",
+                                  r.get("value_en", "") or "", r.get("unit_en", "") or "", r.get("source_name_en", "") or "")
     return out
 
 
