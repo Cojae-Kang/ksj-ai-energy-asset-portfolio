@@ -67,7 +67,7 @@ AFTERWORD_EN = [
     "I leave this series not as a finished piece but as the starting point of that path. After my master's, I will hold on to these questions and keep studying.",
     "Thank you to everyone who has read this series.",
 ]
-SIGN_KR, SIGN_EN = "강신재", "Shinjae Kang"
+SIGN_KR, SIGN_EN = "강신재 드림", "With gratitude, Shinjae Kang"
 
 
 class Story:

@@ -15,6 +15,7 @@ from typing import Mapping
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors as rl_colors
+from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas as rl_canvas
@@ -55,7 +56,7 @@ def draw_afterword(c, ctx, page, warnings: list[str]) -> None:
     paras = page.extra["paras"]
     size, lead = 12.6, 1.72
     while True:
-        st = ParagraphStyle(f"aw{size}{lead}", fontName=RL_REGULAR, fontSize=size, leading=size * lead, textColor=hexc(col["text"]))
+        st = ParagraphStyle(f"aw{size}{lead}", fontName=RL_REGULAR, fontSize=size, leading=size * lead, textColor=hexc(col["text"]), alignment=TA_JUSTIFY)
         ps = [Paragraph(escape(t), st) for t in paras]
         gap = size * 0.72
         need = sum(p.wrap(w, 10_000)[1] for p in ps) + gap * (len(ps) - 1) + size * 2.6
