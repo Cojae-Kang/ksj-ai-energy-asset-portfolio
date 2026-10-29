@@ -306,7 +306,8 @@ def test_build_pdfs(cfg, tmp_path, fill):
         raw = (out / f"KSJ_Research_Vol02_{lang.upper()}.pdf").read_bytes()
         n = len(re.findall(rb"/Type\s*/Page[^s]", raw))
         boxes = [tuple(float(x) for x in m.groups()) for m in re.finditer(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]", raw)]
-        assert n == r["pages"][lang] == 18 and all(bx == (960, 720) for bx in boxes[:n])
+        # 18쪽 + 표가 최소 글자로 안 들어가 주를 옮긴 경우 '데이터 노트(계속)' 1쪽 (layout.prepare_pages)
+        assert n == r["pages"][lang] in (18, 19) and all(bx == (960, 720) for bx in boxes[:n])
     assert bool(r["pending"]["kr"]) != fill
     summary = (out / "build_summary.md").read_text(encoding="utf-8")
     assert "Vol.1 데이터 연결" in summary and "계통 승인률 건수" in summary and "불일치 아님" in summary
