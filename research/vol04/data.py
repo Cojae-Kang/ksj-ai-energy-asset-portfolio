@@ -87,6 +87,8 @@ class Input:
     value_en: str = ""          # 문자 값의 영문 표기 (영문 PDF 입력표)
     unit_en: str = ""
     source_en: str = ""
+    source_short: str = ""      # 입력표(A2·A3)용 짧은 출처 — 기관·문서·조항/쪽 (긴 근거는 source에 그대로)
+    source_short_en: str = ""
 
     @property
     def pending_official(self) -> bool:
@@ -108,7 +110,8 @@ def load_inputs(path: Path) -> dict[str, Input]:
             val: Any = _num(v) if _num(v) is not None else v
             out[r["key"]] = Input(r["key"], val, _num(r["low"]), _num(r["high"]), r["unit"], r["tier"].strip(), r["source_name"],
                                   r["url"], r["published"], r.get("official_todo", "") or "", r.get("official_todo_en", "") or "",
-                                  r.get("value_en", "") or "", r.get("unit_en", "") or "", r.get("source_name_en", "") or "")
+                                  r.get("value_en", "") or "", r.get("unit_en", "") or "", r.get("source_name_en", "") or "",
+                                  r.get("source_short", "") or "", r.get("source_short_en", "") or "")
     return out
 
 

@@ -1032,6 +1032,12 @@ class Story:
                     self.T("투자 개요 · 투자 포인트 · 위험과 완화책 · 텀시트 (예시)", "Summary · points · risks and mitigants · term sheet (illustrative)"), [c1, c2, c3, c4])
 
     # --- A2·A3 입력표 ---------------------------------------------------------
+    def short_source(self, x) -> str:
+        """입력표 출처 칸: CSV source_short(영문 source_short_en). 없으면 긴 출처 전체(자르지 않음)."""
+        if self.kr:
+            return x.source_short or x.source
+        return x.source_short_en or x.source_en or x.source
+
     def a2(self, part: int) -> Page:
         f = self.f
         G = TIER_KR if self.kr else TIER_EN
@@ -1048,8 +1054,7 @@ class Story:
             if k == "ktb_3y":
                 val = f"{f.ktb * 100:.2f}"
             rng_ = f" ({x.low:,.4g}{self.T('~', '–')}{x.high:,.4g})" if x.low is not None and x.high is not None else ""
-            s_ = x.source if self.kr or not x.source_en else x.source_en
-            src = s_ if len(s_) <= 92 else s_[:90] + "…"
+            src = self.short_source(x)                                        # 짧은 출처만, 자르지 않는다 (긴 근거는 입력 CSV)
             unit = x.unit if self.kr or not x.unit_en else x.unit_en
             rows.append([self.lab(k), str(val) + rng_, unit, G[x.tier] + (self.T("(예정)", " (pending)") if val == "TODO(data)" else ""), src])
             if x.tier == "A":
