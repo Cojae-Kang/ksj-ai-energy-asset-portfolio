@@ -492,8 +492,8 @@ class Story:
                          f"UST 10y ({r.dgs10_date}, FRED)" if ok(r) else "UST 10y")
             title = self.T("미국 100MW — 수요는 크고, 기준금리가 높다", "U.S. 100 MW — demand is large; base rates are higher")
         if sp is not None:
-            bl.append(self.T(f"기준금리 차이: {self.base_label('B')} {self.base_value('B'):.2f}% − {self.base_label('A')} {self.base_value('A'):.2f}% = {sp:+.2f}%p",
-                             f"Base-rate gap: {self.base_label('B')} {self.base_value('B'):.2f}% − {self.base_label('A')} {self.base_value('A'):.2f}% = {sp:+.2f}pp"))
+            bl.append(self.T(f"기준금리 차이: {self.base_label('B')} {self.base_value('B'):.2f}% − {self.base_label('A')} {self.base_value('A'):.2f}% = {sp:+.2f}%p (같은 10년물 {self.tenor_spread():+.2f}%p)",
+                             f"Base-rate gap: {self.base_label('B')} {self.base_value('B'):.2f}% − {self.base_label('A')} {self.base_value('A'):.2f}% = {sp:+.2f}pp (same 10y tenor {self.tenor_spread():+.2f}pp)"))
         if ok(va):
             y, p = va.price_latest
             bl.append(self.T(f"버지니아 상업용 판매 연 {self.pct(va.va_cagr)}(미국 {self.pct(va.us_cagr)}), 요금 {p:.2f}¢/kWh({y}) — 전력비는 임차인 부담",
@@ -746,9 +746,9 @@ class Story:
         else:
             cells.append(self.pending(self.T("버지니아 전력", "Virginia power"), ["eia"], va))
         d_ok = ok(d)
-        title = self.T(f"Vol.1 데이터를 PF 가정으로: 수요 성장 {self.pct(d.growth['base'])}(기준), {josa(self.base_label('B'))} {self.base_label('A')}보다 {self.rate_spread():.2f}%p 높고, 피어 이익률은 가격 결정력을 시사"
+        title = self.T(f"Vol.1 데이터를 PF 가정으로: 수요 성장 {self.pct(d.growth['base'])}(기준), {josa(self.base_label('B'))} {self.base_label('A')}보다 {self.rate_spread():.2f}%p 높고(같은 10년물 {self.tenor_spread():.2f}%p), 피어 이익률은 가격 결정력을 시사"
                        if d_ok and self.rate_spread() is not None else "Vol.1 데이터를 PF 가정으로 연결",
-                       f"Vol.1 data into PF inputs: base demand growth {self.pct(d.growth['base'])}, {self.base_label('B')} {self.rate_spread():.2f}pp above {self.base_label('A')}, peer margins point to pricing power"
+                       f"Vol.1 data into PF inputs: base demand growth {self.pct(d.growth['base'])}, {self.base_label('B')} {self.rate_spread():.2f}pp above {self.base_label('A')} ({self.tenor_spread():.2f}pp on the same 10y tenor), peer margins point to pricing power"
                        if d_ok and self.rate_spread() is not None else "Linking Vol.1 data to PF inputs")
         sub = self.T("수요(IEA) → 가동률 램프업 · 금리(ECOS·FRED) → 기준금리 · 피어 이익률(DART) → CAPEX 스트레스 · 버지니아(EIA) → 케이스 B 수요·전력비",
                      "Demand (IEA) → ramp-up · rates (ECOS, FRED) → base rates · peer margins (DART) → CAPEX stress · Virginia (EIA) → Case B demand and power")
@@ -1253,9 +1253,9 @@ class Story:
                            f"Korea vs U.S.: different constraints set debt capacity — {self.binding_label(a.base)} in Korea, {self.binding_label(b.base)} in the U.S.; qualitative risks: grid and pre-leasing vs scale and rates")
         else:
             title = self.T("한·미 비교: 대출 한도와 정성 위험", "Korea vs U.S.: debt capacity and qualitative risks")
-        sub = self.T((f"기준금리 차이 {sp:+.2f}%p({self.base_label('B')} − {self.base_label('A')}) · 계통 승인률 {self.grid_short()} · 사전 임대율 {self.prelease_range()}" if sp is not None else "")
+        sub = self.T((f"기준금리 차이 {sp:+.2f}%p({self.base_label('B')} − {self.base_label('A')}; 같은 10년물 {self.tenor_spread():+.2f}%p) · 계통 승인률 {self.grid_short()} · 사전 임대율 {self.prelease_range()}" if sp is not None else "")
                      + (" · 환율 " + f"{fx:,.1f}원" if fx else ""),
-                     (f"Base-rate gap {sp:+.2f}pp ({self.base_label('B')} − {self.base_label('A')}) · grid approval {self.grid_short()} · pre-leasing {self.prelease_range()}" if sp is not None else "")
+                     (f"Base-rate gap {sp:+.2f}pp ({self.base_label('B')} − {self.base_label('A')}; same 10y tenor {self.tenor_spread():+.2f}pp) · grid approval {self.grid_short()} · pre-leasing {self.prelease_range()}" if sp is not None else "")
                      + (f" · FX {fx:,.1f}" if fx else ""))
         return Page("body", "6", title, sub, [c1, c2], grid="1x2")
 
@@ -1616,7 +1616,7 @@ class Story:
                               "별도 청구 계약에도 최소 요금 조항이 있는지와 그 수준을 확인해야 한다. 조항이 있으면 위험은 임차인 신용 위험으로 바뀐다. "
                               + (f"이 노트의 Base는 전액 전가를 가정했고, 절반만 전가되면 Equity IRR {self.pct(pc[0].equity_irr)} → {self.pct(mid_.equity_irr)}(p7 곡선)" if mid_ is not None else ""),
                               "No. It depends on take-or-pay minimums and how unused power is treated. If the tenant draws less than its allocation, charges based on contracted capacity can stay with the SPC, "
-                              "so check whether the lease sets a minimum (trending to 60–85% of allocated power, Data Center Scouts). With one, the risk becomes tenant credit risk. "
+                              "so check whether the lease sets a minimum charge and at what level. With one, the risk becomes tenant credit risk. "
                               + (f"The base assumes full pass-through; at half, equity IRR falls {self.pct(pc[0].equity_irr)} → {self.pct(mid_.equity_irr)} (p7 curve)" if mid_ is not None else "")),
                        "7, 8"])
         # 6-2 램프업 이자

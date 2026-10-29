@@ -1252,8 +1252,8 @@ class Story:
                   note=self.T("현재 기준 = 순이익률 고정. 이중 고점 = 순이익률도 확률변수. 상관 0이면 성장 둔화·배수 하락·이익률 하락이 따로 온다는 가정",
                               "Current basis = margin fixed. Double peak = margin also random. Zero correlation assumes slowdown, de-rating and margin compression arrive separately"))
         if has_dp:
-            title = self.T(f"현재 기준 할인율 {self.pct(mc.required[0.5], 0)}~{self.pct(mc.required[0.25], 0)} vs 이중 고점 {self.pct(dp.required[0.5], 0)}~{self.pct(dp.required[0.25], 0)} — 이익률 정점까지 넣으면 필요 할인율이 {(dp.required[0.5] - mc.required[0.5]) * 100:.0f}%p 커진다",
-                           f"Current basis {self.pct(mc.required[0.5], 0)}–{self.pct(mc.required[0.25], 0)} vs double peak {self.pct(dp.required[0.5], 0)}–{self.pct(dp.required[0.25], 0)} — adding peak margins raises the needed discount by {(dp.required[0.5] - mc.required[0.5]) * 100:.0f}pp")
+            title = self.T(f"현재 기준 할인율 {self.pct(mc.required[0.5], 0)}~{self.pct(mc.required[0.25], 0)} vs 이중 고점 {self.pct(dp.required[0.5], 0)}~{self.pct(dp.required[0.25], 0)} — 이익률 정점까지 넣으면 필요 할인율이 {(dp.required[0.5] - mc.required[0.5]) * 100:.0f}%p 커진다" + (f" ({self.floor_text(short=True)})" if self.floor_text(short=True) else ""),
+                           f"Current basis {self.pct(mc.required[0.5], 0)}–{self.pct(mc.required[0.25], 0)} vs double peak {self.pct(dp.required[0.5], 0)}–{self.pct(dp.required[0.25], 0)} — adding peak margins raises the needed discount by {(dp.required[0.5] - mc.required[0.5]) * 100:.0f}pp" + (f" ({self.floor_text(short=True)})" if self.floor_text(short=True) else ""))
             toc = self.T(f"필요 할인율 현재 기준 {self.pct(mc.required[0.5], 0)}~{self.pct(mc.required[0.25], 0)} vs 이중 고점 {self.pct(dp.required[0.5], 0)}~{self.pct(dp.required[0.25], 0)}",
                          f"Needed discount: current basis {self.pct(mc.required[0.5], 0)}–{self.pct(mc.required[0.25], 0)} vs double peak {self.pct(dp.required[0.5], 0)}–{self.pct(dp.required[0.25], 0)}")
         else:
