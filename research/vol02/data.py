@@ -21,7 +21,8 @@ from src.data_fetch.base import meta_path_for, resolve_path, to_number
 
 CASES = ("A", "B")
 SCENARIOS = ("downside", "base", "upside")
-CSV_COLUMNS = ["case", "item", "value", "low", "high", "unit", "tag", "source_name", "url", "published", "page", "current", "hint"]
+CSV_COLUMNS = ["case", "item", "value", "low", "high", "unit", "tag", "source_name", "url", "published", "page", "current", "hint",
+               "source_short", "source_short_en"]   # 짧은 출처(기관·문서·조항/쪽) — 보고서 가정표에는 이것만 (긴 근거는 source_name에 그대로)
 TAG_SOURCED, TAG_JUDGMENT = "ASSUMPTION(sourced)", "ASSUMPTION(judgment)"
 
 # 항목 이름 (국문, 영문) — 보고서 가정표·회색 박스 문구
@@ -89,6 +90,8 @@ class Assumption:
     low: float | None = None
     high: float | None = None
     origin: str = "config"          # config | csv | derived | data
+    source_short: str | None = None     # 가정표용 짧은 출처 (CSV source_short / source_short_en)
+    source_short_en: str | None = None
 
     @property
     def missing(self) -> bool:
@@ -200,7 +203,8 @@ def load_assumptions(cfg: Mapping) -> dict[str, dict[str, Assumption]]:
                 setattr(cur, bound, b)
         if norm_tag(r.get("tag")):
             cur.tag = norm_tag(r.get("tag"))
-        for k_csv, k_attr in (("source_name", "source"), ("url", "url"), ("published", "published"), ("page", "page")):
+        for k_csv, k_attr in (("source_name", "source"), ("url", "url"), ("published", "published"), ("page", "page"),
+                              ("source_short", "source_short"), ("source_short_en", "source_short_en")):
             if (r.get(k_csv) or "").strip():
                 setattr(cur, k_attr, r[k_csv].strip())
     for case, d in a.items():
@@ -242,6 +246,7 @@ def write_template(cfg: Mapping, path: Path | None = None) -> Path:
                 "published": prev.get("published", ""), "page": prev.get("page", ""),
                 "current": value_to_csv(cur.value, a.unit) if cur.value is not None else "null",
                 "hint": " / ".join(x for x in (LABELS.get(key, (key,))[0], a.source or "", a.todo or "") if x),
+                "source_short": prev.get("source_short", ""), "source_short_en": prev.get("source_short_en", ""),
             })
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as f:

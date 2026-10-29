@@ -1704,6 +1704,13 @@ class Story:
         u = a.url or ""
         return [kr if self.kr else en for key, kr, en in self.PUBLISHERS if key in u]
 
+    def short_source(self, a) -> str:
+        """가정표 출처 칸: 입력 CSV의 짧은 출처(source_short·source_short_en)만 — 긴 근거는 CSV에 그대로. 값이 없으면 처리 규칙 문장."""
+        if a.value is None:
+            return self.source_text(a)
+        s_ = a.source_short if self.kr else a.source_short_en
+        return s_ or self.source_text(a)
+
     def source_text(self, a: Assumption) -> str:
         """가정표 '근거·출처' 칸: 근거 있음 = 출처명, 저자 판단 = '저자 판단' + 참고 출처. 영문은 출처명만 영문으로."""
         if a.origin == "data":
@@ -1750,7 +1757,7 @@ class Story:
         for i, k in enumerate(keys):
             a = d[k]
             unit = a.unit if self.kr else self.UNIT_EN.get(a.unit, a.unit)
-            rows.append([self.lab(k), self.fmt_assump(a), unit, self.source_text(a), st[a.status]])
+            rows.append([self.lab(k), self.fmt_assump(a), unit, self.short_source(a), st[a.status]])
             if a.status == "input":
                 brick.add((i, 4))
             elif a.status == "sourced":
