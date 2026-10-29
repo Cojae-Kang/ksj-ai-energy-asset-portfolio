@@ -128,7 +128,8 @@ def apply_csv(a: dict[str, Assumption], path: Path) -> None:
                 setattr(cur, bound, b)
         if norm_tag(r.get("tag")):
             cur.tag = norm_tag(r.get("tag"))
-        for k_csv, k_attr in (("source_name", "source"), ("url", "url"), ("published", "published"), ("page", "page")):
+        for k_csv, k_attr in (("source_name", "source"), ("url", "url"), ("published", "published"), ("page", "page"),
+                              ("source_short", "source_short"), ("source_short_en", "source_short_en")):
             if (r.get(k_csv) or "").strip():
                 setattr(cur, k_attr, r[k_csv].strip())
 
@@ -147,7 +148,8 @@ def write_template(cfg: Mapping, path: Path | None = None, facts: "Facts | None"
                      "source_name": prev.get("source_name", ""), "url": prev.get("url", ""),
                      "published": prev.get("published", ""), "page": prev.get("page", ""),
                      "current": value_to_csv(cur.value, a.unit) if cur.value is not None else "null",
-                     "hint": " / ".join(x for x in (LABELS.get(key, (key,))[0], a.source or "", a.todo or "") if x)})
+                     "hint": " / ".join(x for x in (LABELS.get(key, (key,))[0], a.source or "", a.todo or "") if x),
+                     "source_short": prev.get("source_short", ""), "source_short_en": prev.get("source_short_en", "")})
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=CSV_COLUMNS)

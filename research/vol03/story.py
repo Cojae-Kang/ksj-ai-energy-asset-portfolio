@@ -1459,6 +1459,13 @@ class Story:
         return self.T(f" {', '.join(out)} 순이익은 지배순이익 계정이 공시에 없어 연결 당기순이익(비지배지분 포함)으로 대체.",
                       f" {', '.join(out)}: no NI-to-parent line in the filing; consolidated net income (incl. minorities) used.")
 
+    def short_source(self, a) -> str:
+        """가정표 출처 칸: 입력 CSV의 짧은 출처(source_short·source_short_en)만 — 긴 근거는 CSV에 그대로. 값이 없으면 처리 규칙 문장."""
+        if a.value is None:
+            return self.source_text(a)
+        s_ = a.source_short if self.kr else a.source_short_en
+        return s_ or self.source_text(a)
+
     def source_text(self, a: Assumption) -> str:
         if a.value is None:
             return (MISSING_KR if self.kr else MISSING_EN).get(a.key, self.T("근거 확인 중", "Being sourced"))
@@ -1485,7 +1492,7 @@ class Story:
             unit = x.unit if self.kr else UNIT_EN.get(x.unit, x.unit)
             if k in ("growth_mean", "growth_sd"):
                 unit = self.T("로그", "log")
-            rows.append([self.lab(k), self.fmt_assump(x) + rng_, unit, self.source_text(x), st[x.status]])
+            rows.append([self.lab(k), self.fmt_assump(x) + rng_, unit, self.short_source(x), st[x.status]])
             if x.status == "input":
                 brick.add((i, 4))
             elif x.status in ("sourced", "data"):
