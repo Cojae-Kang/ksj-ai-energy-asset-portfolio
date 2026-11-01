@@ -28,7 +28,7 @@ IB·인프라금융 직무 준비를 위한 개인 리서치 포트폴리오입�
 | 2 | AI 데이터센터, 대출은 얼마까지 가능한가 — 대주의 눈으로 본 한국 40MW와 미국 100MW | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7518930802538201088/) |
 | 3 | PER 40배 섹터의 IPO — 가상 전력기기 기업의 희망공모가 밴드 | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | [LinkedIn](https://lnkd.in/p/gDURQSZK) |
 | 4 | 데이터센터에 전기를 파는 법 — 가상 태양광 35MW의 지분투자: 한전 계약·직접 PPA·시장 판매 | 2026.10 | [PDF](research/vol04/KSJ_Research_Vol04_KR.pdf) | [PDF](research/vol04/KSJ_Research_Vol04_EN.pdf) | [LinkedIn](https://lnkd.in/p/gNmUPiig) |
-| 5 | AI 에너지 자산 투자 지도 | 2026.11 | [PDF](research/vol05/KSJ_Research_Vol05_KR.pdf) | [PDF](research/vol05/KSJ_Research_Vol05_EN.pdf) | — |
+| 5 | AI 에너지 자산 투자 지도 | 2026.11 | [PDF](research/vol05/KSJ_Research_Vol05_KR.pdf) | [PDF](research/vol05/KSJ_Research_Vol05_EN.pdf) | [LinkedIn](https://lnkd.in/p/ggzMXQAK) |
 
 **5편 1쪽 요약**: [국문 PDF](research/series/KSJ_Research_Series_Summary_KR.pdf) · [English PDF](research/series/KSJ_Research_Series_Summary_EN.pdf)
 
@@ -126,7 +126,7 @@ Recalculated from official-source data each time the report is built.
 | 2 | How Much Can an AI Data Centre Borrow? A lender's view of a 40 MW Korean and a 100 MW U.S. project | 2026.10 | [PDF](research/vol02/KSJ_Research_Vol02_KR.pdf) | [PDF](research/vol02/KSJ_Research_Vol02_EN.pdf) | [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7518930802538201088/) |
 | 3 | Pricing an IPO in a 40x P/E Sector — an indicative price range for a hypothetical power-equipment maker | 2026.10 | [PDF](research/vol03/KSJ_Research_Vol03_KR.pdf) | [PDF](research/vol03/KSJ_Research_Vol03_EN.pdf) | [LinkedIn](https://lnkd.in/p/gDURQSZK) |
 | 4 | Selling Power to a Data Centre — equity in a hypothetical 35 MW solar asset: KEPCO contract, direct PPA or merchant | 2026.10 | [PDF](research/vol04/KSJ_Research_Vol04_KR.pdf) | [PDF](research/vol04/KSJ_Research_Vol04_EN.pdf) | [LinkedIn](https://lnkd.in/p/gNmUPiig) |
-| 5 | An Investment Map of AI Energy Assets | 2026.11 | [PDF](research/vol05/KSJ_Research_Vol05_KR.pdf) | [PDF](research/vol05/KSJ_Research_Vol05_EN.pdf) | — |
+| 5 | An Investment Map of AI Energy Assets | 2026.11 | [PDF](research/vol05/KSJ_Research_Vol05_KR.pdf) | [PDF](research/vol05/KSJ_Research_Vol05_EN.pdf) | [LinkedIn](https://lnkd.in/p/ggzMXQAK) |
 
 **Five-volume one-page summary**: [Korean PDF](research/series/KSJ_Research_Series_Summary_KR.pdf) · [English PDF](research/series/KSJ_Research_Series_Summary_EN.pdf)
 
